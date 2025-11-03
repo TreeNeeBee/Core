@@ -1,0 +1,26 @@
+# CoreConfig.cmake.in - CMake配置文件模板
+# 此文件用于支持 find_package(Core) 命令
+
+@PACKAGE_INIT@
+
+# 模块信息
+set(Core_VERSION @PROJECT_VERSION@)
+set(Core_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(Core_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(Core_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+
+# 导入目标
+include("${CMAKE_CURRENT_LIST_DIR}/CoreTargets.cmake")
+
+# 设置变量供用户使用
+set(Core_LIBRARIES LightAP::lap_core)
+set(Core_INCLUDE_DIRS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set(Core_FOUND TRUE)
+
+# 检查必需的组件
+check_required_components(Core)
+
+# 输出找到的信息
+if(NOT Core_FIND_QUIETLY)
+    message(STATUS "Found Core: ${Core_VERSION} (${CMAKE_CURRENT_LIST_DIR})")
+endif()

@@ -286,11 +286,13 @@ endif()
 # Installation
 # ==============================================================================
 if(CORE_STANDALONE_BUILD)
-    # Install library
+    # Install library with export support
     install(TARGETS lap_core
+        EXPORT CoreTargets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
+        INCLUDES DESTINATION include/lap/core
     )
     
     # Install headers
@@ -313,6 +315,45 @@ if(CORE_STANDALONE_BUILD)
         doc/HMAC_SECRET_CONFIG.md
         DESTINATION share/doc/lap-core
     )
+    
+    # ===========================================================================
+    # CMake Package Configuration (支持 find_package)
+    # ===========================================================================
+    include(CMakePackageConfigHelpers)
+    
+    # 导出目标
+    install(EXPORT CoreTargets
+        FILE CoreTargets.cmake
+        NAMESPACE LightAP::
+        DESTINATION lib/cmake/Core
+        COMPONENT Development
+    )
+    
+    # 配置包配置文件
+    set(CMAKE_INSTALL_INCLUDEDIR "include/lap/core")
+    configure_package_config_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/CoreConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/CoreConfig.cmake
+        INSTALL_DESTINATION lib/cmake/Core
+        PATH_VARS CMAKE_INSTALL_INCLUDEDIR
+    )
+    
+    # 生成版本文件
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/CoreConfigVersion.cmake
+        VERSION ${MODULE_VERNO}
+        COMPATIBILITY SameMajorVersion
+    )
+    
+    # 安装配置文件
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/CoreConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/CoreConfigVersion.cmake
+        DESTINATION lib/cmake/Core
+        COMPONENT Development
+    )
+    
+    message(STATUS "[Core] CMake package configuration will be installed to lib/cmake/Core")
 endif()
 
 # ==============================================================================
@@ -328,4 +369,8 @@ message(STATUS "  Library:          ${PLATFORM_SYSTEM_TARGET}_core")
 message(STATUS "  Unit tests:       ${ENABLE_BUILD_UNITTEST}")
 message(STATUS "  Examples:         ${ENABLE_BUILD_EXAMPLES}")
 message(STATUS "  Benchmarks:       ${ENABLE_BUILD_BENCHMARKS}")
+if(NOT CORE_STANDALONE_BUILD)
+    message(STATUS "  Install prefix:   ${CMAKE_INSTALL_PREFIX}")
+    message(STATUS "  Export targets:   YES (CoreTargets.cmake)")
+endif()
 message(STATUS "==============================================================================")

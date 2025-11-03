@@ -54,6 +54,9 @@ int main() {
         std::cout << "User not found" << std::endl;
     }
     
+    // std::filesystem (C++17)
+    std::cout << "\nCurrent path: " << fs::current_path() << std::endl;
+    
     std::cout << "\nAll C++17 features working correctly!" << std::endl;
     
     return 0;

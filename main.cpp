@@ -55,7 +55,11 @@ int main() {
     }
     
     // std::filesystem (C++17)
-    std::cout << "\nCurrent path: " << fs::current_path() << std::endl;
+    try {
+        std::cout << "\nCurrent path: " << fs::current_path() << std::endl;
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Filesystem error: " << e.what() << std::endl;
+    }
     
     std::cout << "\nAll C++17 features working correctly!" << std::endl;
     

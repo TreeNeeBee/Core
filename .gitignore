@@ -11,12 +11,18 @@ cmake-build-*/
 *.out
 core
 
-# CMake
+# CMake generated files (not source CMakeLists.txt)
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+install_manifest.txt
+*Config.cmake
+*ConfigVersion.cmake
+*Targets.cmake
+*Targets-*.cmake
+
+# Generated Makefiles
 Makefile
-*.cmake
 
 # IDE
 .vscode/

@@ -1,0 +1,86 @@
+output/*
+build/
+*.pyc
+*.so
+*.sw*
+*.*~
+temp.txt
+deliveries/corba_idl/gen/*
+deliveries/project/*
+*.patch
+build/*/log
+*.bak
+.vscode/
+.markdownlint.json
+toolchain/
+.repo/
+deliveries/project/*
+devices/.BoardConfig.mk
+devices/.BoardConfig.sh
+tools/build/*.pyc
+release/*
+prebuilts/
+sysroot/
+frameworks/
+apps/Utils/ProtocolGen/ota/spider_ota/code_gen
+apps/Utils/ProtocolGen/ota/spider_ota/cur_ota_verno_file
+apps/Utils/ProtocolGen/ota/zebra_ota/code_gen
+apps/Utils/ProtocolGen/ota/zebra_ota/cur_ota_verno_file
+tmp/
+external/TZDetector/shapelib-1.5.0/build/
+tools/quectel_QFirehose/FW_DIR
+log/
+apps/
+deploy/
+
+# =============================
+# CMake & build artifacts
+# =============================
+_build*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+*.dir/
+*.ninja
+*.ninja_deps
+*.ninja_log
+compile_commands.json
+
+# Compiled objects and libraries
+*.o
+*.obj
+*.a
+*.la
+*.lo
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# Coverage & logs
+*.gcno
+*.gcda
+*.gcov
+*.log
+
+# IDE/Editor
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*.*~
+
+# Local env/config
+.env
+.env.*
+
+# Core module local build dirs
+_build_standalone/
+
+# BuildTemplate submodule local artifacts
+BuildTemplate/

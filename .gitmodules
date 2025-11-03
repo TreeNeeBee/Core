@@ -1,0 +1,4 @@
+[submodule "BuildTemplate"]
+	path = BuildTemplate
+	url = git@github.com:TreeNeeBee/BuildTemplate.git
+	branch = master

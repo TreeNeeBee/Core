@@ -1,0 +1,346 @@
+/**
+ * @file        config_test.cpp
+ * @brief       Configuration Manager Unit Tests
+ * @date        2025-10-31
+ */
+
+#include <gtest/gtest.h>
+#include "CConfig.hpp"
+#include <fstream>
+
+using namespace lap::core;
+
+class ConfigTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        testConfigPath_ = "test_config.json";
+        testEncryptedPath_ = "test_encrypted.json";
+        
+        // Clean up any existing test files
+        std::remove(testConfigPath_.c_str());
+        std::remove(testEncryptedPath_.c_str());
+    }
+    
+    void TearDown() override {
+        // Clean up test files
+        std::remove(testConfigPath_.c_str());
+        std::remove(testEncryptedPath_.c_str());
+    }
+    
+    String testConfigPath_;
+    String testEncryptedPath_;
+};
+
+TEST_F(ConfigTest, Initialization) {
+    ConfigManager& config = ConfigManager::getInstance();
+    
+    auto result = config.initialize(testConfigPath_, false);
+    EXPECT_TRUE(result.HasValue());
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetAndGetBool) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    auto setResult = config.setBool("test.bool_value", true);
+    EXPECT_TRUE(setResult.HasValue());
+    
+    Bool value = config.getBool("test.bool_value");
+    EXPECT_TRUE(value);
+    
+    Bool defaultValue = config.getBool("test.nonexistent", false);
+    EXPECT_FALSE(defaultValue);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetAndGetInt) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    auto setResult = config.setInt("test.int_value", 12345);
+    EXPECT_TRUE(setResult.HasValue());
+    
+    Int64 value = config.getInt("test.int_value");
+    EXPECT_EQ(value, 12345);
+    
+    Int64 defaultValue = config.getInt("test.nonexistent", 999);
+    EXPECT_EQ(defaultValue, 999);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetAndGetDouble) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    auto setResult = config.setDouble("test.double_value", 3.14159);
+    EXPECT_TRUE(setResult.HasValue());
+    
+    Double value = config.getDouble("test.double_value");
+    EXPECT_NEAR(value, 3.14159, 0.00001);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetAndGetString) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    auto setResult = config.setString("test.string_value", "Hello, World!");
+    EXPECT_TRUE(setResult.HasValue());
+    
+    String value = config.getString("test.string_value");
+    EXPECT_EQ(value, "Hello, World!");
+    
+    String defaultValue = config.getString("test.nonexistent", "default");
+    EXPECT_EQ(defaultValue, "default");
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, HierarchicalKeys) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    config.setInt("network.port", 8080);
+    config.setString("network.interface", "eth0");
+    config.setBool("network.enabled", true);
+    
+    EXPECT_EQ(config.getInt("network.port"), 8080);
+    EXPECT_EQ(config.getString("network.interface"), "eth0");
+    EXPECT_TRUE(config.getBool("network.enabled"));
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, KeyExistence) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    config.setInt("test.value", 123);
+    
+    EXPECT_TRUE(config.exists("test.value"));
+    EXPECT_FALSE(config.exists("test.nonexistent"));
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SaveAndLoad) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Set values
+    config.setInt("network.port", 8080);
+    config.setString("database.host", "localhost");
+    config.setBool("logging.enabled", true);
+    
+    // Save
+    auto saveResult = config.save();
+    EXPECT_TRUE(saveResult.HasValue());
+    
+    // Verify file was created
+    std::ifstream file(testConfigPath_);
+    EXPECT_TRUE(file.good());
+    file.close();
+    
+    // Clear and reload
+    config.clear();
+    auto loadResult = config.load();
+    EXPECT_TRUE(loadResult.HasValue());
+    
+    // Verify values
+    EXPECT_EQ(config.getInt("network.port"), 8080);
+    EXPECT_EQ(config.getString("database.host"), "localhost");
+    EXPECT_TRUE(config.getBool("logging.enabled"));
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, BackupAndRollback) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Set initial value
+    config.setInt("test.value", 100);
+    EXPECT_EQ(config.getInt("test.value"), 100);
+    
+    // Create backup
+    auto backupResult = config.createBackup();
+    EXPECT_TRUE(backupResult.HasValue());
+    
+    // Modify value
+    config.setInt("test.value", 200);
+    EXPECT_EQ(config.getInt("test.value"), 200);
+    
+    // Rollback
+    auto rollbackResult = config.rollback();
+    EXPECT_TRUE(rollbackResult.HasValue());
+    
+    // Verify restored value
+    EXPECT_EQ(config.getInt("test.value"), 100);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, ChangeCallback) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    Bool callbackTriggered = false;
+    String capturedKey;
+    Int64 capturedNewValue = 0;
+    
+    auto callback = [&](const String& key, const ConfigValue& /* oldValue */, const ConfigValue& newValue) {
+        callbackTriggered = true;
+        capturedKey = key;
+        capturedNewValue = newValue.asInt();
+    };
+    
+    // Register callback for network keys
+    UInt32 callbackId = config.registerChangeCallback("network", callback);
+    
+    // Modify a network key
+    config.setInt("network.port", 9090);
+    
+    EXPECT_TRUE(callbackTriggered);
+    EXPECT_EQ(capturedKey, "network.port");
+    EXPECT_EQ(capturedNewValue, 9090);
+    
+    // Unregister callback
+    config.unregisterChangeCallback(callbackId);
+    
+    // Reset flag
+    callbackTriggered = false;
+    
+    // Modify again - callback should not be triggered
+    config.setInt("network.port", 8080);
+    EXPECT_FALSE(callbackTriggered);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, Metadata) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, true);  // Enable security to generate CRC and timestamp
+    
+    config.setInt("test.value", 123);
+    config.save();
+    
+    ConfigMetadata metadata = config.getMetadata();
+    
+    EXPECT_GT(metadata.version, 0u);
+    EXPECT_FALSE(metadata.crc.empty());
+    EXPECT_FALSE(metadata.timestamp.empty());
+    EXPECT_FALSE(metadata.encrypted);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, JsonExport) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    config.setInt("network.port", 8080);
+    config.setString("database.host", "localhost");
+    config.setBool("logging.enabled", true);
+    
+    String json = config.toJson(true);
+    
+    EXPECT_FALSE(json.empty());
+    EXPECT_NE(json.find("network"), String::npos);
+    EXPECT_NE(json.find("database"), String::npos);
+    EXPECT_NE(json.find("logging"), String::npos);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, ConfigValueTypes) {
+    ConfigValue boolVal(true);
+    EXPECT_TRUE(boolVal.isBool());
+    EXPECT_TRUE(boolVal.asBool());
+    
+    ConfigValue intVal(static_cast<Int64>(42));
+    EXPECT_TRUE(intVal.isInt());
+    EXPECT_EQ(intVal.asInt(), 42);
+    
+    ConfigValue doubleVal(3.14);
+    EXPECT_TRUE(doubleVal.isDouble());
+    EXPECT_NEAR(doubleVal.asDouble(), 3.14, 0.001);
+    
+    ConfigValue stringVal("test");
+    EXPECT_TRUE(stringVal.isString());
+    EXPECT_EQ(stringVal.asString(), "test");
+    
+    ConfigValue nullVal;
+    EXPECT_TRUE(nullVal.isNull());
+}
+
+TEST_F(ConfigTest, ConfigValueArray) {
+    ConfigValue arrayVal;
+    arrayVal.append(ConfigValue(static_cast<Int64>(1)));
+    arrayVal.append(ConfigValue(static_cast<Int64>(2)));
+    arrayVal.append(ConfigValue(static_cast<Int64>(3)));
+    
+    EXPECT_TRUE(arrayVal.isArray());
+    EXPECT_EQ(arrayVal.arraySize(), 3u);
+    EXPECT_EQ(arrayVal[0].asInt(), 1);
+    EXPECT_EQ(arrayVal[1].asInt(), 2);
+    EXPECT_EQ(arrayVal[2].asInt(), 3);
+}
+
+TEST_F(ConfigTest, ConfigValueObject) {
+    ConfigValue objVal;
+    objVal["name"] = ConfigValue("test");
+    objVal["value"] = ConfigValue(static_cast<Int64>(123));
+    objVal["enabled"] = ConfigValue(true);
+    
+    EXPECT_TRUE(objVal.isObject());
+    EXPECT_TRUE(objVal.hasKey("name"));
+    EXPECT_TRUE(objVal.hasKey("value"));
+    EXPECT_TRUE(objVal.hasKey("enabled"));
+    EXPECT_FALSE(objVal.hasKey("nonexistent"));
+    
+    EXPECT_EQ(objVal["name"].asString(), "test");
+    EXPECT_EQ(objVal["value"].asInt(), 123);
+    EXPECT_TRUE(objVal["enabled"].asBool());
+}
+
+// Note: Encryption tests require OpenSSL and proper key management
+// Uncomment when encryption is fully implemented and tested
+/*
+TEST_F(ConfigTest, EncryptedSaveAndLoad) {
+    ConfigManager& config = ConfigManager::getInstance();
+    
+    // 32-byte key for AES-256
+    String key = "12345678901234567890123456789012";
+    
+    auto initResult = config.initialize(testEncryptedPath_, true, key);
+    EXPECT_TRUE(initResult.HasValue());
+    
+    config.setString("secure.password", "super-secret");
+    config.setString("secure.api_key", "key-12345");
+    
+    auto saveResult = config.save();
+    EXPECT_TRUE(saveResult.HasValue());
+    
+    // Clear and reload
+    config.clear();
+    auto loadResult = config.load();
+    EXPECT_TRUE(loadResult.HasValue());
+    
+    EXPECT_EQ(config.getString("secure.password"), "super-secret");
+    EXPECT_EQ(config.getString("secure.api_key"), "key-12345");
+    
+    config.clear();
+}
+*/
+
+// main() is defined in test_main.cpp for all unit tests
+// int main(int argc, char** argv) {
+//     ::testing::InitGoogleTest(&argc, argv);
+//     return RUN_ALL_TESTS();
+// }
+

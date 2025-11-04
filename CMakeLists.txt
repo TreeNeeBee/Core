@@ -220,16 +220,9 @@ if(ENABLE_BUILD_EXAMPLES)
     add_core_example(test_memory_allocator test_memory_allocator.cpp)
     add_core_example(test_memory_allocator_debug test_memory_allocator_debug.cpp)
     
-    # Configuration Examples
-    add_core_example(config_example_v4 config_example_v4.cpp 
+    # Configuration Example (simplified)
+    add_core_example(config_example config_example.cpp 
         Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
-    add_core_example(config_verification_test config_verification_test.cpp 
-        Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
-    add_core_example(config_update_policy_test config_update_policy_test.cpp 
-        Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
-    add_core_example(test_default_policy_load test_default_policy_load.cpp 
-        Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
-    add_core_example(test_auto_update_policy test_auto_update_policy.cpp)
     
     # Core Classes Examples
     add_core_example(test_dynamic_magic test_dynamic_magic.cpp)

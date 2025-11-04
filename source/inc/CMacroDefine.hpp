@@ -19,13 +19,12 @@
 #ifndef LAP_CORE_MACRODEFINE_HPP
 #define LAP_CORE_MACRODEFINE_HPP
 
-// Internal logging macro
-// Enable by defining __INNER_LOG_ENABLE at compile time to emit logs to stderr via fprintf
+// Define INNER_CORE_LOG outside of namespaces to access global std
 #ifdef __INNER_LOG_ENABLE
 #include <cstdio>
 // Accept one or more arguments and forward directly to fprintf.
 // Using a single variadic pack avoids warnings when no extra args are provided.
-#define INNER_CORE_LOG(...) do { ::std::fprintf(stderr, __VA_ARGS__); } while(0)
+#define INNER_CORE_LOG(...) do { std::fprintf(stderr, __VA_ARGS__); } while(0)
 #else
 #define INNER_CORE_LOG(...) do { } while(0)
 #endif
@@ -34,6 +33,7 @@ namespace lap
 {
 namespace core
 {
+
     #ifndef UNUSED
     #define UNUSED( X )                             ( void )( X )
     #endif

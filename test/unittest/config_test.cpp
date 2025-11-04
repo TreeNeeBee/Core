@@ -5,8 +5,17 @@
  */
 
 #include <gtest/gtest.h>
-#include "CConfig.hpp"
 #include <fstream>
+
+// For unit testing: redefine private to public to access private methods
+// MUST be placed after system headers but before target headers
+#define private public
+#define protected public
+
+#include "CConfig.hpp"
+
+#undef private
+#undef protected
 
 using namespace lap::core;
 
@@ -137,7 +146,7 @@ TEST_F(ConfigTest, SaveAndLoad) {
     config.setString("database.host", "localhost");
     config.setBool("logging.enabled", true);
     
-    // Save
+    // Note: save() is private but accessible in unit test via #define private public
     auto saveResult = config.save();
     EXPECT_TRUE(saveResult.HasValue());
     
@@ -227,7 +236,9 @@ TEST_F(ConfigTest, Metadata) {
     config.initialize(testConfigPath_, true);  // Enable security to generate CRC and timestamp
     
     config.setInt("test.value", 123);
-    config.save();
+    // Use private access to call save() before getting metadata
+    auto saveResult = config.save(true);
+    EXPECT_TRUE(saveResult.HasValue());
     
     ConfigMetadata metadata = config.getMetadata();
     
@@ -308,39 +319,309 @@ TEST_F(ConfigTest, ConfigValueObject) {
     EXPECT_TRUE(objVal["enabled"].asBool());
 }
 
-// Note: Encryption tests require OpenSSL and proper key management
-// Uncomment when encryption is fully implemented and tested
-/*
+// ============================================================================
+// Update Policy Tests (moved from examples)
+// ============================================================================
+
+TEST_F(ConfigTest, DefaultUpdatePolicy) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Module without explicit policy should use default (on_change)
+    auto policy = config.getModuleUpdatePolicy("newModule");
+    EXPECT_EQ(policy, ConfigManager::UpdatePolicy::kOnChangeUpdate);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetModuleUpdatePolicy) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Set different policies
+    auto result1 = config.setModuleUpdatePolicy("modA", ConfigManager::UpdatePolicy::kFirstUpdate);
+    EXPECT_TRUE(result1.HasValue());
+    
+    auto result2 = config.setModuleUpdatePolicy("modB", ConfigManager::UpdatePolicy::kAlwaysUpdate);
+    EXPECT_TRUE(result2.HasValue());
+    
+    auto result3 = config.setModuleUpdatePolicy("modC", ConfigManager::UpdatePolicy::kNoUpdate);
+    EXPECT_TRUE(result3.HasValue());
+    
+    // Verify policies
+    EXPECT_EQ(config.getModuleUpdatePolicy("modA"), ConfigManager::UpdatePolicy::kFirstUpdate);
+    EXPECT_EQ(config.getModuleUpdatePolicy("modB"), ConfigManager::UpdatePolicy::kAlwaysUpdate);
+    EXPECT_EQ(config.getModuleUpdatePolicy("modC"), ConfigManager::UpdatePolicy::kNoUpdate);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetModuleUpdatePolicyByString) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    auto result1 = config.setModuleUpdatePolicy("modA", "first");
+    EXPECT_TRUE(result1.HasValue());
+    
+    auto result2 = config.setModuleUpdatePolicy("modB", "always");
+    EXPECT_TRUE(result2.HasValue());
+    
+    auto result3 = config.setModuleUpdatePolicy("modC", "none");
+    EXPECT_TRUE(result3.HasValue());
+    
+    auto result4 = config.setModuleUpdatePolicy("modD", "on_change");
+    EXPECT_TRUE(result4.HasValue());
+    
+    // Invalid policy string
+    auto result5 = config.setModuleUpdatePolicy("modE", "invalid");
+    EXPECT_FALSE(result5.HasValue());
+    
+    // Verify
+    EXPECT_EQ(config.getModuleUpdatePolicy("modA"), ConfigManager::UpdatePolicy::kFirstUpdate);
+    EXPECT_EQ(config.getModuleUpdatePolicy("modB"), ConfigManager::UpdatePolicy::kAlwaysUpdate);
+    EXPECT_EQ(config.getModuleUpdatePolicy("modC"), ConfigManager::UpdatePolicy::kNoUpdate);
+    EXPECT_EQ(config.getModuleUpdatePolicy("modD"), ConfigManager::UpdatePolicy::kOnChangeUpdate);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, ModuleConfigJson) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Set module config
+    nlohmann::json moduleConfig;
+    moduleConfig["host"] = "localhost";
+    moduleConfig["port"] = 8080;
+    moduleConfig["enabled"] = true;
+    
+    auto result = config.setModuleConfigJson("database", moduleConfig);
+    EXPECT_TRUE(result.HasValue());
+    
+    // Get module config
+    nlohmann::json retrieved = config.getModuleConfigJson("database");
+    EXPECT_EQ(retrieved["host"], "localhost");
+    EXPECT_EQ(retrieved["port"], 8080);
+    EXPECT_TRUE(retrieved["enabled"]);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, SetModuleConfigJsonUpdatesPolicy) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    nlohmann::json moduleConfig;
+    moduleConfig["value"] = 123;
+    
+    config.setModuleConfigJson("testModule", moduleConfig);
+    
+    // Should auto-set policy to default (on_change)
+    auto policy = config.getModuleUpdatePolicy("testModule");
+    EXPECT_EQ(policy, ConfigManager::UpdatePolicy::kOnChangeUpdate);
+    
+    config.clear();
+}
+
+// ============================================================================
+// Verification Tests (moved from examples)
+// ============================================================================
+
+
+TEST_F(ConfigTest, SkipVerificationOnLoad) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, true);
+    
+    // Set some data
+    config.setInt("test.value", 12345);
+    config.setString("test.name", "verification_test");
+    
+    // Save using private method (accessible via #define private public)
+    auto saveResult = config.save(true);
+    EXPECT_TRUE(saveResult.HasValue());
+    
+    // Clear and reload with skipVerification=true
+    config.clear();
+    config.initialize(testConfigPath_, true);
+    auto loadResult = config.load(true);  // Skip verification
+    EXPECT_TRUE(loadResult.HasValue());
+    
+    EXPECT_EQ(config.getInt("test.value"), 12345);
+    EXPECT_EQ(config.getString("test.name"), "verification_test");
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, VerificationWithCorrectHMAC) {
+    ConfigManager& config = ConfigManager::getInstance();
+    
+    // Set HMAC secret
+    setenv("HMAC_SECRET", "test-secret-key-32-bytes-long!", 1);
+    
+    config.initialize(testConfigPath_, true);
+    config.setInt("secure.value", 9999);
+    
+    // Save using private method (accessible via #define private public)
+    auto saveResult = config.save(true);
+    EXPECT_TRUE(saveResult.HasValue());
+    
+    // Clear and reload with verification
+    config.clear();
+    config.initialize(testConfigPath_, true);
+    auto loadResult = config.load(false);  // Enforce verification
+    EXPECT_TRUE(loadResult.HasValue());
+    
+    EXPECT_EQ(config.getInt("secure.value"), 9999);
+    
+    config.clear();
+    unsetenv("HMAC_SECRET");
+}
+
+// Test private save() method directly
+TEST_F(ConfigTest, PrivateSaveMethod) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, true);
+    
+    config.setInt("test.value", 42);
+    
+    // Access private save() method
+    auto result = config.save(true);
+    EXPECT_TRUE(result.HasValue());
+    
+    // Verify file was created
+    std::ifstream file(testConfigPath_);
+    EXPECT_TRUE(file.good());
+    file.close();
+    
+    config.clear();
+}
+
+// Test private member variables
+TEST_F(ConfigTest, PrivateMemberAccess) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    config.setInt("test.value", 100);
+    
+    // Access private members directly
+    EXPECT_FALSE(config.configData_.empty());
+    EXPECT_TRUE(config.initialized_);
+    EXPECT_EQ(config.configPath_, testConfigPath_);
+    
+    config.clear();
+}
+
+// Test internal CRC computation
+TEST_F(ConfigTest, InternalCrcComputation) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, true);
+    
+    config.setInt("test.value", 123);
+    
+    // Access private computeCrc32 method
+    String testData = "test data for CRC";
+    UInt32 crc = config.computeCrc32(testData);
+    EXPECT_GT(crc, 0u);
+    
+    // Same data should produce same CRC
+    UInt32 crc2 = config.computeCrc32(testData);
+    EXPECT_EQ(crc, crc2);
+    
+    // Different data should produce different CRC
+    String differentData = "different test data";
+    UInt32 crc3 = config.computeCrc32(differentData);
+    EXPECT_NE(crc, crc3);
+    
+    config.clear();
+}
+
+// Test internal policy refresh
+TEST_F(ConfigTest, InternalPolicyRefresh) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Set some module configs
+    nlohmann::json modConfig;
+    modConfig["value"] = 1;
+    config.setModuleConfigJson("testMod", modConfig);
+    
+    // Access private method to refresh policies
+    config.refreshPoliciesFromConfigLocked();
+    
+    // Verify policies were loaded
+    auto policy = config.getModuleUpdatePolicy("testMod");
+    EXPECT_EQ(policy, ConfigManager::UpdatePolicy::kOnChangeUpdate);
+    
+    config.clear();
+}
+
+// Test module CRC computation
+TEST_F(ConfigTest, ModuleCrcComputation) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    nlohmann::json moduleData;
+    moduleData["key1"] = "value1";
+    moduleData["key2"] = 42;
+    
+    // Access private computeModuleCrcLocked method
+    UInt32 crc = config.computeModuleCrcLocked(moduleData);
+    EXPECT_GT(crc, 0u);
+    
+    // Same data should produce same CRC
+    UInt32 crc2 = config.computeModuleCrcLocked(moduleData);
+    EXPECT_EQ(crc, crc2);
+    
+    config.clear();
+}
+
+TEST_F(ConfigTest, Base64Encoding) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+    
+    // Set data
+    config.setString("secret.data", "sensitive information");
+    
+    // Enable Base64 encoding
+    config.setBase64Encoding(true);
+    EXPECT_TRUE(config.isBase64Enabled());
+    
+    // Disable Base64
+    config.setBase64Encoding(false);
+    EXPECT_FALSE(config.isBase64Enabled());
+    
+    config.clear();
+}
+
 TEST_F(ConfigTest, EncryptedSaveAndLoad) {
     ConfigManager& config = ConfigManager::getInstance();
     
-    // 32-byte key for AES-256
-    String key = "12345678901234567890123456789012";
+    // Set HMAC secret for security
+    setenv("HMAC_SECRET", "test-encryption-key-32-bytes-!", 1);
     
-    auto initResult = config.initialize(testEncryptedPath_, true, key);
-    EXPECT_TRUE(initResult.HasValue());
+    config.initialize(testEncryptedPath_, true);
     
     config.setString("secure.password", "super-secret");
     config.setString("secure.api_key", "key-12345");
     
-    auto saveResult = config.save();
+    // Enable Base64 encoding for sensitive data
+    config.setBase64Encoding(true);
+    EXPECT_TRUE(config.isBase64Enabled());
+    
+    // Use private access to save
+    auto saveResult = config.save(true);
     EXPECT_TRUE(saveResult.HasValue());
     
     // Clear and reload
     config.clear();
-    auto loadResult = config.load();
+    config.initialize(testEncryptedPath_, true);
+    auto loadResult = config.load(false);  // Enforce verification
     EXPECT_TRUE(loadResult.HasValue());
     
     EXPECT_EQ(config.getString("secure.password"), "super-secret");
     EXPECT_EQ(config.getString("secure.api_key"), "key-12345");
     
     config.clear();
+    unsetenv("HMAC_SECRET");
 }
-*/
-
-// main() is defined in test_main.cpp for all unit tests
-// int main(int argc, char** argv) {
-//     ::testing::InitGoogleTest(&argc, argv);
-//     return RUN_ALL_TESTS();
-// }
 

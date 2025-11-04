@@ -289,14 +289,6 @@ public:
     Result<void, ConfigErrc> load(Bool skipVerification = false);
 
     /**
-     * @brief Save configuration to file with security fields
-     * Flow: dump core → compute CRC/timestamp/HMAC → add private fields → save
-     * @param enableSecurity If false, skip security field generation (for initial creation)
-     * @return Result indicating success or error
-     */
-    Result<void, ConfigErrc> save(Bool enableSecurity = true);
-
-    /**
      * @brief Create backup of current configuration
      * @return Result indicating success or error
      */
@@ -447,6 +439,15 @@ private:
     ~ConfigManager();
     ConfigManager(const ConfigManager&) = delete;
     ConfigManager& operator=(const ConfigManager&) = delete;
+
+    /**
+     * @brief Save configuration to file with security fields (RAII - called in destructor)
+     * Flow: dump core → compute CRC/timestamp/HMAC → add private fields → save
+     * @param enableSecurity If false, skip security field generation (for initial creation)
+     * @return Result indicating success or error
+     * @note This method is private and automatically called in destructor
+     */
+    Result<void, ConfigErrc> save(Bool enableSecurity = true);
 
     // Internal storage (using nlohmann::json)
     nlohmann::json configData_;          // JSON object (core data)

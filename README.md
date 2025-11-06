@@ -4,7 +4,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](../../)
 [![Tests](https://img.shields.io/badge/tests-294%2F294-brightgreen.svg)](test/)
 [![AUTOSAR](https://img.shields.io/badge/AUTOSAR-AP%20R23--11-orange.svg)](https://www.autosar.org/)
-[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Core** provides fundamental building blocks for the LightAP middleware platform, offering AUTOSAR Adaptive Platform compliant APIs for memory management, configuration, synchronization, and functional programming utilities.
 
@@ -597,9 +597,31 @@ cmake --build . -j$(nproc) -- VERBOSE=1
 
 ## 📄 License
 
-Copyright © 2025 LightAP Project Contributors. All rights reserved.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-This software is proprietary and confidential. Unauthorized copying, distribution, or modification is strictly prohibited.
+```
+MIT License
+
+Copyright (c) 2025 LightAP Project
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ---
 
@@ -628,7 +650,7 @@ For bug reports, feature requests, or technical support:
 **Version**: 1.0.0  
 **AUTOSAR Compliance**: Adaptive Platform R23-11  
 **Build System**: CMake 3.10+, BuildTemplate v1.1.0  
-**Last Updated**: November 3, 2025
+**Last Updated**: November 7, 2025
 
 ---
 

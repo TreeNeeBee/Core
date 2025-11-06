@@ -150,6 +150,24 @@ namespace core
     template <typename T>
     using WeakHandle            = ::std::weak_ptr< T >;
 
+    /**
+     * @brief Create unique pointer (wrapper for std::make_unique)
+     */
+    template <typename T, typename... Args>
+    inline UniqueHandle<T> MakeUnique(Args&&... args)
+    {
+        return ::std::make_unique<T>(::std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Create shared pointer (wrapper for std::make_shared)
+     */
+    template <typename T, typename... Args>
+    inline SharedHandle<T> MakeShared(Args&&... args)
+    {
+        return ::std::make_shared<T>(::std::forward<Args>(args)...);
+    }
+
 } // core
 } // lap
 

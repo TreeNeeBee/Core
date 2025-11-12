@@ -10,7 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include "CLockFreeQueue.hpp"
-#include "CMemoryAllocator.hpp"
+#include "CMemory.hpp"
 #include "CMemory.hpp"
 
 using namespace lap::core;
@@ -18,7 +18,7 @@ using namespace lap::core;
 class LockFreeQueueTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Memory subsystem is initialized via MemManager singleton automatically
+        // Memory subsystem is initialized via MemoryManager singleton automatically
     }
 
     void TearDown() override {
@@ -68,9 +68,10 @@ TEST_F(LockFreeQueueTest, SingleElement) {
     EXPECT_FALSE(queue.dequeue(val));
 }
 
-// Test with custom allocator (MemoryAllocator)
+// Test with custom allocator (StlMemoryAllocator)
+#include "CMemory.hpp"
 TEST_F(LockFreeQueueTest, CustomAllocator) {
-    LockFreeQueue<int, MemoryAllocator<int>> queue;
+    LockFreeQueue<int, ::lap::core::StlMemoryAllocator<int>> queue;
     
     // Enqueue values
     for (int i = 0; i < 10; ++i) {
@@ -383,9 +384,9 @@ TEST_F(LockFreeQueueTest, PerformanceBenchmark) {
               << duration.count() << " microseconds" << std::endl;
 }
 
-// Test with MemoryAllocator integration
+// Test with StlMemoryAllocator integration
 TEST_F(LockFreeQueueTest, MemoryAllocatorIntegration) {
-    LockFreeQueue<int, MemoryAllocator<int>> queue;
+    LockFreeQueue<int, ::lap::core::StlMemoryAllocator<int>> queue;
     
     const int count = 100;
     

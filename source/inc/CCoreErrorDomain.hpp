@@ -33,7 +33,10 @@ namespace core
     {
         kInvalidArgument            = 22,
         kInvalidMetaModelShortname  = 137,
-        kInvalidMetaModelPath       = 138
+        kInvalidMetaModelPath       = 138,
+        kAlreadyInitialized         = 139,  // Platform already initialized
+        kNotInitialized             = 140,  // Platform not initialized
+        kInternalError              = 141   // Internal initialization error
     };
 
     inline constexpr const Char* CoreErrMessage( CoreErrc errCode )
@@ -47,6 +50,12 @@ namespace core
             return "Given string is not a valid model element shortname";
         case CoreErrc::kInvalidMetaModelPath:
             return "Missing or invalid path to model element";
+        case CoreErrc::kAlreadyInitialized:
+            return "Platform is already initialized";
+        case CoreErrc::kNotInitialized:
+            return "Platform is not initialized";
+        case CoreErrc::kInternalError:
+            return "Internal error during initialization/de-initialization";
         default:
             return "Unknown error";
         }

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include "CMemory.hpp"
 #include "CConfig.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 using namespace std::chrono;
@@ -291,12 +292,20 @@ void printSummary(const std::vector<std::pair<int, PerformanceStats>>& sysResult
 int main() {
     printHeader();
     
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    
     // Initialize memory manager with 8-byte alignment
     ConfigManager& configMgr = ConfigManager::getInstance();
     nlohmann::json config = configMgr.getModuleConfigJson("memory");
     config["align"] = 8;
     configMgr.setModuleConfigJson("memory", config);
-    MemManager::getInstance()->initialize();
+    MemoryManager::getInstance()->uninitialize();
+    MemoryManager::getInstance()->initialize();
     
     std::vector<std::pair<int, PerformanceStats>> sysResults, poolResults;
     
@@ -318,6 +327,10 @@ int main() {
     printSummary(sysResults, poolResults);
     
     std::cout << "\n";
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return 0;
 }

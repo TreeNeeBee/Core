@@ -235,6 +235,8 @@ if(ENABLE_BUILD_EXAMPLES)
     
     # AUTOSAR Examples
     add_core_example(abort_example abort_example.cpp)
+    add_core_example(simple_init_test simple_init_test.cpp)
+    add_core_example(initialization_example initialization_example.cpp)
 endif()
 
 # ==============================================================================

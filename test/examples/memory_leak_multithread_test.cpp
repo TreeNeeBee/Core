@@ -7,6 +7,7 @@
 
 #include "CMemory.hpp"
 #include "CConfig.hpp"
+#include "CInitialization.hpp"
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -101,7 +102,7 @@ void workerPattern1(int threadId) {
     // Register thread name
     std::ostringstream oss;
     oss << "Worker-P1-" << threadId;
-    MemManager::getInstance()->registerThreadName(
+    MemoryManager::getInstance()->registerThreadName(
         static_cast<uint32_t>(std::hash<std::thread::id>{}(std::this_thread::get_id())),
         oss.str()
     );
@@ -168,7 +169,7 @@ void workerPattern2(int threadId) {
     // Register thread name
     std::ostringstream oss;
     oss << "Worker-P2-" << threadId;
-    MemManager::getInstance()->registerThreadName(
+    MemoryManager::getInstance()->registerThreadName(
         static_cast<uint32_t>(std::hash<std::thread::id>{}(std::this_thread::get_id())),
         oss.str()
     );
@@ -267,7 +268,7 @@ void workerPattern3(int threadId) {
     // Register thread name
     std::ostringstream oss;
     oss << "Worker-P3-" << threadId;
-    MemManager::getInstance()->registerThreadName(
+    MemoryManager::getInstance()->registerThreadName(
         static_cast<uint32_t>(std::hash<std::thread::id>{}(std::this_thread::get_id())),
         oss.str()
     );
@@ -382,16 +383,27 @@ int main() {
     std::cout << "==== Multi-threaded Memory Leak Test ====" << std::endl;
     std::cout << "Testing memory allocation/deallocation in concurrent environment\n" << std::endl;
     
-    // Configure memory module to enable checker BEFORE initialization
+    // AUTOSAR-compliant initialization (includes MemoryManager and ConfigManager)
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    
+    // Note: Memory checker configuration should ideally be set via config.json before
+    // the program starts. Here we set it programmatically after init for test purposes.
     std::string memConfig = R"({"check_enable": true, "pools": []})";
     ConfigManager::getInstance().setModuleConfig("memory", memConfig);
     
-    // Initialize memory manager
-    MemManager::getInstance()->initialize();
+    // Re-initialize memory checker with new configuration
+    if (MemoryManager::getInstance()->hasMemoryTracker()) {
+        MemoryManager::getInstance()->uninitialize();
+    }
+    MemoryManager::getInstance()->initialize();
     
-    if (!MemManager::getInstance()->hasMemChecker()) {
+    if (!MemoryManager::getInstance()->hasMemoryTracker()) {
         std::cout << "\n[NOTE] Memory checker not enabled - leak detection limited" << std::endl;
-        std::cout << "[TIP] Create memory_config.json with check_enable:true for full leak tracking\n" << std::endl;
+        std::cout << "[TIP] Create config.json with check_enable:true for full leak tracking\n" << std::endl;
     }
     
     // Test Pattern 1: Immediate free
@@ -445,9 +457,9 @@ int main() {
     // Print statistics
     printStatistics();
     
-    // Get memory statistics from MemManager
-    std::cout << "\n=== MemManager Statistics ===" << std::endl;
-    auto memStats = MemManager::getInstance()->getMemoryStats();
+    // Get memory statistics from MemoryManager
+    std::cout << "\n=== MemoryManager Statistics ===" << std::endl;
+    auto memStats = MemoryManager::getInstance()->getMemoryStats();
     
     std::cout << "Current Alloc Count: " << memStats.currentAllocCount << std::endl;
     std::cout << "Current Alloc Size:  " << memStats.currentAllocSize << " bytes" << std::endl;
@@ -463,13 +475,18 @@ int main() {
         std::cout << "[LEAK] " << memStats.currentAllocSize << " bytes leaked" << std::endl;
         hasLeaks = true;
         
-        // Generate detailed leak report
+        // Generate detailed report
         std::cout << "\nDetailed leak report:" << std::endl;
-        MemManager::getInstance()->outputState();
+        MemoryManager::getInstance()->outputState();
     } else {
         std::cout << "[OK] No memory leaks detected (current alloc count = 0)" << std::endl;
     }
     
     std::cout << "\n==== Test Complete ====" << std::endl;
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
+    
     return hasLeaks ? 1 : 0;
 }

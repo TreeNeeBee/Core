@@ -10,6 +10,7 @@
 #include "CMemory.hpp"
 #include "CTimer.hpp"
 #include "CSync.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 
@@ -106,9 +107,13 @@ void printMemoryStats(const char* label) {
 int main() {
     std::cout << "=== Core Classes Memory Tracking Test ===\n\n";
     
-    // Initialize MemManager with checker enabled
-    MemManager::getInstance()->initialize();
-    std::cout << "[Info] MemManager initialized\n\n";
+    // AUTOSAR-compliant initialization (includes MemoryManager)
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    std::cout << "[Info] Core initialized\n\n";
     
     printMemoryStats("Initial State");
     
@@ -212,11 +217,12 @@ int main() {
     
     // Final state
     std::cout << "=== Final Memory State ===\n";
-    MemManager::getInstance()->outputState(0);
+    MemoryManager::getInstance()->outputState(0);
     
-    // Uninitialize and save config (this will also generate leak report)
-    MemManager::getInstance()->uninitialize();
-    std::cout << "\n[Info] MemManager uninitialized and configuration saved\n";
+    // AUTOSAR-compliant deinitialization (includes MemoryManager cleanup and leak report)
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
+    std::cout << "\n[Info] Core deinitialized and configuration saved\n";
     
     std::cout << "\n=== Test Completed ===\n";
     std::cout << "Check memory_leak.log for leak report\n";

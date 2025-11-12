@@ -39,6 +39,12 @@ namespace core
     // to undefined behavior.
     Result<void> Initialize () noexcept;
 
+    // Initializes data structures and threads of the AUTOSAR Adaptive Runtime, processing command-line arguments.
+    // This overload allows the platform to extract and process ARA-specific command line arguments.
+    // The relevant arguments will be removed transparently by this function.
+    // See AUTOSAR SWS_CORE specification for details.
+    Result<void> Initialize (int& argc, char**& argv) noexcept;
+
     // Destroy all data structures and threads of the AUTOSAR Adaptive Runtime for Applications.
     // After this call, no interaction with the ARA is possible. This call must be made inside of main(),
     // i.e., in a place where it is guaranteed that the static initialization has completed and destruciton

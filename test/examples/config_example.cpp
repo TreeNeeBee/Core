@@ -7,10 +7,18 @@
 
 #include <iostream>
 #include "CConfig.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 
 int main() {
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    
     std::cout << "\n=== ConfigManager Basic Usage Example ===\n\n";
     
     // Get ConfigManager singleton instance
@@ -20,8 +28,8 @@ int main() {
     // 1. Initialize configuration
     // ========================================================================
     std::cout << "1. Initializing configuration...\n";
-    auto initResult = config.initialize("example_config.json", true);
-    if (!initResult.HasValue()) {
+    auto configInitResult = config.initialize("example_config.json", true);
+    if (!configInitResult.HasValue()) {
         std::cerr << "   Failed to initialize\n";
         return 1;
     }
@@ -125,6 +133,10 @@ int main() {
     std::cout << "✓ All configuration operations successful\n";
     std::cout << "✓ Configuration will be auto-saved on program exit (RAII)\n";
     std::cout << "✓ Check 'example_config.json' after program exits\n\n";
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     // Configuration automatically saved by destructor (RAII pattern)
     return 0;

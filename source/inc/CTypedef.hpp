@@ -107,26 +107,32 @@ namespace core
      * @brief Dynamic array container
      * For enhanced features, include CVector.hpp (if available)
      */
-    template < typename T >
-    using Vector                = ::std::vector< T >;
+    template < typename T, typename Alloc = ::std::allocator< T > >
+    using Vector                = ::std::vector< T, Alloc >;
+
+    /**
+     * @brief Pair container (key-value pair)
+     */
+    template < typename T1, typename T2 >
+    using Pair                  = ::std::pair< T1, T2 >;
 
     /**
      * @brief Ordered associative container (key-value pairs)
      */
-    template < typename K, typename V, typename Compare = ::std::less< K > >
-    using Map                   = ::std::map< K, V, Compare >;
+    template < typename K, typename V, typename Compare = ::std::less< K >, typename Alloc = ::std::allocator< ::std::pair< const K, V > > >
+    using Map                   = ::std::map< K, V, Compare, Alloc >;
 
     /**
      * @brief Ordered set container
      */
-    template < typename T, typename Compare = ::std::less< T > >
-    using Set                   = ::std::set< T, Compare >;
+    template < typename T, typename Compare = ::std::less< T >, typename Alloc = ::std::allocator< T > >
+    using Set                   = ::std::set< T, Compare, Alloc >;
 
     /**
      * @brief Unordered associative container (hash map)
      */
-    template < typename K, typename V, typename Hash = ::std::hash< K >, typename KeyEqual = ::std::equal_to< K > >
-    using UnorderedMap          = ::std::unordered_map< K, V, Hash, KeyEqual >;
+    template < typename K, typename V, typename Hash = ::std::hash< K >, typename KeyEqual = ::std::equal_to< K >, typename Alloc = ::std::allocator< ::std::pair< const K, V > > >
+    using UnorderedMap          = ::std::unordered_map< K, V, Hash, KeyEqual, Alloc >;
 
     // ========================================================================
     // Smart Pointer Type Aliases (AUTOSAR SWS_CORE_10xxx)

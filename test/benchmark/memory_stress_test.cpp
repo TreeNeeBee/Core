@@ -5,6 +5,7 @@
 #include <random>
 #include <cstring>
 #include "CMemory.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 
@@ -17,7 +18,7 @@ void workerThread(int threadId, int iterations) {
     // Register thread name
     UInt32 tid = static_cast<UInt32>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
     std::string threadName = "worker-" + std::to_string(threadId);
-    MemManager::getInstance()->registerThreadName(tid, threadName.c_str());
+    MemoryManager::getInstance()->registerThreadName(tid, threadName.c_str());
     
     std::vector<void*> allocations;
     
@@ -53,9 +54,13 @@ void workerThread(int threadId, int iterations) {
 int main() {
     std::cout << "=== Memory Stress Test ===\n\n";
     
-    // Initialize MemManager to load pool configuration
-    MemManager::getInstance()->initialize();
-    std::cout << "[Info] MemManager initialized\n\n";
+    // AUTOSAR-compliant initialization (includes MemoryManager)
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    std::cout << "[Info] Core initialized\n\n";
     
     const int numThreads = 4;
     const int iterationsPerThread = 1000;
@@ -86,12 +91,13 @@ int main() {
     
     // Print memory state
     std::cout << "=== Memory State ===\n";
-    MemManager::getInstance()->outputState(0);
+    MemoryManager::getInstance()->outputState(0);
     
-    // Uninitialize MemManager to save configuration before program exits
-    MemManager::getInstance()->uninitialize();
-    std::cout << "[Info] MemManager uninitialized and configuration saved\n";
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
+    std::cout << "[Info] Core deinitialized and configuration saved\n";
     
-    std::cout << "\n=== Stress Test Completed Successfully ===\n";
+    std::cout << "\n=== Test Completed ===\n";
     return 0;
 }

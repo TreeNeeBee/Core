@@ -1,227 +1,285 @@
 # LightAP Core Module
 
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/std/the-standard)
+[![AUTOSAR](https://img.shields.io/badge/AUTOSAR-AP%20R24--11-orange.svg)](https://www.autosar.org/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](../../)
-[![Tests](https://img.shields.io/badge/tests-294%2F294-brightgreen.svg)](test/)
-[![AUTOSAR](https://img.shields.io/badge/AUTOSAR-AP%20R23--11-orange.svg)](https://www.autosar.org/)
+[![Tests](https://img.shields.io/badge/tests-395%2F397-brightgreen.svg)](test/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Core** provides fundamental building blocks for the LightAP middleware platform, offering AUTOSAR Adaptive Platform compliant APIs for memory management, configuration, synchronization, and functional programming utilities.
+**LightAP Core** is an AUTOSAR Adaptive Platform R24-11 compliant module providing memory management, configuration management, error handling, and synchronization primitives.
+
+English | [中文文档](README_CN.md)
 
 ---
 
-## 🎯 Key Features
+## ✨ Key Features
 
 ### 🧠 Unified Memory Management
-- **Global operator interception** - Transparent pool-based allocation for all `new`/`delete` operations
-- **High-performance pools** - Optimized for small objects (≤1024 bytes) with configurable size classes
-- **Thread-safe** - Lock-free fast paths with minimal contention
-- **Memory tracking** - Built-in leak detection, statistics, and debugging support
-- **STL integration** - Custom allocators for seamless use with Standard Library containers
-- **Dynamic alignment** - Runtime-configurable alignment (1-128 bytes)
+- **AUTOSAR Compliant Initialization** - Complete `Initialize()`/`Deinitialize()` lifecycle
+- **High-Performance Memory Pools** - Optimized pool allocator for small objects (≤1024 bytes)
+- **Global Interception** - Transparent `new`/`delete` override with zero code intrusion
+- **Thread-Safe** - Lock-free fast path with minimal contention
+- **Memory Tracking** - Built-in leak detection, statistics, and debugging
+- **STL Integration** - Seamless `StlMemoryAllocator<T>` support for standard containers
+- **Dynamic Alignment** - Runtime configurable alignment (1/4/8 bytes)
 
-### 🏛️ AUTOSAR Adaptive Platform Compliance
-- **Core types**: `String`, `Vector`, `Map`, `Optional`, `Variant`, `Span`
-- **Functional programming**: `Result<T>`, `ErrorCode`, `ErrorDomain`, `Exception`
-- **Asynchronous operations**: `Future<T>`, `Promise<T>`
-- **Abort handling**: Full compliance with AUTOSAR SWS_CORE_00051-00054
-- **Instance Specifier**: AUTOSAR identifier and path management
+### 🏛️ AUTOSAR Adaptive Platform Types
+- **Core Types**: `String`, `StringView`, `Vector`, `Map`, `Optional`, `Variant`, `Span`
+- **Functional Programming**: `Result<T>`, `ErrorCode`, `ErrorDomain`, `Exception`
+- **Async Operations**: `Future<T>`, `Promise<T>` (supports `then`/`WaitFor`)
+- **Instance Identification**: `InstanceSpecifier` path and identifier management
 
 ### ⚙️ Configuration Management
-- **JSON-based** - Human-readable, schema-free configuration
-- **Type-safe API** - Strongly-typed getters and setters with validation
-- **Metadata support** - `__metadata__` section for security and audit trails
-- **Flexible reload policies** - Hot reload with configurable update strategies
-- **HMAC security** - Optional cryptographic verification (HMAC-SHA256)
-- **Environment integration** - Environment variable substitution and overrides
+- **JSON Format** - Human-readable configuration files
+- **Type-Safe API** - Template-based type checking
+- **Module Isolation** - Separate namespace for each module
+- **Hot Reload** - IMMEDIATE/RESTART reload policies
+- **HMAC Verification** - Optional HMAC-SHA256 integrity check
+- **Environment Variables** - Automatic variable substitution
+- **Auto-Save** - RAII-based automatic configuration persistence
 
-### 🔄 Synchronization Primitives
-- **Mutex** - Standard and recursive locking with RAII support
-- **Event** - Manual/auto-reset event signaling for thread coordination
-- **Semaphore** - Counting semaphore with timeout and try-acquire
-- **Lock-free queue** - High-throughput SPSC/MPMC queue for inter-thread communication
+### 🔒 Synchronization Primitives
+- **Mutex/RecursiveMutex** - Standard and recursive mutex locks
+- **Event** - Manual/automatic reset synchronization events
+- **Semaphore** - Counting semaphores for resource management
+- **Lock-Free Queue** - High-performance SPSC/MPMC queues
 
 ### 🛠️ System Utilities
-- **File & Path** - POSIX-compliant file operations with modern C++ interface
-- **Time & Timer** - High-resolution clocks, durations, and one-shot/periodic timers
-- **Serialization** - Binary serialization for network and storage
-- **Thread tools** - Thread naming, affinity, and management helpers
+- **File Operations** - POSIX-compatible file I/O
+- **Time/Timer** - High-resolution time and timer management
+- **Binary Serialization** - Efficient binary data serialization
+- **Thread Management** - Thread utilities and helpers
 
 ---
 
-## 📦 Quick Start
+## 🚀 Quick Start
 
-### Building within LightAP
+### Prerequisites
+- **Compiler**: GCC 7+ / Clang 6+ / MSVC 2017+
+- **CMake**: 3.16+
+- **C++ Standard**: C++17
+- **Dependencies**: nlohmann/json (included), Google Test (optional), OpenSSL (optional)
+
+### Build and Install
 
 ```bash
-cd /path/to/LightAP
+# Clone repository
+git clone https://github.com/TreeNeeBee/LightAP.git
+cd LightAP/modules/Core
+
+# Build
 mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make lap_core -j$(nproc)
-```
-
-### Standalone Build (with BuildTemplate)
-
-Core can be built independently using BuildTemplate as a Git submodule:
-
-```bash
-# 1. Clone or enter Core repository
-cd /path/to/Core
-
-# 2. Initialize BuildTemplate submodule (SSH)
-git submodule add git@github.com:TreeNeeBee/BuildTemplate.git BuildTemplate
-git submodule update --init --recursive
-
-# 3. Configure and build
-mkdir -p _build && cd _build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j$(nproc)
 
-# 4. Run tests
+# Test
 ./core_test
+./run_all_tests.sh
 
-# 5. Install (optional)
+# Install (optional)
 sudo cmake --install . --prefix /usr/local
 ```
 
-**BuildTemplate Configuration** (`.gitmodules`):
-```ini
-[submodule "BuildTemplate"]
-    path = BuildTemplate
-    url = git@github.com:TreeNeeBee/BuildTemplate.git
-    branch = master
+### Basic Usage
+
+```cpp
+#include "lap/core/CInitialization.hpp"
+#include "lap/core/CMemory.hpp"
+#include "lap/core/CResult.hpp"
+
+int main() {
+    // 1. Initialize (REQUIRED)
+    auto result = lap::core::Initialize();
+    if (!result.HasValue()) {
+        return 1;
+    }
+
+    // 2. Use memory pools
+    void* ptr = lap::core::Memory::malloc(128);
+    lap::core::Memory::free(ptr);
+
+    // 3. Use Result<T> for error handling
+    lap::core::Result<int> value = lap::core::Result<int>::FromValue(42);
+    if (value.HasValue()) {
+        std::cout << "Value: " << value.Value() << "\n";
+    }
+
+    // 4. Cleanup (REQUIRED)
+    lap::core::Deinitialize();
+    return 0;
+}
 ```
 
-### Integration with CMake
+### CMake Integration
 
 ```cmake
-# Find and link lap_core
 find_package(lap_core REQUIRED)
 target_link_libraries(your_target PRIVATE lap::core)
-
-# Or use direct linking in LightAP context
-target_link_libraries(your_target PRIVATE lap_core)
-target_include_directories(your_target PRIVATE 
-    ${CMAKE_SOURCE_DIR}/modules/Core/source/inc
-)
 ```
 
 ---
 
-## 💡 Usage Examples
+## 📚 AUTOSAR Compliance
 
-### Memory Management
+### Initialization Lifecycle (SWS_CORE_15003/15004)
+
+All applications **MUST** call `Initialize()` at startup and `Deinitialize()` before exit:
+
 ```cpp
-#include "CMemory.hpp"
-using namespace lap::core;
+#include "lap/core/CInitialization.hpp"
 
-// Automatic pool-based allocation (transparent)
-auto* obj = new MyClass();  // Routed through Memory pool
-delete obj;                  // Thread-safe deallocation
-
-// STL containers with custom allocator
-Vector<int> vec;            // Uses lap_core memory pool
-vec.push_back(42);
-Map<String, int> map;       // Efficient small-object allocation
-```
-
-### Configuration Management
-```cpp
-#include "CConfig.hpp"
-using namespace lap::core;
-
-auto& config = ConfigManager::getInstance();
-config.initialize("config.json");
-
-// Type-safe accessors with defaults
-int port = config.getInt("server.port", 8080);
-String host = config.getString("server.host", "localhost");
-
-// Setters with immediate persistence
-config.setString("server.status", "running");
-config.save();  // Persist to disk
-```
-
-### AUTOSAR Result Pattern
-```cpp
-#include "CResult.hpp"
-using namespace lap::core;
-
-Result<int> divide(int a, int b) {
-    if (b == 0) {
-        return ErrorCode(ErrorCode::kInvalidArgument, GetCoreErrorDomain());
+int main() {
+    auto result = lap::core::Initialize();
+    if (!result.HasValue()) {
+        return 1;
     }
-    return a / b;
+    
+    // Your application code here
+    
+    lap::core::Deinitialize();
+    return 0;
 }
-
-// Error handling
-auto result = divide(10, 2);
-if (result.HasValue()) {
-    std::cout << "Result: " << result.Value() << std::endl;
-} else {
-    std::cerr << "Error: " << result.Error().Message() << std::endl;
-}
-
-// Monadic composition with LAP_TRY
-LAP_TRY(auto x, divide(10, 2));
-LAP_TRY(auto y, divide(x, 3));
-return y;  // Automatic error propagation
 ```
 
-### Asynchronous Operations
+### Core Types
+
 ```cpp
-#include "CFuture.hpp"
-#include "CPromise.hpp"
-using namespace lap::core;
+// String Types (SWS_CORE_01xxx)
+lap::core::String str = "Hello";
+lap::core::StringView view = str;
 
-// Producer-consumer with Future/Promise
-Promise<int> promise;
-Future<int> future = promise.GetFuture();
-
-std::thread worker([&promise]() {
-    // Simulate work
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    promise.SetValue(42);
-});
-
-// Non-blocking wait with timeout
-auto status = future.WaitFor(std::chrono::seconds(2));
-if (status == FutureStatus::kReady) {
-    int value = future.Get();
-    std::cout << "Result: " << value << std::endl;
+// Optional (SWS_CORE_01301)
+lap::core::Optional<int> opt = 42;
+if (opt.has_value()) {
+    std::cout << opt.value() << "\n";
 }
 
-worker.join();
+// Variant (SWS_CORE_01601)
+lap::core::Variant<int, std::string> var = 42;
+if (lap::core::holds_alternative<int>(var)) {
+    int value = lap::core::get<int>(var);
+}
+
+// Result (SWS_CORE_00701)
+lap::core::Result<int> divide(int a, int b) {
+    if (b == 0) {
+        return lap::core::Result<int>::FromError(
+            lap::core::CoreErrc::kInvalidArgument);
+    }
+    return lap::core::Result<int>::FromValue(a / b);
+}
+
+// Future/Promise (SWS_CORE_00321/00341)
+lap::core::Promise<int> promise;
+lap::core::Future<int> future = promise.get_future();
+promise.set_value(42);
+int value = future.get();
 ```
 
-### Synchronization
+---
+
+## 🧠 Memory Management
+
+### Architecture
+
+- **6 Pool Sizes**: 32, 64, 128, 256, 512, 1024 bytes
+- **O(1) Allocation**: Lock-free fast path
+- **Thread-Safe**: Concurrent allocation support
+- **Automatic Fallback**: System allocator for large objects
+- **Leak Detection**: Built-in tracking and reporting
+
+### Performance
+
+**Memory Stress Test** (4 threads × 1000 operations):
+```
+Total: 4000 operations
+Time:  6 ms
+Throughput: 666,667 ops/sec
+```
+
+**Single Operation Latency** (8-byte allocation):
+```
+malloc:  123.51 ns
+memset:    4.37 ns
+read:     15.23 ns
+free:     56.26 ns
+──────────────────
+Total:   199.36 ns
+```
+
+### Usage Examples
+
 ```cpp
-#include "CSync.hpp"
-using namespace lap::core;
+#include "lap/core/CMemory.hpp"
 
-Mutex mutex;
-Event event;
-Semaphore sem(1);
+// Direct allocation
+void* ptr = lap::core::Memory::malloc(128);
+lap::core::Memory::free(ptr);
 
-// RAII lock guard
+// Aligned allocation
+void* aligned = lap::core::Memory::memalign(16, 128);
+lap::core::Memory::free(aligned);
+
+// Global new/delete (automatic pool usage)
+MyClass* obj = new MyClass();
+delete obj;
+```
+
+### STL Integration
+
+```cpp
+#include "lap/core/CStlMemoryAllocator.hpp"
+#include <vector>
+#include <map>
+
+// Vector with pool allocator
+std::vector<int, lap::core::StlMemoryAllocator<int>> vec;
+vec.push_back(42);
+
+// Map with pool allocator
+std::map<int, std::string, 
+         std::less<int>,
+         lap::core::StlMemoryAllocator<std::pair<const int, std::string>>> map;
+map[1] = "one";
+```
+
+---
+
+## ⚙️ Configuration Management
+
+```cpp
+#include "lap/core/CConfig.hpp"
+
+// Get configuration instance
+auto& config = lap::core::ConfigManager::getInstance();
+
+// Load from file
+config.loadFromFile("config.json");
+
+// Get values
+auto port = config.getValue<int>("server.port");
+auto host = config.getValue<std::string>("server.host");
+
+// Set values
+config.setValue("server.maxConnections", 100);
+
+// Save
+config.saveToFile("config.json");
+```
+
+### Configuration File Format
+
+```json
 {
-    std::lock_guard<Mutex> lock(mutex);
-    // Critical section protected
-}
-
-// Event signaling
-std::thread waiter([&event]() {
-    event.wait();  // Blocks until signaled
-    std::cout << "Event received!" << std::endl;
-});
-
-event.signal();  // Wake up waiter
-waiter.join();
-
-// Semaphore with timeout
-if (sem.try_acquire_for(std::chrono::milliseconds(100))) {
-    // Resource acquired
-    sem.release();
+  "server": {
+    "port": 8080,
+    "host": "localhost",
+    "maxConnections": 100
+  },
+  "logging": {
+    "level": "info",
+    "file": "/var/log/app.log"
+  }
 }
 ```
 
@@ -229,431 +287,208 @@ if (sem.try_acquire_for(std::chrono::milliseconds(100))) {
 
 ## 🧪 Testing
 
-### Run All Unit Tests
+### Test Coverage
+
+- **Unit Tests**: 395/397 passing (**99.5%**)
+- **Integration Tests**: 13/14 passing (**92.86%**)
+- **Total Tests**: 397 test cases
+
+### Test Categories
+
+| Category | Tests | Status |
+|----------|-------|--------|
+| InitializationTest | 2/2 | ✅ 100% |
+| CoreErrorTest | 4/4 | ✅ 100% |
+| StringViewTest | 30/30 | ✅ 100% |
+| SpanTest | 26/26 | ✅ 100% |
+| VariantTest | 44/44 | ✅ 100% |
+| OptionalTest | 36/36 | ✅ 100% |
+| ResultTest | 50/50 | ✅ 100% |
+| FutureTest | 16/16 | ✅ 100% |
+| MemoryTest | 83/83 | ✅ 100% |
+| ConfigTest | 17/17 | ✅ 100% |
+| AbortHandlerTest | 12/12 | ✅ 100% |
+| StlMemoryAllocatorTest | 53/53 | ✅ 100% |
+| MemoryFacadeTest | 20/22 | ⚠️ 90.9% |
+
+### Running Tests
+
 ```bash
-cd _build  # or build/modules/Core
+cd build/modules/Core
+
+# Run all unit tests
 ./core_test
 
-# Output: [==========] 294 tests from 80 test suites ran.
-#         [  PASSED  ] 294 tests.
-```
+# Run specific test suite
+./core_test --gtest_filter=ResultTest.*
 
-### Run Filtered Tests
-```bash
-# Run only memory-related tests
-./core_test --gtest_filter="*Memory*"
+# Run all integration tests
+./run_all_tests.sh
 
-# Run config tests
-./core_test --gtest_filter="ConfigTest.*"
-
-# Exclude leak tests (slow)
-./core_test --gtest_filter="-*LeakTest*"
-```
-
-### Run Test Scripts
-```bash
-cd test
-./run_all_tests.sh      # Comprehensive test suite
-./run_memory_tests.sh   # Memory-specific tests
-```
-
-### Run Examples
-```bash
-./config_example_v4              # Configuration demo
-./abort_example                  # AUTOSAR abort handling
-./memory_leak_multithread_test   # Multi-threaded stress test
-```
-
-### Run Benchmarks
-```bash
-./alignment_performance_test     # Alignment overhead
-./pool_vs_system_benchmark      # Pool vs malloc comparison
-./memory_stress_test            # Concurrent allocation stress
-```
-
-**Test Coverage**: 294/294 tests passing (100% success rate, 1 intentionally disabled)
-
----
-
-## 🏗️ Architecture
-
-### Module Structure
-```
-Core/
-├── source/
-│   ├── inc/              # Public API headers (installed)
-│   │   ├── CMemory.hpp
-│   │   ├── CConfig.hpp
-│   │   ├── CResult.hpp
-│   │   ├── CFuture.hpp
-│   │   ├── CSync.hpp
-│   │   └── ...
-│   └── src/              # Implementation files
-│       ├── CMemory.cpp
-│       ├── CConfig.cpp
-│       └── ...
-├── test/
-│   ├── unittest/         # Unit tests (GTest)
-│   │   ├── test_memory.cpp
-│   │   ├── config_test.cpp
-│   │   └── ...
-│   ├── examples/         # Usage examples
-│   │   ├── memory_example.cpp
-│   │   ├── config_example_v4.cpp
-│   │   └── ...
-│   ├── benchmark/        # Performance benchmarks
-│   │   ├── pool_vs_system_benchmark.cpp
-│   │   └── ...
-│   ├── run_all_tests.sh
-│   └── run_memory_tests.sh
-├── doc/                  # Documentation
-│   ├── QUICK_START.md
-│   ├── INDEX.md
-│   ├── HMAC_SECRET_CONFIG.md
-│   ├── THIRD_PARTY.md
-│   └── archive/          # Historical design docs
-├── BuildTemplate/        # Git submodule (for standalone build)
-├── CMakeLists.txt        # Build configuration
-└── README.md             # This file
-```
-
-### Component Overview
-
-| Component | Description | Key Headers |
-|-----------|-------------|-------------|
-| **Memory** | Unified memory management with pool allocation | `CMemory.hpp`, `CMemoryAllocator.hpp` |
-| **Config** | JSON configuration with HMAC security | `CConfig.hpp` |
-| **AUTOSAR Types** | Standard containers (String, Vector, Map, etc.) | `CString.hpp`, `CVector.hpp`, `COptional.hpp`, `CVariant.hpp`, `CSpan.hpp` |
-| **AUTOSAR Functional** | Error handling and monadic composition | `CResult.hpp`, `CErrorCode.hpp`, `CErrorDomain.hpp`, `CException.hpp` |
-| **Async** | Future/Promise for asynchronous operations | `CFuture.hpp`, `CPromise.hpp` |
-| **Sync** | Synchronization primitives | `CSync.hpp`, `CLockFreeQueue.hpp` |
-| **File/Path** | File system operations | `CFile.hpp`, `CPath.hpp` |
-| **Time** | Timing and duration utilities | `CTime.hpp`, `CTimer.hpp` |
-| **Abort** | AUTOSAR abort and signal handling | `CAbort.hpp` |
-| **Core** | Initialization and lifecycle management | `CCore.hpp`, `CInitialization.hpp` |
-
----
-
-## 🔧 Configuration
-
-### Memory Pool Configuration
-
-Create `config.json` in your working directory:
-
-```json
-{
-  "memory": {
-    "pool_count": 5,
-    "pool_8_size": 64,      // 8-byte objects, 64 slots
-    "pool_16_size": 64,     // 16-byte objects, 64 slots
-    "pool_32_size": 32,     // 32-byte objects, 32 slots
-    "pool_64_size": 16,     // 64-byte objects, 16 slots
-    "pool_128_size": 8,     // 128-byte objects, 8 slots
-    "align": 8              // Default alignment (bytes)
-  }
-}
-```
-
-### HMAC Security (Production)
-
-For secure configuration verification in production:
-
-```bash
-# Generate a strong secret
-export HMAC_SECRET=$(openssl rand -hex 32)
-
-# Run your application
-./your_app
-
-# Or set in systemd service
-Environment="HMAC_SECRET=your_secret_here"
-```
-
-See [doc/HMAC_SECRET_CONFIG.md](doc/HMAC_SECRET_CONFIG.md) for complete setup instructions.
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HMAC_SECRET` | HMAC-SHA256 key for config verification | Built-in (dev only) |
-| `CONFIG_PATH` | Custom configuration file path | `./config.json` |
-
----
-
-## 📊 Performance
-
-### Memory Allocation Benchmarks
-
-| Operation | Pool (small) | System malloc | Speedup |
-|-----------|--------------|---------------|---------|
-| Allocate 32B | ~15 ns | ~120 ns | **8x** |
-| Allocate 128B | ~18 ns | ~140 ns | **7.7x** |
-| Allocate+Free | ~25 ns | ~200 ns | **8x** |
-| Threaded (4 cores) | ~35 ns | ~450 ns | **12.8x** |
-
-*Measured on Intel Core i7, GCC 12.2, -O3*
-
-### Throughput
-- **Single-threaded**: ~40M allocations/sec (pool), ~5M alloc/sec (malloc)
-- **Multi-threaded (4 cores)**: ~28M alloc/sec (pool), ~2.2M alloc/sec (malloc)
-
-Run benchmarks for your platform:
-```bash
-cd _build
+# Individual test programs
+./memory_stress_test
 ./pool_vs_system_benchmark
-./alignment_performance_test
 ```
 
 ---
 
-## 🔒 Security
+## 📚 API Reference
 
-### Configuration Integrity
-- **HMAC-SHA256** verification for config files
-- **Protected metadata** with `__metadata__` section
-- **Environment-based secrets** - No hardcoded keys
+### Initialization
 
-### Memory Safety
-- **Bounds checking** in debug mode
-- **Use-after-free detection** via XOR masking
-- **Memory leak detection** with full allocation tracking
+| Function | Description |
+|----------|-------------|
+| `Initialize()` | Initialize Core module (REQUIRED) |
+| `Deinitialize()` | Cleanup Core module (REQUIRED) |
 
-### Thread Safety
-- **Lock-free fast paths** for allocation hot paths
-- **Atomic operations** for ref counting and state management
-- **Deadlock-free** synchronization primitives
+### Core Types
 
----
+| Type | AUTOSAR Reference | Description |
+|------|-------------------|-------------|
+| `String` | SWS_CORE_01001 | Standard string |
+| `StringView` | SWS_CORE_01901 | Non-owning string view |
+| `Vector<T>` | SWS_CORE_01201 | Dynamic array |
+| `Map<K,V>` | SWS_CORE_01201 | Key-value map |
+| `Optional<T>` | SWS_CORE_01301 | Optional value |
+| `Variant<T...>` | SWS_CORE_01601 | Type-safe union |
+| `Span<T>` | SWS_CORE_01901 | Non-owning array view |
+| `Result<T>` | SWS_CORE_00701 | Result or error |
+| `Future<T>` | SWS_CORE_00321 | Async result |
+| `Promise<T>` | SWS_CORE_00341 | Async producer |
 
-## 📚 Documentation
+### Memory Management
 
-### Quick Links
-- **[Quick Start Guide](doc/QUICK_START.md)** - Get up and running in 5 minutes
-- **[API Documentation Index](doc/INDEX.md)** - Complete API reference catalog
-- **[Test Guide](test/README.md)** - Building and running tests
-- **[AUTOSAR Abort Implementation](doc/CAbort_Refactoring_Summary.md)** - Signal handling details
-- **[HMAC Security Setup](doc/HMAC_SECRET_CONFIG.md)** - Production security configuration
-- **[Third-party Dependencies](doc/THIRD_PARTY.md)** - License and version info
-- **[Design Archive](doc/archive/)** - Historical implementation notes
+| Function | Description |
+|----------|-------------|
+| `Memory::malloc(size)` | Allocate memory |
+| `Memory::free(ptr)` | Free memory |
+| `Memory::memalign(align, size)` | Aligned allocation |
+| `Memory::calloc(n, size)` | Zero-initialized allocation |
+| `Memory::realloc(ptr, size)` | Reallocate memory |
+| `StlMemoryAllocator<T>` | STL allocator adapter |
 
-### API Documentation
+### Error Handling
 
-All public APIs are documented with Doxygen-style comments in headers:
-- `source/inc/*.hpp` - Public API headers with inline documentation
-- `doc/*.md` - Detailed guides and tutorials
-
----
-
-## 🤝 Dependencies
-
-### Build Requirements
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| **CMake** | ≥ 3.10.2 | Build system |
-| **C++ Compiler** | C++17 (GCC 7+, Clang 5+) | Language support |
-| **Boost** | ≥ 1.65 | filesystem, regex, system |
-| **OpenSSL** | ≥ 1.1.0 | HMAC-SHA256 for config security |
-| **zlib** | ≥ 1.2.8 | Compression utilities |
-
-### Test Dependencies (Optional)
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| **Google Test** | ≥ 1.10.0 | Unit testing framework |
-
-### Runtime Dependencies
-
-**None** - Core is a self-contained library with no runtime dependencies beyond system libraries.
-
-See [doc/THIRD_PARTY.md](doc/THIRD_PARTY.md) for complete license and attribution information.
+| Type | AUTOSAR Reference | Description |
+|------|-------------------|-------------|
+| `ErrorCode` | SWS_CORE_00502 | Error code wrapper |
+| `ErrorDomain` | SWS_CORE_00110 | Error domain base |
+| `CoreErrc` | SWS_CORE_00511 | Core error codes |
+| `Exception` | SWS_CORE_00601 | Exception base class |
 
 ---
 
-## � Installation
+## 🔨 Building
 
-### System-wide Installation
-
-```bash
-cd _build
-sudo cmake --install . --prefix /usr/local
-
-# Installed files:
-# /usr/local/lib/liblap_core.so*
-# /usr/local/include/lap/core/*.hpp
-# /usr/local/lib/cmake/lap_core/
-# /usr/local/bin/lap_config_editor
-# /usr/local/share/doc/lap-core/
-```
-
-### Using Installed Library
-
-```cmake
-# CMakeLists.txt
-find_package(lap_core REQUIRED)
-target_link_libraries(your_app PRIVATE lap::core)
-```
-
-### Custom Installation Prefix
+### Build Options
 
 ```bash
-cmake --install . --prefix /opt/lightap
-export CMAKE_PREFIX_PATH=/opt/lightap:$CMAKE_PREFIX_PATH
-```
+# Debug build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
 
----
-
-## 🐛 Troubleshooting
-
-### Library Not Found at Runtime
-
-If you see `error while loading shared libraries: liblap_core.so.1`:
-
-```bash
-# Option 1: Update library cache (system-wide install)
-sudo ldconfig
-
-# Option 2: Set LD_LIBRARY_PATH (custom prefix)
-export LD_LIBRARY_PATH=/opt/lightap/lib:$LD_LIBRARY_PATH
-
-# Option 3: Use RPATH (build time)
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
-```
-
-### HMAC Warnings in Production
-
-If you see `HMAC_SECRET environment variable not set!`:
-
-```bash
-# This is expected in development. For production:
-export HMAC_SECRET=$(openssl rand -hex 32)
-```
-
-See [HMAC_SECRET_CONFIG.md](doc/HMAC_SECRET_CONFIG.md) for production deployment.
-
-### Build Errors
-
-```bash
-# Clean build
-rm -rf _build
-mkdir _build && cd _build
+# Release build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
 
-# Verbose build for debugging
-cmake --build . -j$(nproc) -- VERBOSE=1
+# Disable tests
+cmake .. -DBUILD_TESTING=OFF
+
+# Shared library
+cmake .. -DBUILD_SHARED_LIBS=ON
+```
+
+### Build Targets
+
+```bash
+cmake --build . --target all          # Build everything
+cmake --build . --target lap_core     # Library only
+cmake --build . --target core_test    # Tests
+cmake --build . --target install      # Install
 ```
 
 ---
 
-## 📝 Contributing
+## 📖 Examples
 
-### Development Workflow
+More examples in [test/examples/](test/examples/) directory:
 
-1. **Clone with submodules**:
-   ```bash
-   git clone --recursive git@github.com:YourOrg/Core.git
-   ```
+- `initialization_example.cpp` - Basic initialization
+- `memory_example.cpp` - Memory pool usage
+- `memory_example_comprehensive.cpp` - Advanced memory features
+- `config_example.cpp` - Configuration management
+- `config_policy_example.cpp` - Configuration policies
+- `check_alignment.cpp` - Alignment verification
 
-2. **Create feature branch**:
-   ```bash
-   git checkout -b feature/your-feature
-   ```
+---
 
-3. **Build and test**:
-   ```bash
-   mkdir _build && cd _build
-   cmake .. -DCMAKE_BUILD_TYPE=Debug
-   cmake --build . -j$(nproc)
-   ./core_test
-   ```
+## 📄 Documentation
 
-4. **Run checks**:
-   ```bash
-   # All tests must pass
-   ./core_test
-   
-   # No memory leaks
-   ./core_test --gtest_filter="*LeakTest*"
-   
-   # Performance benchmarks
-   ./pool_vs_system_benchmark
-   ```
+- **[API Reference](doc/INDEX.md)** - Complete API documentation
+- **[Memory Management Guide](doc/Memory_Management_Guide.md)** - Memory architecture
+- **[Build Guide](BUILDING.md)** - Detailed build instructions
+- **[Release Notes](RELEASE_NOTES.md)** - Version history
 
-### Code Style Guidelines
-- **C++17** - Use modern C++ features (auto, constexpr, structured bindings)
-- **AUTOSAR naming** - Follow AUTOSAR Adaptive Platform naming conventions
-- **RAII** - Use RAII for resource management (no manual new/delete in client code)
-- **Thread-safe** - All public APIs must be thread-safe unless explicitly documented
-- **Documentation** - Add Doxygen comments for all public APIs
+---
 
-### Testing Requirements
-- **Unit tests** - Add GTest tests for all new features (`test/unittest/`)
-- **Examples** - Provide usage examples for new APIs (`test/examples/`)
-- **Benchmarks** - Add performance tests if applicable (`test/benchmark/`)
-- **100% pass rate** - All existing tests must continue to pass
+## 🤝 Contributing
+
+We welcome contributions! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Submit a Pull Request
+
+### Code Style
+
+- Follow AUTOSAR C++ guidelines
+- Use C++17 features appropriately
+- Add unit tests for new features
+- Maintain code coverage
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - See [LICENSE](LICENSE) file
 
-```
-MIT License
+### Third-Party Licenses
 
-Copyright (c) 2025 LightAP Project
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+- nlohmann/json: MIT License
+- Google Test: BSD 3-Clause License
+- OpenSSL: Apache 2.0 License
 
 ---
 
-## 🔗 Related Modules
+## 📞 Support
 
-| Module | Description |
-|--------|-------------|
-
----
-
-## 📧 Support
-
-### Resources
-- **[Documentation Index](doc/INDEX.md)** - Complete documentation catalog
-- **[Quick Start Guide](doc/QUICK_START.md)** - Getting started in 5 minutes
-- **[FAQ](doc/FAQ.md)** - Frequently asked questions
-- **[Design Archive](doc/archive/)** - Implementation history and design decisions
-
-### Contact
-For bug reports, feature requests, or technical support:
-- **Issue Tracker**: [Internal Tracker Link]
+- **Issues**: [GitHub Issues](https://github.com/TreeNeeBee/LightAP/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/TreeNeeBee/LightAP/discussions)
 - **Email**: ddkv587@gmail.com
+- **GitHub**: https://github.com/TreeNeeBee/LightAP
 
 ---
 
+## 🗺️ Roadmap
+
+### v1.1.0 (Q4 2025)
+- [ ] Fix class name registration
+- [ ] Complete ara::com integration
+- [ ] Enhanced crypto support
+- [ ] Performance profiling tools
+
+### v1.2.0 (Q1 2026)
+- [ ] ara::exec lifecycle
+- [ ] Distributed tracing
+- [ ] Cloud-native features
+
+---
+
+**Maintained by**: LightAP Core Team  
 **Version**: 1.0.0  
-**AUTOSAR Compliance**: Adaptive Platform R23-11  
-**Build System**: CMake 3.10+, BuildTemplate v1.1.0  
-**Last Updated**: November 7, 2025
+**Release Date**: November 13, 2025  
+**Status**: ✅ Production Ready
 
 ---
 
-<p align="center">
-  <strong>Built with ❤️ for AUTOSAR Adaptive Platform</strong>
-</p>
+[⬆ Back to Top](#lightap-core-module)

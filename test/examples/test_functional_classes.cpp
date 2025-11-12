@@ -14,6 +14,7 @@
 #include "CPath.hpp"
 #include "CException.hpp"
 #include "CFutureErrorDomain.hpp"
+#include "CInitialization.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -24,7 +25,7 @@ using namespace lap::core;
 
 // 打印内存统计
 void printMemoryStats(const char* label) {
-    auto stats = MemManager::getInstance()->getMemoryStats();
+    auto stats = MemoryManager::getInstance()->getMemoryStats();
     std::cout << "[" << label << "] Memory Statistics:\n"
               << "  Current Alloc Size: " << stats.currentAllocSize << " bytes\n"
               << "  Current Alloc Count: " << stats.currentAllocCount << "\n"
@@ -116,7 +117,7 @@ void testFile() {
     auto* file = new File();
     
     // 使用静态方法
-    bool exists = File::exists(testPath);
+    bool exists = File::Util::exists(testPath);
     std::cout << "File exists (before): " << exists << "\n";
     
     // 创建测试文件
@@ -127,13 +128,13 @@ void testFile() {
         std::cout << "Test file created\n";
     }
     
-    exists = File::exists(testPath);
+    exists = File::Util::exists(testPath);
     std::cout << "File exists (after): " << exists << "\n";
     
     printMemoryStats("After File Operations");
     
     // 清理
-    File::remove(testPath);
+    File::Util::remove(testPath);
     delete file;
     
     printMemoryStats("After File Deletion");
@@ -421,7 +422,12 @@ int main() {
               << "Testing: Result, ErrorCode, Future, Promise, File, Path, Exception, ErrorDomain\n"
               << "========================================\n" << std::endl;
     
-    MemManager::getInstance()->initialize();
+    // AUTOSAR-compliant initialization (includes MemoryManager)
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
     
     printMemoryStats("Initial");
     
@@ -454,7 +460,9 @@ int main() {
               << "  - 2x Exception (Test 16)\n"
               << "========================================\n" << std::endl;
     
-    MemManager::getInstance()->uninitialize();
+    // AUTOSAR-compliant deinitialization (includes MemoryManager cleanup)
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return 0;
 }

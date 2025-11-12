@@ -7,6 +7,7 @@
 #include <iomanip>
 #include "CMemory.hpp"
 #include "CConfig.hpp"
+#include "CInitialization.hpp"
 #include <nlohmann/json.hpp>
 
 using namespace lap::core;
@@ -49,8 +50,12 @@ int main() {
     }
     
     // Initialize memory manager
-    std::cout << "\n--- Initializing Memory Manager ---" << std::endl;
-    MemManager::getInstance()->initialize();
+    std::cout << "\n--- Initializing Core ---" << std::endl;
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
     
     // Test allocations
     std::cout << "\n--- Testing Allocations ---" << std::endl;
@@ -82,6 +87,10 @@ int main() {
     }
     
     std::cout << "\n=== Test Complete ===" << std::endl;
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return 0;
 }

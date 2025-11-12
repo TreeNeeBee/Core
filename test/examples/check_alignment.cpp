@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstddef>
+#include "CInitialization.hpp"
 #include "CMemory.hpp"
 
 using namespace lap::core;
@@ -25,6 +26,13 @@ struct tagBlockHeader {
 };
 
 int main() {
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        printf("Initialization failed!\n");
+        return 1;
+    }
+    
     printf("=== Memory Structure Alignment Check ===\n\n");
     
     // 检查基本类型大小
@@ -78,6 +86,10 @@ int main() {
            (offsetof(tagBlockHeader, next) % sizeof(void*) == 0) ? "OK" : "MISALIGNED");
     printf("  tagBlockHeader::prev ptr alignment: %s\n", 
            (offsetof(tagBlockHeader, prev) % sizeof(void*) == 0) ? "OK" : "MISALIGNED");
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return 0;
 }

@@ -41,9 +41,9 @@ static_assert(noexcept(std::declval<ErrorCode const&>().Value()), "ErrorCode::Va
 static_assert(noexcept(std::declval<ErrorCode const&>().Domain()), "ErrorCode::Domain should be noexcept");
 
 // Memory-related inline getters now noexcept
-static_assert(noexcept(std::declval<MemManager&>().hasMemChecker()), "MemManager::hasMemChecker should be noexcept");
-static_assert(noexcept(std::declval<MemChecker&>().getCurrentAllocSize()), "MemChecker::getCurrentAllocSize should be noexcept");
-static_assert(noexcept(std::declval<MemChecker&>().getCurrentAllocCount()), "MemChecker::getCurrentAllocCount should be noexcept");
+static_assert(noexcept(std::declval<MemoryManager&>().hasMemoryTracker()), "MemoryManager::hasMemoryTracker should be noexcept");
+static_assert(noexcept(std::declval<MemoryTracker&>().getCurrentAllocSize()), "MemoryTracker::getCurrentAllocSize should be noexcept");
+static_assert(noexcept(std::declval<MemoryTracker&>().getCurrentAllocCount()), "MemoryTracker::getCurrentAllocCount should be noexcept");
 
 TEST(NoexceptExtended, Sanity) {
     // runtime smoke to ensure headers compile into the test binary

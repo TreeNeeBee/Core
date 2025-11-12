@@ -3,6 +3,7 @@
 #include <string>
 #include <thread>
 #include "CMemory.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 
@@ -27,9 +28,13 @@ public:
 int main() {
     std::cout << "[example] CMemory demo starting...\n";
 
-    // Initialize MemManager to load pool configuration
-    MemManager::getInstance()->initialize();
-    std::cout << "[example] MemManager initialized\n";
+    // AUTOSAR-compliant initialization (includes MemoryManager initialization)
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "[example] Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    std::cout << "[example] Core initialized\n";
 
     // Default to enabling checker; if config specifies otherwise, load will toggle it
     // Memory::enableMemoryChecker(true);
@@ -37,11 +42,11 @@ int main() {
     // Register current thread name for nicer logs
     {
         UInt32 tid = static_cast<UInt32>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
-        MemManager::getInstance()->registerThreadName(tid, "main-thread");
+        MemoryManager::getInstance()->registerThreadName(tid, "main-thread");
     }
     // Allocate using the facade; checker validates, allocator picks suitable pool
-    // Demonstrate explicit local MemAllocator usage and pool states
-    MemAllocator localAlloc;
+    // Demonstrate explicit local PoolAllocator usage and pool states
+    PoolAllocator localAlloc;
     localAlloc.initialize(8, 10);
     localAlloc.createPool(32, 4, 0, 4);
     localAlloc.createPool(64, 4, 0, 4);
@@ -50,7 +55,7 @@ int main() {
     // Print initial pool states
     std::cout << "[example] Initial pools:\n";
     for (UInt32 i = 0; i < localAlloc.getPoolCount(); ++i) {
-        MemAllocator::MemoryPoolState st{};
+        PoolAllocator::MemoryPoolState st{};
         if (localAlloc.getPoolState(i, st)) {
             std::cout << "  pool[" << i << "] size=" << st.unitAvailableSize
                       << " free=" << st.freeCount << " current=" << st.currentCount << "\n";
@@ -92,13 +97,13 @@ int main() {
     std::cout << "[example] Intentionally leaking TrackedFoo to demonstrate class-tagged leak...\n";
 
     // Dump state snapshot (leak details will be reported on program exit by checker destructor)
-    MemManager::getInstance()->outputState(0);
+    MemoryManager::getInstance()->outputState(0);
     std::cout << "[example] State output requested. See memory_leak.log for details.\n";
 
     // Print final pool states
     std::cout << "[example] Final pools after operations:\n";
     for (UInt32 i = 0; i < localAlloc.getPoolCount(); ++i) {
-        MemAllocator::MemoryPoolState st{};
+        PoolAllocator::MemoryPoolState st{};
         if (localAlloc.getPoolState(i, st)) {
             std::cout << "  pool[" << i << "] size=" << st.unitAvailableSize
                       << " free=" << st.freeCount << " current=" << st.currentCount 
@@ -107,12 +112,12 @@ int main() {
     }
 
     // Print summary
-    std::cout << "[example] MemManager operations completed successfully.\n";
+    std::cout << "[example] MemoryManager operations completed successfully.\n";
 
-    // Uninitialize MemManager to save configuration before program exits
-    // This ensures savePoolConfig is called before ConfigManager destructs
-    MemManager::getInstance()->uninitialize();
-    std::cout << "[example] MemManager uninitialized and configuration saved.\n";
+    // AUTOSAR-compliant deinitialization (includes MemoryManager cleanup)
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
+    std::cout << "[example] Core deinitialized and configuration saved.\n";
 
     // Config will be auto-saved (wrapped with align/check_enable/pools) by RAII guard
 

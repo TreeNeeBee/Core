@@ -59,138 +59,184 @@ namespace core
     public:
         IMP_OPERATOR_NEW(File)
         
-        // ========== Static File System Operations ==========
+        // ========== Utility Class for Static File Operations ==========
         
-        // Check if a file exists
-        static Bool exists(const String& filePath) noexcept
+        /**
+         * @brief Static utility methods for file system operations
+         * Access via File::Util::xxx
+         */
+        class Util final
         {
-#if __cplusplus >= 201703L && __has_include(<filesystem>)
-            std::error_code ec;
-#else
-            boost::system::error_code ec;
-#endif
-            return fs::exists(filePath, ec) && !ec;
-        }
-
-        // Delete a file
-        static Bool remove(const String& filePath) noexcept
-        {
-#if __cplusplus >= 201703L && __has_include(<filesystem>)
-            std::error_code ec;
-#else
-            boost::system::error_code ec;
-#endif
-            return fs::remove(filePath, ec) && !ec;
-        }
-
-        // Copy a file
-        static Bool copy(const String& source, const String& destination) noexcept
-        {
-#if __cplusplus >= 201703L && __has_include(<filesystem>)
-            std::error_code ec;
-            fs::copy_file(source, destination, fs::copy_options::overwrite_existing, ec);
-#else
-            boost::system::error_code ec;
-            fs::copy_file(source, destination, fs::copy_option::overwrite_if_exists, ec);
-#endif
-            return !ec;
-        }
-
-        // Move a file
-        static Bool move(const String& source, const String& destination) noexcept
-        {
-#if __cplusplus >= 201703L && __has_include(<filesystem>)
-            std::error_code ec;
-#else
-            boost::system::error_code ec;
-#endif
-            fs::rename(source, destination, ec);
-            return !ec;
-        }
-
-        // Create an empty file
-        static Bool create(const String& filePath) noexcept
-        {
-            try {
-                std::ofstream ofs(filePath);
-                return ofs.is_open();
-            } catch (const std::exception& e) {
-                return false;
-            }
-        }
-
-        // Get the size of a file
-        static std::size_t size(const String& filePath) noexcept
-        {
-#if __cplusplus >= 201703L && __has_include(<filesystem>)
-            std::error_code ec;
-#else
-            boost::system::error_code ec;
-#endif
-            auto fileSize = fs::file_size(filePath, ec);
-            return ec ? 0 : fileSize;
-        }
-
-        // Remove file extension from path
-        static StringView removeExtension(StringView strPath) noexcept
-        {
-            Size point(strPath.find_last_of('.'));
-            return point > 0 && point != StringView::npos ? strPath.substr(0, point) : strPath;
-        }
-
-        // Check if file path is valid
-        static Bool checkValid(StringView strFile) noexcept
-        {
-            ::std::regex regFile("([\\w\\.\\/]+)$");
-            return ::std::regex_match(strFile.data(), regFile);
-        }
-
-        // Calculate CRC32 checksum of a file (returns 0 on error)
-        static UInt32 crc(StringView strFile, Bool isHeaderOnly = true) noexcept
-        {
-            boost::crc_32_type crc;
-            Vector<Char> buffer(4096);
-            std::ifstream stream(strFile.data(), std::ios::in | std::ios::binary);
+        public:
+            // Non-instantiable utility class
+            Util() = delete;
+            ~Util() = delete;
+            Util(const Util&) = delete;
+            Util& operator=(const Util&) = delete;
             
-            if (!stream) {
-                return 0;  // File open error
+            // Check if a file exists
+            static Bool exists(const String& filePath) noexcept
+            {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                return fs::exists(filePath, ec) && !ec;
             }
 
-            do {
-                stream.read(&buffer[0], buffer.size());
-                Size byte_cnt = static_cast<Size>(stream.gcount());
-                crc.process_bytes(&buffer[0], byte_cnt);
-            } while (stream && !isHeaderOnly);
-
-            if (stream.eof() || isHeaderOnly) {
-                return crc.checksum();
-            } else {
-                return 0;  // Integrity error
+            // Delete a file
+            static Bool remove(const String& filePath) noexcept
+            {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                return fs::remove(filePath, ec) && !ec;
             }
-        }
 
-        // Delete file with validation
-        static Bool deleteFile(StringView strFile) noexcept
-        {
-            // Treat as success if invalid path
-            if (!checkValid(strFile)) {
-                return true;
+            // Copy a file
+            static Bool copy(const String& source, const String& destination) noexcept
+            {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+                fs::copy_file(source, destination, fs::copy_options::overwrite_existing, ec);
+#else
+                boost::system::error_code ec;
+                fs::copy_file(source, destination, fs::copy_option::overwrite_if_exists, ec);
+#endif
+                return !ec;
             }
-            return remove(String(strFile));
-        }
 
-        // Rename/move file (wrapper for POSIX rename)
-        static Bool rename(const String& oldPath, const String& newPath) noexcept
-        {
-            return ::rename(oldPath.c_str(), newPath.c_str()) == 0;
-        }
+            // Move a file
+            static Bool move(const String& source, const String& destination) noexcept
+            {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                fs::rename(source, destination, ec);
+                return !ec;
+            }
 
-        // Get file status
-        static Bool stat(const String& path, struct stat* st) noexcept
-        {
-            return ::stat(path.c_str(), st) == 0;
-        }
+            // Create an empty file
+            static Bool create(const String& filePath) noexcept
+            {
+                try {
+                    std::ofstream ofs(filePath);
+                    return ofs.is_open();
+                } catch (const std::exception& e) {
+                    return false;
+                }
+            }
 
+            // Get the size of a file
+            static std::size_t size(const String& filePath) noexcept
+            {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                auto fileSize = fs::file_size(filePath, ec);
+                return ec ? 0 : fileSize;
+            }
+
+            // Remove file extension from path
+            static StringView removeExtension(StringView strPath) noexcept
+            {
+                Size point(strPath.find_last_of('.'));
+                return point > 0 && point != StringView::npos ? strPath.substr(0, point) : strPath;
+            }
+
+            // Check if file path is valid
+            static Bool checkValid(StringView strFile) noexcept
+            {
+                ::std::regex regFile("([\\w\\.\\/]+)$");
+                return ::std::regex_match(strFile.data(), regFile);
+            }
+
+            // Calculate CRC32 checksum of a file (returns 0 on error)
+            static UInt32 crc(StringView strFile, Bool isHeaderOnly = true) noexcept
+            {
+                boost::crc_32_type crc;
+                Vector<Char> buffer(4096);
+                std::ifstream stream(strFile.data(), std::ios::in | std::ios::binary);
+                
+                if (!stream) {
+                    return 0;  // File open error
+                }
+
+                do {
+                    stream.read(&buffer[0], buffer.size());
+                    Size byte_cnt = static_cast<Size>(stream.gcount());
+                    crc.process_bytes(&buffer[0], byte_cnt);
+                } while (stream && !isHeaderOnly);
+
+                if (stream.eof() || isHeaderOnly) {
+                    return crc.checksum();
+                } else {
+                    return 0;  // Integrity error
+                }
+            }
+
+            // Delete file with validation
+            static Bool deleteFile(StringView strFile) noexcept
+            {
+                // Treat as success if invalid path
+                if (!checkValid(strFile)) {
+                    return true;
+                }
+                return remove(String(strFile));
+            }
+
+            // Rename/move file (wrapper for POSIX rename)
+            static Bool rename(const String& oldPath, const String& newPath) noexcept
+            {
+                return ::rename(oldPath.c_str(), newPath.c_str()) == 0;
+            }
+
+            // Get file status
+            static Bool stat(const String& path, struct stat* st) noexcept
+            {
+                return ::stat(path.c_str(), st) == 0;
+            }
+            
+            /**
+             * @brief Read entire file content as binary data
+             * @param filePath Path to the file to read
+             * @param outData Vector to store the read data (will be resized)
+             * @return true on success, false on failure
+             */
+            static Bool ReadBinary(const String& filePath, Vector<UInt8>& outData) noexcept
+            {
+                try {
+                    std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+                    if (!file.is_open()) {
+                        return false;
+                    }
+                    
+                    std::streamsize fileSize = file.tellg();
+                    if (fileSize < 0) {
+                        return false;
+                    }
+                    
+                    file.seekg(0, std::ios::beg);
+                    outData.resize(static_cast<Size>(fileSize));
+                    
+                    if (!file.read(reinterpret_cast<char*>(outData.data()), fileSize)) {
+                        return false;
+                    }
+                    
+                    return true;
+                } catch (...) {
+                    return false;
+                }
+            }
+        }; // class Util
+        
         // ========== Instance-Based File Descriptor I/O ==========
         
         // Open modes for instance operations

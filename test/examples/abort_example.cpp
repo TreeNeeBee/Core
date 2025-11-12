@@ -10,6 +10,7 @@
 #include <thread>
 #include <chrono>
 #include "CAbort.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 
@@ -286,6 +287,13 @@ int main() {
     std::cout << "AUTOSAR AP Abort Functionality Examples\n";
     std::cout << "========================================\n";
     
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    
     try {
         Example1_BasicAbortHandler();
         Example2_QueryHandler();
@@ -299,9 +307,18 @@ int main() {
         std::cout << "All examples completed successfully!\n";
         std::cout << "========================================\n";
         
+        // AUTOSAR-compliant deinitialization
+        auto deinitResult = Deinitialize();
+        (void)deinitResult;
+        
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Exception caught: " << e.what() << "\n";
+        
+        // AUTOSAR-compliant deinitialization
+        auto deinitResult = Deinitialize();
+        (void)deinitResult;
+        
         return 1;
     }
 }

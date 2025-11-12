@@ -5,6 +5,7 @@
 #include <cstring>
 #include "CMemory.hpp"
 #include "CConfig.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 using namespace std::chrono;
@@ -27,7 +28,7 @@ PerformanceStats benchmarkAlignment(UInt32 alignValue, int size) {
     PerformanceStats stats = {0, 0, 0, 0, 0};
     
     // Uninitialize first to clean up any existing state
-    MemManager::getInstance()->uninitialize();
+    MemoryManager::getInstance()->uninitialize();
     
     // Update configuration
     ConfigManager& configMgr = ConfigManager::getInstance();
@@ -36,7 +37,7 @@ PerformanceStats benchmarkAlignment(UInt32 alignValue, int size) {
     configMgr.setModuleConfigJson("memory", config);
     
     // Reinitialize memory manager with new alignment
-    MemManager::getInstance()->initialize();
+    MemoryManager::getInstance()->initialize();
     
     // Warmup
     for (int i = 0; i < WARMUP_ITERATIONS; ++i) {
@@ -177,6 +178,13 @@ void printSummary(const std::vector<std::pair<int, PerformanceStats>>& results1,
 }
 
 int main() {
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    
     printHeader();
     
     std::vector<std::pair<int, PerformanceStats>> results1, results4, results8;
@@ -207,10 +215,14 @@ int main() {
     nlohmann::json config = configMgr.getModuleConfigJson("memory");
     config["align"] = 8;
     configMgr.setModuleConfigJson("memory", config);
-    MemManager::getInstance()->uninitialize();
-    MemManager::getInstance()->initialize();
+    MemoryManager::getInstance()->uninitialize();
+    MemoryManager::getInstance()->initialize();
     
     std::cout << "\n✓ Configuration restored to 8-byte alignment\n\n";
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return 0;
 }

@@ -231,6 +231,140 @@ TEST_F(ConfigTest, ChangeCallback) {
     config.clear();
 }
 
+TEST_F(ConfigTest, ChangeCallbackOldAndNewValues) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+
+    // Seed an initial value
+    config.setInt("network.port", 8000);
+
+    Bool callbackTriggered = false;
+    Int64 oldV = -1;
+    Int64 newV = -1;
+    auto cb = [&](const String& key, const ConfigValue& oldValue, const ConfigValue& newValue){
+        if (key == "network.port") {
+            callbackTriggered = true;
+            oldV = oldValue.asInt(-1);
+            newV = newValue.asInt(-1);
+        }
+    };
+    UInt32 id = config.registerChangeCallback("network", cb);
+
+    // Change value
+    config.setInt("network.port", 8100);
+
+    EXPECT_TRUE(callbackTriggered);
+    EXPECT_EQ(oldV, 8000);
+    EXPECT_EQ(newV, 8100);
+
+    config.unregisterChangeCallback(id);
+    config.clear();
+}
+
+TEST_F(ConfigTest, PolicyPersistenceInJson) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+
+    // Create some module configs
+    nlohmann::json modA; modA["v"] = 1;
+    nlohmann::json modB; modB["v"] = 2;
+    config.setModuleConfigJson("modA", modA);
+    config.setModuleConfigJson("modB", modB);
+
+    // Set explicit policies
+    config.setModuleUpdatePolicy("modA", "first");
+    config.setModuleUpdatePolicy("modB", "always");
+
+    // Save (private method exposed via macro at top of file)
+    auto saveResult = config.save(true);
+    EXPECT_TRUE(saveResult.HasValue());
+
+    // Read file and verify __update_policy__ mapping
+    std::ifstream ifs(testConfigPath_);
+    ASSERT_TRUE(ifs.good());
+    std::stringstream buffer; buffer << ifs.rdbuf();
+    auto saved = nlohmann::json::parse(buffer.str());
+    ASSERT_TRUE(saved.contains("__update_policy__"));
+    const auto& pol = saved["__update_policy__"];
+    ASSERT_TRUE(pol.is_object());
+    EXPECT_EQ(pol["modA"], "first");
+    EXPECT_EQ(pol["modB"], "always");
+    // default key must exist
+    ASSERT_TRUE(pol.contains("default"));
+
+    config.clear();
+}
+
+TEST_F(ConfigTest, VerificationFailsOnTamper) {
+    ConfigManager& config = ConfigManager::getInstance();
+    setenv("HMAC_SECRET", "test-secret-key-32-bytes-long!", 1);
+    config.initialize(testConfigPath_, true);
+
+    config.setString("secure.value", "original");
+    auto saveResult = config.save(true);
+    EXPECT_TRUE(saveResult.HasValue());
+
+    // Tamper the core JSON content (not metadata) and rewrite file
+    std::ifstream ifs1(testConfigPath_);
+    ASSERT_TRUE(ifs1.good());
+    nlohmann::json j = nlohmann::json::parse(ifs1);
+    ifs1.close();
+    j["secure"]["value"] = "tampered"; // change core data
+    std::ofstream ofs(testConfigPath_);
+    ofs << j.dump(4);
+    ofs.close();
+
+    // Reload with verification -> should fail (HMAC/CRC mismatch)
+    config.clear();
+    config.initialize(testConfigPath_, true);
+    auto loadResult = config.load(false);
+    EXPECT_FALSE(loadResult.HasValue());
+
+    config.clear();
+    unsetenv("HMAC_SECRET");
+}
+
+TEST_F(ConfigTest, ConfigValueFromJsonString) {
+    // Array
+    ConfigValue arr = ConfigValue::fromJsonString("[1,2,3]");
+    EXPECT_TRUE(arr.isArray());
+    EXPECT_EQ(arr.arraySize(), 3u);
+    EXPECT_EQ(arr[0].asInt(), 1);
+    EXPECT_EQ(arr[1].asInt(), 2);
+    EXPECT_EQ(arr[2].asInt(), 3);
+
+    // Object
+    ConfigValue obj = ConfigValue::fromJsonString("{\"a\":true,\"b\":\"x\"}");
+    EXPECT_TRUE(obj.isObject());
+    EXPECT_TRUE(obj.hasKey("a"));
+    EXPECT_TRUE(obj.hasKey("b"));
+    EXPECT_TRUE(obj["a"].asBool());
+    EXPECT_EQ(obj["b"].asString(), "x");
+}
+
+TEST_F(ConfigTest, GetReturnsArraysAndObjects) {
+    ConfigManager& config = ConfigManager::getInstance();
+    config.initialize(testConfigPath_, false);
+
+    nlohmann::json arr = nlohmann::json::array({1,2,3});
+    nlohmann::json obj; obj["k1"]=1; obj["k2"]=2;
+    config.setModuleConfigJson("amod", arr);
+    config.setModuleConfigJson("omod", obj);
+
+    auto a = config.get("amod");
+    ASSERT_TRUE(a.has_value());
+    EXPECT_TRUE(a.value().isArray());
+    EXPECT_EQ(a.value().arraySize(), 3u);
+
+    auto o = config.get("omod");
+    ASSERT_TRUE(o.has_value());
+    EXPECT_TRUE(o.value().isObject());
+    EXPECT_TRUE(o.value().hasKey("k1"));
+    EXPECT_EQ(o.value()["k1"].asInt(), 1);
+
+    config.clear();
+}
+
 TEST_F(ConfigTest, Metadata) {
     ConfigManager& config = ConfigManager::getInstance();
     config.initialize(testConfigPath_, true);  // Enable security to generate CRC and timestamp
@@ -518,18 +652,18 @@ TEST_F(ConfigTest, InternalCrcComputation) {
     
     config.setInt("test.value", 123);
     
-    // Access private computeCrc32 method
+    // Use Crypto::Util::computeCrc32 (CRC computation moved to Crypto utility)
     String testData = "test data for CRC";
-    UInt32 crc = config.computeCrc32(testData);
+    UInt32 crc = Crypto::Util::computeCrc32(testData);
     EXPECT_GT(crc, 0u);
     
     // Same data should produce same CRC
-    UInt32 crc2 = config.computeCrc32(testData);
+    UInt32 crc2 = Crypto::Util::computeCrc32(testData);
     EXPECT_EQ(crc, crc2);
     
     // Different data should produce different CRC
     String differentData = "different test data";
-    UInt32 crc3 = config.computeCrc32(differentData);
+    UInt32 crc3 = Crypto::Util::computeCrc32(differentData);
     EXPECT_NE(crc, crc3);
     
     config.clear();

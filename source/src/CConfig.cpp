@@ -20,13 +20,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <nlohmann/json.hpp>
-#include <zlib.h>
-#include <openssl/hmac.h>
-#include <openssl/evp.h>
-#include <openssl/bio.h>
-#include <openssl/buffer.h>
-#include <openssl/crypto.h>
-#include <openssl/err.h>
 
 using json = nlohmann::json;
 
@@ -36,12 +29,6 @@ namespace core {
 namespace {
     // Default configuration file name
     const String DEFAULT_CONFIG_FILE = "config.json";
-    
-    // HMAC Secret Configuration
-    // - If REQUIRE_HMAC_SECRET_ENV is defined: ENV variable is mandatory, program exits if not found
-    // - If not defined (default): Use built-in secret with warning if ENV not found
-    constexpr const char* ENV_HMAC_SECRET = "HMAC_SECRET";
-    constexpr const char* BUILTIN_HMAC_SECRET = "LightAP-Default-HMAC-Secret-2025-DO-NOT-USE-IN-PRODUCTION";
     
     // Private field names
     constexpr const char* FIELD_METADATA = "__metadata__";
@@ -56,55 +43,42 @@ namespace {
     constexpr const char* FIELD_UPDATE_POLICY = "__update_policy__";    // top-level mapping: module -> policy string
     constexpr const char* POLICY_DEFAULT_KEY = "default";                // special key for default policy
     
-    // Base64 encoding
-    String base64Encode(const String& input) {
-        BIO *bio, *b64;
-        BUF_MEM *bufferPtr;
-        
-        b64 = BIO_new(BIO_f_base64());
-        bio = BIO_new(BIO_s_mem());
-        bio = BIO_push(b64, bio);
-        
-        BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-        BIO_write(bio, input.c_str(), input.length());
-        BIO_flush(bio);
-        BIO_get_mem_ptr(bio, &bufferPtr);
-        
-        String result(bufferPtr->data, bufferPtr->length);
-        BIO_free_all(bio);
-        
-        return result;
-    }
-    
-    String base64Decode(const String& input) {
-        BIO *bio, *b64;
-        
-        size_t decodeLen = input.length();
-        char* buffer = new char[decodeLen];
-        
-        bio = BIO_new_mem_buf(input.c_str(), input.length());
-        b64 = BIO_new(BIO_f_base64());
-        bio = BIO_push(b64, bio);
-        
-        BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-        size_t length = BIO_read(bio, buffer, decodeLen);
-        BIO_free_all(bio);
-        
-        String result(buffer, length);
-        delete[] buffer;
-        
-        return result;
-    }
-    
-    // Convert bytes to hex string
-    String bytesToHex(const UInt8* data, Size len) {
-        std::ostringstream oss;
-        oss << std::hex << std::setfill('0');
-        for (Size i = 0; i < len; ++i) {
-            oss << std::setw(2) << static_cast<Int32>(data[i]);
+    // Base64 encoding/decoding now provided by Crypto::Util
+}
+
+// ============================================================================
+// Helpers: Convert between nlohmann::json and ConfigValue (full: scalar/array/object)
+// ============================================================================
+
+static ConfigValue JsonToConfigValue(const json& j) {
+    if (j.is_null()) {
+        return ConfigValue();
+    } else if (j.is_boolean()) {
+        return ConfigValue(j.get<Bool>());
+    } else if (j.is_number_integer()) {
+        return ConfigValue(j.get<Int64>());
+    } else if (j.is_number_unsigned()) {
+        // Narrow unsigned to signed range; callers should be aware of potential overflow
+        UInt64 uv = j.get<UInt64>();
+        return ConfigValue(static_cast<Int64>(uv));
+    } else if (j.is_number_float()) {
+        return ConfigValue(j.get<Double>());
+    } else if (j.is_string()) {
+        return ConfigValue(j.get<String>());
+    } else if (j.is_array()) {
+        ConfigValue arr;
+        for (const auto& el : j) {
+            arr.append(JsonToConfigValue(el));
         }
-        return oss.str();
+        return arr;
+    } else if (j.is_object()) {
+        ConfigValue obj;
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            obj[it.key()] = JsonToConfigValue(it.value());
+        }
+        return obj;
     }
+    return ConfigValue();
 }
 
 // ============================================================================
@@ -269,10 +243,13 @@ void ConfigValue::toJsonString(std::ostream& os, Int32 indent, Bool pretty) cons
     }
 }
 
-ConfigValue ConfigValue::fromJsonString(const String& json) {
-    (void)json;
-    ConfigValue result;
-    return result;
+ConfigValue ConfigValue::fromJsonString(const String& jsonStr) {
+    try {
+        json j = json::parse(jsonStr);
+        return JsonToConfigValue(j);
+    } catch (...) {
+        return ConfigValue();
+    }
 }
 
 // ============================================================================
@@ -285,39 +262,10 @@ ConfigManager::ConfigManager()
     , nextCallbackId_(1)
     , defaultPolicy_(UpdatePolicy::kOnChangeUpdate)
 {
-    // Load HMAC secret with fallback strategy
-    const char* secret = std::getenv(ENV_HMAC_SECRET);
-    
-#ifdef REQUIRE_HMAC_SECRET_ENV
-    // Strict mode: ENV variable is mandatory
-    if (!secret || std::strlen(secret) == 0) {
-        INNER_CORE_LOG("[ConfigManager] FATAL: %s environment variable not set or empty!\n", ENV_HMAC_SECRET);
-        INNER_CORE_LOG("[ConfigManager] REQUIRE_HMAC_SECRET_ENV is enabled, program cannot continue.\n");
-        INNER_CORE_LOG("[ConfigManager] Please set %s environment variable before starting.\n", ENV_HMAC_SECRET);
-        std::abort(); // Force exit
-    }
-    hmacSecret_ = secret;
-    INNER_CORE_LOG("[ConfigManager] Loaded HMAC secret from environment variable (strict mode)\n");
-#else
-    // Lenient mode: Use built-in secret as fallback
-    if (secret && std::strlen(secret) > 0) {
-        hmacSecret_ = secret;
-        INNER_CORE_LOG("[ConfigManager] Loaded HMAC secret from environment variable\n");
-    } else {
-        hmacSecret_ = BUILTIN_HMAC_SECRET;
-        INNER_CORE_LOG("[ConfigManager] WARNING: %s environment variable not set!\n", ENV_HMAC_SECRET);
-        INNER_CORE_LOG("[ConfigManager] WARNING: Using built-in default HMAC secret (NOT secure for production)\n");
-        INNER_CORE_LOG("[ConfigManager] WARNING: Please set %s for production deployments\n", ENV_HMAC_SECRET);
-    }
-#endif
-    
-    // Disable OpenSSL automatic cleanup at exit
-    // We will manually cleanup in destructor to control the order
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L  // OpenSSL 1.1+
-    OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, NULL);
-#else
-    OPENSSL_config(NULL);
-#endif
+    // HMAC key is automatically loaded by Crypto's constructor from environment
+    // No manual key loading required here
+
+    // Crypto/OpenSSL lifecycle is managed in Crypto utilities; no Config-level init required
     
     // Initialize with empty JSON object
     configData_ = json::object();
@@ -349,15 +297,7 @@ ConfigManager::~ConfigManager() {
         }
     }
     
-    // Manually cleanup OpenSSL resources after our operations complete
-    // This ensures proper cleanup order (our work first, then OpenSSL)
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L  // OpenSSL 1.1+
-    OPENSSL_cleanup();
-#else
-    EVP_cleanup();
-    CRYPTO_cleanup_all_ex_data();
-#endif
-    INNER_CORE_LOG("[ConfigManager] OpenSSL cleanup completed\n");
+    // Crypto/OpenSSL cleanup is handled by the process/crypto library; no explicit cleanup here
 }
 
 ConfigManager& ConfigManager::getInstance() {
@@ -436,12 +376,12 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
         
         // Decode from Base64 if encrypted flag is set in metadata
         if (metadata_.encrypted && jsonStr.length() > 0 && jsonStr[0] != '{') {
-            try {
-                jsonStr = base64Decode(jsonStr);
-            } catch (const std::exception& e) {
-                INNER_CORE_LOG("[ConfigManager] Base64 decode error: %s\n", e.what());
+            String decoded = Crypto::Util::base64DecodeToString(jsonStr);
+            if (decoded.empty() && !jsonStr.empty()) {
+                INNER_CORE_LOG("[ConfigManager] Base64 decode error\n");
                 return Result<void, ConfigErrc>::FromError(ConfigErrc::kParseError);
             }
+            jsonStr.swap(decoded);
         }
         
         // Parse JSON
@@ -480,7 +420,10 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
         // Security verification if enabled and not skipped
         if (enableSecurity_ && !skipVerification && !storedCrc.empty()) {
             // Step 1: Verify CRC32
-            UInt32 computedCrc = computeCrc32(coreJson);
+            UInt32 computedCrc = Crypto::Util::computeCrc32(
+                reinterpret_cast<const UInt8*>(coreJson.c_str()), 
+                coreJson.length()
+            );
             std::ostringstream crcHex;
             crcHex << std::hex << std::setw(8) << std::setfill('0') << computedCrc;
             String computedCrcStr = crcHex.str();
@@ -499,13 +442,10 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
             
             // Step 3: Verify HMAC
             if (!storedHmac.empty()) {
-                if (hmacSecret_.empty()) {
-                    INNER_CORE_LOG("[ConfigManager] HMAC verification failed: %s not set\n", ENV_HMAC_SECRET);
-                    return Result<void, ConfigErrc>::FromError(ConfigErrc::kHmacKeyMissing);
-                }
-                
-                String computedHmac = computeHmacSha256(coreJson, hmacSecret_);
-                if (computedHmac != storedHmac) {
+                if (!crypto_.verifyHmac(
+                    reinterpret_cast<const UInt8*>(coreJson.c_str()),
+                    coreJson.length(),
+                    storedHmac)) {
                     INNER_CORE_LOG("[ConfigManager] HMAC verification failed\n");
                     return Result<void, ConfigErrc>::FromError(ConfigErrc::kHmacMismatch);
                 }
@@ -651,12 +591,16 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
         metaJson[META_ENCRYPTED] = metadata_.encrypted;
         
         if (enableSecurity && enableSecurity_) {
-            // HMAC secret is always available (from ENV or built-in)
-            
-            // Compute security fields
-            UInt32 crc = computeCrc32(coreJson);
+            // Compute security fields using Crypto utilities
+            UInt32 crc = Crypto::Util::computeCrc32(
+                reinterpret_cast<const UInt8*>(coreJson.c_str()),
+                coreJson.length()
+            );
             String timestamp = getCurrentTimestamp();
-            String hmac = computeHmacSha256(coreJson, hmacSecret_);
+            String hmac = crypto_.computeHmac(
+                reinterpret_cast<const UInt8*>(coreJson.c_str()),
+                coreJson.length()
+            );
             
             // Convert CRC to hex string
             std::ostringstream crcStream;
@@ -681,10 +625,9 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
         
         // Encode to Base64 if encrypted flag is set
         if (metadata_.encrypted) {
-            try {
-                jsonOutput = base64Encode(jsonOutput);
-            } catch (const std::exception& e) {
-                INNER_CORE_LOG("[ConfigManager] Base64 encode error: %s\n", e.what());
+            jsonOutput = Crypto::Util::base64Encode(jsonOutput);
+            if (jsonOutput.empty()) {
+                INNER_CORE_LOG("[ConfigManager] Base64 encode error\n");
                 return Result<void, ConfigErrc>::FromError(ConfigErrc::kInternalError);
             }
         }
@@ -769,10 +712,10 @@ Result<void, ConfigErrc> ConfigManager::set(const String& key, const ConfigValue
             current = &(*current)[parts[i]];
         }
         
-        // Get old value for callback
+        // Get old value for callback (full conversion)
         ConfigValue oldValue;
         if (current->contains(parts.back())) {
-            // TODO: Convert json to ConfigValue
+            oldValue = JsonToConfigValue((*current)[parts.back()]);
         }
         
         // Set new value
@@ -829,18 +772,8 @@ Optional<ConfigValue> ConfigManager::get(const String& key) const {
             current = &(*current)[p];
         }
         
-        // Convert json to ConfigValue
-        if (current->is_boolean()) {
-            return Optional<ConfigValue>(ConfigValue(current->get<Bool>()));
-        } else if (current->is_number_integer()) {
-            return Optional<ConfigValue>(ConfigValue(current->get<Int64>()));
-        } else if (current->is_number_float()) {
-            return Optional<ConfigValue>(ConfigValue(current->get<Double>()));
-        } else if (current->is_string()) {
-            return Optional<ConfigValue>(ConfigValue(current->get<String>()));
-        }
-        
-        return Optional<ConfigValue>();
+        // Convert json to ConfigValue (supports scalars, arrays, and objects)
+        return Optional<ConfigValue>(JsonToConfigValue(*current));
         
     } catch (const std::exception&) {
         return Optional<ConfigValue>();
@@ -1174,9 +1107,17 @@ UInt32 ConfigManager::computeModuleCrcLocked(const json& moduleJson) const {
             json tmp = moduleJson;
             // Strip legacy embedded policy field if present (for backward compatibility)
             if (tmp.contains("__update_policy__")) tmp.erase("__update_policy__");
-            return computeCrc32(tmp.dump());
+            String data = tmp.dump();
+            return Crypto::Util::computeCrc32(
+                reinterpret_cast<const UInt8*>(data.c_str()),
+                data.length()
+            );
         }
-        return computeCrc32(moduleJson.dump());
+        String data = moduleJson.dump();
+        return Crypto::Util::computeCrc32(
+            reinterpret_cast<const UInt8*>(data.c_str()),
+            data.length()
+        );
     } catch (...) {
         return 0u;
     }
@@ -1238,24 +1179,6 @@ void ConfigManager::clear() {
 // ============================================================================
 // Private Helpers
 // ============================================================================
-
-UInt32 ConfigManager::computeCrc32(const String& data) const {
-    uLong crc = crc32(0L, Z_NULL, 0);
-    crc = crc32(crc, reinterpret_cast<const Bytef*>(data.c_str()), data.length());
-    return static_cast<UInt32>(crc);
-}
-
-String ConfigManager::computeHmacSha256(const String& data, const String& key) const {
-    UInt8 hash[EVP_MAX_MD_SIZE];
-    UInt32 hashLen = 0;
-    
-    HMAC(EVP_sha256(), 
-         key.c_str(), key.length(),
-         reinterpret_cast<const UInt8*>(data.c_str()), data.length(),
-         hash, &hashLen);
-    
-    return bytesToHex(hash, hashLen);
-}
 
 String ConfigManager::getCurrentTimestamp() const {
     auto now = std::chrono::system_clock::now();

@@ -161,6 +161,144 @@ namespace core
         {
             return ( strPath.data() != nullptr ) && ( std::strlen( strPath.data() ) > 0 );
         }
+        
+        /**
+         * @brief Remove directory (optionally recursive)
+         * @param strPath Directory path
+         * @param recursive If true, remove recursively; if false, only remove empty directory
+         * @return true on success, false on failure
+         */
+        static Bool removeDirectory( StringView strPath, Bool recursive = false ) noexcept
+        {
+            if ( !valid( strPath ) )   return false;
+            try {
+                fs::path p{ strPath.data() };
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                if ( !fs::exists(p, ec) )   return true;  // Already removed
+                
+                if ( recursive ) {
+                    return fs::remove_all(p, ec) > 0;
+                } else {
+                    return fs::remove(p, ec);
+                }
+            } catch ( ... ) {
+                return false;
+            }
+        }
+        
+        /**
+         * @brief Copy directory recursively
+         * @param src Source directory path
+         * @param dst Destination directory path
+         * @return true on success, false on failure
+         */
+        static Bool copyDirectory( StringView src, StringView dst ) noexcept
+        {
+            if ( !valid( src ) || !valid( dst ) )   return false;
+            try {
+                fs::path srcPath{ src.data() };
+                fs::path dstPath{ dst.data() };
+                
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                
+                if ( !fs::exists(srcPath, ec) )   return false;
+                
+                // Create destination directory if it doesn't exist
+                if ( !fs::exists(dstPath, ec) ) {
+                    fs::create_directories(dstPath, ec);
+                    if ( ec )   return false;
+                }
+                
+                // Iterate and copy all files
+                for ( auto& entry : fs::directory_iterator(srcPath) ) {
+                    const auto& path = entry.path();
+                    auto destFile = dstPath / path.filename();
+                    
+                    if ( fs::is_directory(path, ec) ) {
+                        copyDirectory( path.string().c_str(), destFile.string().c_str() );
+                    } else {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                        fs::copy_file(path, destFile, fs::copy_options::overwrite_existing, ec);
+#else
+                        fs::copy_file(path, destFile, fs::copy_option::overwrite_if_exists, ec);
+#endif
+                    }
+                }
+                
+                return true;
+            } catch ( ... ) {
+                return false;
+            }
+        }
+        
+        /**
+         * @brief Get directory size (total size of all files)
+         * @param strPath Directory path
+         * @return Total size in bytes
+         */
+        static UInt64 getDirectorySize( StringView strPath ) noexcept
+        {
+            if ( !valid( strPath ) )   return 0;
+            try {
+                fs::path p{ strPath.data() };
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                
+                if ( !fs::exists(p, ec) || !fs::is_directory(p, ec) )   return 0;
+                
+                UInt64 totalSize = 0;
+                for ( auto& entry : fs::recursive_directory_iterator(p) ) {
+                    if ( fs::is_regular_file(entry, ec) ) {
+                        totalSize += fs::file_size(entry, ec);
+                    }
+                }
+                
+                return totalSize;
+            } catch ( ... ) {
+                return 0;
+            }
+        }
+        
+        /**
+         * @brief List all files in a directory (non-recursive)
+         * @param strPath Directory path
+         * @return Vector of file names (not full paths)
+         */
+        static Vector<String> listFiles( StringView strPath ) noexcept
+        {
+            Vector<String> files;
+            if ( !valid( strPath ) )   return files;
+            try {
+                fs::path p{ strPath.data() };
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                std::error_code ec;
+#else
+                boost::system::error_code ec;
+#endif
+                
+                if ( !fs::exists(p, ec) || !fs::is_directory(p, ec) )   return files;
+                
+                for ( auto& entry : fs::directory_iterator(p) ) {
+                    if ( fs::is_regular_file(entry, ec) ) {
+                        files.push_back( entry.path().filename().string() );
+                    }
+                }
+            } catch ( ... ) {
+                // Return empty vector on error
+            }
+            return files;
+        }
 
         ~Path() noexcept = default;
 

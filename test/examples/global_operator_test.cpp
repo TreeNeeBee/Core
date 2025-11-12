@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include "CMemory.hpp"
+#include "CInitialization.hpp"
 
 using namespace lap::core;
 
@@ -33,9 +34,13 @@ public:
 int main() {
     std::cout << "=== Global Operator new/delete Test ===\n\n";
 
-    // Initialize MemManager to load pool configuration
-    MemManager::getInstance()->initialize();
-    std::cout << "[Info] MemManager initialized\n\n";
+    // AUTOSAR-compliant initialization (includes MemoryManager)
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    std::cout << "[Info] Core initialized\n\n";
 
     // Test 1: Plain new/delete (should use global operators defined by MEMORY_CONTROL)
     std::cout << "Test 1: Plain class with global operators\n";
@@ -91,11 +96,12 @@ int main() {
 
     // Print memory state
     std::cout << "=== Final Memory State ===\n";
-    MemManager::getInstance()->outputState(0);
+    MemoryManager::getInstance()->outputState(0);
 
-    // Uninitialize MemManager to save configuration before program exits
-    MemManager::getInstance()->uninitialize();
-    std::cout << "[Info] MemManager uninitialized and configuration saved\n";
+    // AUTOSAR-compliant deinitialization (includes MemoryManager cleanup)
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
+    std::cout << "[Info] Core deinitialized and configuration saved\n";
 
     std::cout << "\n=== Test Completed Successfully ===\n";
     return 0;

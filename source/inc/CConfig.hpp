@@ -21,6 +21,7 @@
 #include "CString.hpp"
 #include "CResult.hpp"
 #include "COptional.hpp"
+#include "CCrypto.hpp"
 
 #include "CSync.hpp"
 #include <map>
@@ -223,6 +224,8 @@ public:
 
     /**
      * @brief Get singleton instance
+     * @return Reference to the global ConfigManager instance
+     * @threadsafe Thread-safe - uses static local variable initialization
      */
     static ConfigManager& getInstance();
 
@@ -232,6 +235,7 @@ public:
      * @param enableSecurity Enable triple security verification (CRC/Timestamp/HMAC)
      * @return Result indicating success or error
      * @throws ConfigException if HMAC_SECRET not set when loading file with HMAC
+     * @threadsafe Not thread-safe - must be called before multi-threaded access
      */
     Result<void, ConfigErrc> initialize(const String& configPath, 
                                         Bool enableSecurity = true);
@@ -240,18 +244,21 @@ public:
      * @brief Enable/Disable Base64 encoding for hiding sensitive data
      * @param enable True to enable Base64 encoding, false to disable
      * @note This updates the metadata.encrypted field
+     * @threadsafe Thread-safe - uses internal locking
      */
     void setBase64Encoding(Bool enable);
 
     /**
      * @brief Get current Base64 encoding status
      * @return True if Base64 encoding is enabled
+     * @threadsafe Thread-safe - reads under lock
      */
     Bool isBase64Enabled() const;
 
     /**
      * @brief Get configuration metadata
      * @return Current configuration metadata
+     * @threadsafe Thread-safe - returns copy under lock
      */
     ConfigMetadata getMetadata() const;
 
@@ -457,7 +464,7 @@ private:
     // Configuration
     String configPath_;
     Bool enableSecurity_;
-    String hmacSecret_;         // From HMAC_SECRET env var
+    Crypto crypto_;             // Cryptographic utilities (HMAC key managed internally)
     Bool initialized_;
 
     // Change tracking
@@ -468,8 +475,6 @@ private:
     mutable RecursiveMutex mutex_;
 
     // Security helpers
-    UInt32 computeCrc32(const String& data) const;
-    String computeHmacSha256(const String& data, const String& key) const;
     String getCurrentTimestamp() const;
     Bool validateTimestamp(const String& timestamp) const;
     

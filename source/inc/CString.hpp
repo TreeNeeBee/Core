@@ -61,12 +61,15 @@ namespace core
     using U32String = std::basic_string<char32_t>;
 
     // ========================================================================
-    // StringView Types (AUTOSAR SWS_CORE_01631 - 01644)
+    // StringView Types (AUTOSAR SWS_CORE_01631 - 01644, R24-11 Enhanced)
     // ========================================================================
     
     /**
      * @brief Non-owning view over a string
-     * According to AUTOSAR SWS_CORE_01631
+     * According to AUTOSAR SWS_CORE_01631 with R24-11 enhancements
+     * 
+     * @threadsafe All member functions are thread-safe (read-only view)
+     * @note Enhanced with C++20 string_view features for R24-11 compliance
      */
 #if __cplusplus >= 201703L
     using StringView = std::string_view;
@@ -76,6 +79,7 @@ namespace core
 
     /**
      * @brief Non-owning view over a wide string
+     * @threadsafe All member functions are thread-safe (read-only view)
      */
 #if __cplusplus >= 201703L
     using WStringView = std::wstring_view;
@@ -85,6 +89,7 @@ namespace core
 
     /**
      * @brief Non-owning view over a UTF-16 string
+     * @threadsafe All member functions are thread-safe (read-only view)
      */
 #if __cplusplus >= 201703L
     using U16StringView = std::u16string_view;
@@ -94,12 +99,132 @@ namespace core
 
     /**
      * @brief Non-owning view over a UTF-32 string
+     * @threadsafe All member functions are thread-safe (read-only view)
      */
 #if __cplusplus >= 201703L
     using U32StringView = std::u32string_view;
 #else
     using U32StringView = boost::basic_string_view<char32_t>;
 #endif
+    
+    // ========================================================================
+    // StringView Extension Functions (R24-11 C++20 compatibility)
+    // ========================================================================
+    
+#if __cplusplus < 202002L
+    /**
+     * @brief Check if StringView starts with given prefix
+     * @param sv The StringView to check
+     * @param prefix The prefix to search for
+     * @return true if sv starts with prefix
+     * @threadsafe Thread-safe (no shared state)
+     * @note Provides C++20 starts_with functionality for C++17
+     */
+    inline bool starts_with(StringView sv, StringView prefix) noexcept
+    {
+        return sv.size() >= prefix.size() && 
+               sv.compare(0, prefix.size(), prefix) == 0;
+    }
+    
+    /**
+     * @brief Check if StringView starts with given character
+     * @param sv The StringView to check
+     * @param ch The character to search for
+     * @return true if sv starts with ch
+     * @threadsafe Thread-safe (no shared state)
+     */
+    inline bool starts_with(StringView sv, char ch) noexcept
+    {
+        return !sv.empty() && sv.front() == ch;
+    }
+    
+    /**
+     * @brief Check if StringView starts with given C-string
+     * @param sv The StringView to check
+     * @param prefix The null-terminated prefix to search for
+     * @return true if sv starts with prefix
+     * @threadsafe Thread-safe (no shared state)
+     */
+    inline bool starts_with(StringView sv, const char* prefix) noexcept
+    {
+        return starts_with(sv, StringView(prefix));
+    }
+    
+    /**
+     * @brief Check if StringView ends with given suffix
+     * @param sv The StringView to check
+     * @param suffix The suffix to search for
+     * @return true if sv ends with suffix
+     * @threadsafe Thread-safe (no shared state)
+     * @note Provides C++20 ends_with functionality for C++17
+     */
+    inline bool ends_with(StringView sv, StringView suffix) noexcept
+    {
+        return sv.size() >= suffix.size() && 
+               sv.compare(sv.size() - suffix.size(), StringView::npos, suffix) == 0;
+    }
+    
+    /**
+     * @brief Check if StringView ends with given character
+     * @param sv The StringView to check
+     * @param ch The character to search for
+     * @return true if sv ends with ch
+     * @threadsafe Thread-safe (no shared state)
+     */
+    inline bool ends_with(StringView sv, char ch) noexcept
+    {
+        return !sv.empty() && sv.back() == ch;
+    }
+    
+    /**
+     * @brief Check if StringView ends with given C-string
+     * @param sv The StringView to check
+     * @param suffix The null-terminated suffix to search for
+     * @return true if sv ends with suffix
+     * @threadsafe Thread-safe (no shared state)
+     */
+    inline bool ends_with(StringView sv, const char* suffix) noexcept
+    {
+        return ends_with(sv, StringView(suffix));
+    }
+    
+    /**
+     * @brief Check if StringView contains given substring
+     * @param sv The StringView to check
+     * @param substr The substring to search for
+     * @return true if sv contains substr
+     * @threadsafe Thread-safe (no shared state)
+     * @note Provides C++23 contains functionality
+     */
+    inline bool contains(StringView sv, StringView substr) noexcept
+    {
+        return sv.find(substr) != StringView::npos;
+    }
+    
+    /**
+     * @brief Check if StringView contains given character
+     * @param sv The StringView to check
+     * @param ch The character to search for
+     * @return true if sv contains ch
+     * @threadsafe Thread-safe (no shared state)
+     */
+    inline bool contains(StringView sv, char ch) noexcept
+    {
+        return sv.find(ch) != StringView::npos;
+    }
+    
+    /**
+     * @brief Check if StringView contains given C-string
+     * @param sv The StringView to check
+     * @param substr The null-terminated substring to search for
+     * @return true if sv contains substr
+     * @threadsafe Thread-safe (no shared state)
+     */
+    inline bool contains(StringView sv, const char* substr) noexcept
+    {
+        return contains(sv, StringView(substr));
+    }
+#endif // __cplusplus < 202002L
 
     // ========================================================================
     // String Literal Operators (AUTOSAR SWS_CORE_01621-01624)

@@ -1,17 +1,17 @@
 /**
  * @file        test_memory_allocator.cpp
- * @brief       Test MemoryAllocator with STL containers
+ * @brief       Test MemoryManager::StlMemoryAllocator with STL containers
  * @date        2025-11-02
  */
 
 #include <iostream>
+#include "CInitialization.hpp"
 #include <vector>
 #include <string>
 #include <map>
 #include <list>
 #include <set>
 #include "CMemory.hpp"
-#include "CMemoryAllocator.hpp"
 #include "CConfig.hpp"
 
 using namespace lap::core;
@@ -27,17 +27,21 @@ void printMemoryStats(const char* label) {
 }
 
 int main() {
-    std::cout << "=== Testing MemoryAllocator with STL Containers ===\n\n";
+    std::cout << "=== Testing MemoryManager::StlMemoryAllocator with STL Containers ===\n\n";
     
-    // Initialize ConfigManager to load memory configuration
-    ConfigManager::getInstance().initialize("config.json");
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Initialization failed!" << std::endl;
+        return 1;
+    }
     
     printMemoryStats("Initial State");
     
-    // Test 1: Vector with MemoryAllocator
+    // Test 1: Vector with MemoryManager::StlMemoryAllocator
     {
-        std::cout << "\n--- Test 1: std::vector<int, MemoryAllocator<int>> ---\n";
-        std::vector<int, MemoryAllocator<int>> vec;
+        std::cout << "\n--- Test 1: std::vector<int, StlMemoryAllocator<int>> ---\n";
+        std::vector<int, ::lap::core::StlMemoryAllocator<int>> vec;
         
         std::cout << "Pushing 10 elements...\n";
         for (int i = 0; i < 10; ++i) {
@@ -56,12 +60,12 @@ int main() {
     
     printMemoryStats("After vector destroyed");
     
-    // Test 2: String with MemoryAllocator
+    // Test 2: String with MemoryManager::StlMemoryAllocator
     {
-        std::cout << "\n--- Test 2: std::basic_string with MemoryAllocator ---\n";
-        using MyString = std::basic_string<char, std::char_traits<char>, MemoryAllocator<char>>;
+        std::cout << "\n--- Test 2: std::basic_string with StlMemoryAllocator ---\n";
+        using MyString = std::basic_string<char, std::char_traits<char>, ::lap::core::StlMemoryAllocator<char>>;
         
-        MyString str1("Hello, MemoryAllocator!");
+        MyString str1("Hello, MemoryManager::StlMemoryAllocator!");
         MyString str2 = str1 + " Testing...";
         
         std::cout << "str1: " << str1 << "\n";
@@ -72,12 +76,11 @@ int main() {
     
     printMemoryStats("After strings destroyed");
     
-    // Test 3: Map with MemoryAllocator
+    // Test 3: Map with MemoryManager::StlMemoryAllocator
     {
-        std::cout << "\n--- Test 3: std::map with MemoryAllocator ---\n";
-        using MyMap = std::map<int, std::string, 
-                               std::less<int>, 
-                               MemoryAllocator<std::pair<const int, std::string>>>;
+        std::cout << "\n--- Test 3: std::map with StlMemoryAllocator ---\n";
+        using MyMap = std::map<int, std::string, std::less<int>,
+                               ::lap::core::StlMemoryAllocator<std::pair<const int, std::string>>>;
         
         MyMap myMap;
         myMap[1] = "one";
@@ -96,10 +99,10 @@ int main() {
     
     printMemoryStats("After map destroyed");
     
-    // Test 4: List with MemoryAllocator
+    // Test 4: List with MemoryManager::StlMemoryAllocator
     {
-        std::cout << "\n--- Test 4: std::list with MemoryAllocator ---\n";
-        std::list<double, MemoryAllocator<double>> myList;
+        std::cout << "\n--- Test 4: std::list with StlMemoryAllocator ---\n";
+        std::list<double, ::lap::core::StlMemoryAllocator<double>> myList;
         
         for (int i = 0; i < 8; ++i) {
             myList.push_back(i * 1.5);
@@ -117,10 +120,10 @@ int main() {
     
     printMemoryStats("After list destroyed");
     
-    // Test 5: Set with MemoryAllocator
+    // Test 5: Set with MemoryManager::StlMemoryAllocator
     {
-        std::cout << "\n--- Test 5: std::set with MemoryAllocator ---\n";
-        std::set<int, std::less<int>, MemoryAllocator<int>> mySet;
+        std::cout << "\n--- Test 5: std::set with StlMemoryAllocator ---\n";
+        std::set<int, std::less<int>, ::lap::core::StlMemoryAllocator<int>> mySet;
         
         mySet.insert({5, 2, 8, 1, 9, 3, 7});
         
@@ -139,8 +142,8 @@ int main() {
     // Test 6: Complex nested structures
     {
         std::cout << "\n--- Test 6: Nested containers ---\n";
-        using InnerVec = std::vector<int, MemoryAllocator<int>>;
-        using OuterVec = std::vector<InnerVec, MemoryAllocator<InnerVec>>;
+        using InnerVec = std::vector<int, ::lap::core::StlMemoryAllocator<int>>;
+        using OuterVec = std::vector<InnerVec, ::lap::core::StlMemoryAllocator<InnerVec>>;
         
         OuterVec nested;
         for (int i = 0; i < 3; ++i) {
@@ -168,7 +171,7 @@ int main() {
     // Test 7: Large allocation test
     {
         std::cout << "\n--- Test 7: Large allocation stress test ---\n";
-        std::vector<int, MemoryAllocator<int>> largeVec;
+        std::vector<int, ::lap::core::StlMemoryAllocator<int>> largeVec;
         
         std::cout << "Allocating 1000 elements...\n";
         for (int i = 0; i < 1000; ++i) {
@@ -201,6 +204,10 @@ int main() {
     }
     
     std::cout << "\n=== Test Complete ===\n";
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return (finalStats.currentAllocCount == 0) ? 0 : 1;
 }

@@ -87,6 +87,26 @@ namespace core
             oss << put_time( &tmv, fmt );
             return oss.str();
         }
+        
+        /**
+         * @brief Get current time in ISO 8601 format (UTC)
+         * @return ISO 8601 formatted string (e.g., "2025-11-11T10:30:45Z")
+         */
+        static String GetCurrentTimeISO() noexcept
+        {
+            using namespace std;
+            try {
+                time_t now = time(nullptr);
+                tm tmv{};
+                gmtime_r(&now, &tmv);  // UTC time
+                
+                char buffer[32];
+                strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &tmv);
+                return String(buffer);
+            } catch (...) {
+                return String("1970-01-01T00:00:00Z");  // Fallback
+            }
+        }
     };
 } // namespace core
 } // namespace lap

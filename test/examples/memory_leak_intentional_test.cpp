@@ -7,6 +7,7 @@
 
 #include "CMemory.hpp"
 #include "CConfig.hpp"
+#include "CInitialization.hpp"
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -47,7 +48,7 @@ void createLeaksInThread(int threadId, int numLeaks) {
     // Register thread name
     std::ostringstream oss;
     oss << "LeakThread-" << threadId;
-    MemManager::getInstance()->registerThreadName(
+    MemoryManager::getInstance()->registerThreadName(
         static_cast<uint32_t>(std::hash<std::thread::id>{}(std::this_thread::get_id())),
         oss.str()
     );
@@ -82,17 +83,30 @@ int main() {
     std::cout << "==== Intentional Memory Leak Test ====" << std::endl;
     std::cout << "This test creates intentional leaks to verify detection\n" << std::endl;
     
-    // Configure memory module to enable checker BEFORE initialization
+    // AUTOSAR-compliant initialization (includes MemoryManager and ConfigManager)
+    auto initResult = lap::core::Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        return 1;
+    }
+    
+    // Note: Memory checker configuration should ideally be set via config.json before
+    // the program starts. Here we set it programmatically after init for test purposes.
+    // In production, use a proper config file instead.
     std::string memConfig = R"({"check_enable": true, "pools": []})";
     ConfigManager::getInstance().setModuleConfig("memory", memConfig);
     
-    // Initialize memory manager (this will read config and enable checker if configured)
-    MemManager::getInstance()->initialize();
+    // Re-initialize memory checker with new configuration
+    // This is a workaround for testing - not recommended in production
+    if (MemoryManager::getInstance()->hasMemoryTracker()) {
+        MemoryManager::getInstance()->uninitialize();
+    }
+    MemoryManager::getInstance()->initialize();
     
     // Check if memory checking is enabled
-    if (!MemManager::getInstance()->hasMemChecker()) {
+    if (!MemoryManager::getInstance()->hasMemoryTracker()) {
         std::cout << "[WARNING] Memory checker is not enabled!" << std::endl;
-        std::cout << "[INFO] To enable leak detection, create memory_config.json with:" << std::endl;
+        std::cout << "[INFO] To enable leak detection, create config.json with:" << std::endl;
         std::cout << R"({
     "check_enable": true,
     "pools": []
@@ -116,7 +130,7 @@ int main() {
     std::cout << "[Phase 1] Complete\n" << std::endl;
     
     // Check state after phase 1 (should be clean)
-    auto stats1 = MemManager::getInstance()->getMemoryStats();
+    auto stats1 = MemoryManager::getInstance()->getMemoryStats();
     std::cout << "After Phase 1:" << std::endl;
     std::cout << "  Current Alloc Count: " << stats1.currentAllocCount << std::endl;
     std::cout << "  Current Alloc Size:  " << stats1.currentAllocSize << " bytes\n" << std::endl;
@@ -135,7 +149,7 @@ int main() {
     std::cout << "[Phase 2] Complete\n" << std::endl;
     
     // Check state after phase 2 (should show leaks)
-    auto stats2 = MemManager::getInstance()->getMemoryStats();
+    auto stats2 = MemoryManager::getInstance()->getMemoryStats();
     std::cout << "After Phase 2:" << std::endl;
     std::cout << "  Current Alloc Count: " << stats2.currentAllocCount << std::endl;
     std::cout << "  Current Alloc Size:  " << stats2.currentAllocSize << " bytes" << std::endl;
@@ -147,12 +161,22 @@ int main() {
         
         // Generate detailed report
         std::cout << "\nDetailed leak report:" << std::endl;
-        MemManager::getInstance()->outputState();
+        MemoryManager::getInstance()->outputState();
         
         std::cout << "\n[SUCCESS] Leak detection is working correctly!" << std::endl;
+        
+        // AUTOSAR-compliant deinitialization
+        auto deinitResult = lap::core::Deinitialize();
+        (void)deinitResult;
+        
         return 0; // Success - we detected the intentional leaks
     } else {
         std::cout << "\n[FAILURE] No leaks detected - leak detection may not be working!" << std::endl;
+        
+        // AUTOSAR-compliant deinitialization
+        auto deinitResult = lap::core::Deinitialize();
+        (void)deinitResult;
+        
         return 1;
     }
 }

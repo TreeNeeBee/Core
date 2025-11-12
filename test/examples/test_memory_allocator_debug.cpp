@@ -1,23 +1,24 @@
 /**
  * @file        test_memory_allocator_debug.cpp
- * @brief       Debug version - verify MemoryAllocator actually calls Memory::malloc
+ * @brief       Debug version - verify MemoryManager::StlMemoryAllocator actually calls Memory::malloc
  * @date        2025-11-02
  */
 
 #include <iostream>
 #include <vector>
+#include "CInitialization.hpp"
 #include "CMemory.hpp"
-#include "CMemoryAllocator.hpp"
+#include "CMemory.hpp"
 #include "CConfig.hpp"
 
 using namespace lap::core;
 
 // Custom wrapper to trace allocations
 template <typename T>
-class TracingAllocator : public MemoryAllocator<T> {
+class TracingAllocator : public StlMemoryAllocator<T> {
 public:
-    using typename MemoryAllocator<T>::pointer;
-    using typename MemoryAllocator<T>::size_type;
+    using value_type = T;
+    using size_type = typename StlMemoryAllocator<T>::size_type;
     
     template <class U>
     struct rebind { using other = TracingAllocator<U>; };
@@ -26,10 +27,10 @@ public:
     template <class U>
     constexpr TracingAllocator(const TracingAllocator<U>&) noexcept {}
     
-    [[nodiscard]] pointer allocate(size_type n) {
+    [[nodiscard]] T* allocate(size_type n) {
         std::cout << "  [ALLOC] Requesting " << n << " elements of " << sizeof(T) 
                   << " bytes each = " << (n * sizeof(T)) << " total bytes\n";
-        pointer p = MemoryAllocator<T>::allocate(n);
+        T* p = StlMemoryAllocator<T>::allocate(n);
         std::cout << "  [ALLOC] Got pointer: " << static_cast<void*>(p) << "\n";
         
         // Verify pointer using Memory::checkPtr
@@ -39,17 +40,21 @@ public:
         return p;
     }
     
-    void deallocate(pointer p, size_type n) noexcept {
+    void deallocate(T* p, size_type n) noexcept {
         std::cout << "  [FREE] Deallocating " << n << " elements at " << static_cast<void*>(p) << "\n";
-        MemoryAllocator<T>::deallocate(p, n);
+        StlMemoryAllocator<T>::deallocate(p, n);
     }
 };
 
 int main() {
-    std::cout << "=== Debug Test: Verifying MemoryAllocator Usage ===\n\n";
+    std::cout << "=== Debug Test: Verifying MemoryManager::StlMemoryAllocator Usage ===\n\n";
     
-    // Initialize
-    ConfigManager::getInstance().initialize("config.json");
+    // AUTOSAR-compliant initialization
+    auto initResult = Initialize();
+    if (!initResult.HasValue()) {
+        std::cerr << "Initialization failed!" << std::endl;
+        return 1;
+    }
     
     auto initialStats = Memory::getMemoryStats();
     std::cout << "Initial state:\n";
@@ -105,6 +110,10 @@ int main() {
     std::cout << "  Allocated size: " << afterFree.currentAllocSize << " bytes\n";
     
     std::cout << "\n=== Test Complete ===\n";
+    
+    // AUTOSAR-compliant deinitialization
+    auto deinitResult = Deinitialize();
+    (void)deinitResult;
     
     return 0;
 }

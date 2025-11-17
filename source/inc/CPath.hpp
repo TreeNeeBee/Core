@@ -77,6 +77,16 @@ namespace core
             if ( !valid( strPath ) )   return strPath;
             return strPath.substr( strPath.find_last_of( "/\\" ) + 1 );
         }
+        
+        /**
+         * @brief Get basename as String (not StringView)
+         * @param strPath Path string
+         * @return Basename as String
+         */
+        static String basename( StringView strPath ) noexcept
+        {
+            return String(getBaseName(strPath));
+        }
 
         static StringView getFolder( StringView strPath ) noexcept
         {
@@ -93,6 +103,22 @@ namespace core
             if ( !s_buffer.empty() && s_buffer.back() != '/' ) s_buffer.push_back('/');
             s_buffer.append( extra.data() );
             return StringView{ s_buffer };
+        }
+        
+        /**
+         * @brief Append path components and return as String (not StringView)
+         * @param strBase Base path
+         * @param extra Extra path component
+         * @return Combined path as String
+         */
+        static String appendString( StringView strBase, StringView extra ) noexcept
+        {
+            String result;
+            result.reserve( std::strlen( strBase.data() ) + 1 + std::strlen( extra.data() ) );
+            result.append( strBase.data() );
+            if ( !result.empty() && result.back() != '/' ) result.push_back('/');
+            result.append( extra.data() );
+            return result;
         }
 
         static Bool createDirectory( StringView strPath ) noexcept

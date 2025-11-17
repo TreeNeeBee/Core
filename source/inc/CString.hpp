@@ -340,6 +340,57 @@ namespace core
     {
         return std::to_string(value);
     }
+    
+    // ========================================================================
+    // String Utility Class for Static Methods
+    // ========================================================================
+    
+    /**
+     * @brief String utility class with static helper methods
+     * Provides additional string manipulation functions
+     */
+    class StringUtil final
+    {
+    public:
+        // Non-instantiable
+        StringUtil() = delete;
+        ~StringUtil() = delete;
+        StringUtil(const StringUtil&) = delete;
+        StringUtil& operator=(const StringUtil&) = delete;
+        
+        /**
+         * @brief Convert integer to string (alias for ToString)
+         */
+        static String FromInt(int value)
+        {
+            return std::to_string(value);
+        }
+        
+        static String FromInt(long value)
+        {
+            return std::to_string(value);
+        }
+        
+        static String FromInt(long long value)
+        {
+            return std::to_string(value);
+        }
+        
+        static String FromInt(unsigned value)
+        {
+            return std::to_string(value);
+        }
+        
+        static String FromInt(unsigned long value)
+        {
+            return std::to_string(value);
+        }
+        
+        static String FromInt(unsigned long long value)
+        {
+            return std::to_string(value);
+        }
+    };
 
 } // namespace core
 } // namespace lap

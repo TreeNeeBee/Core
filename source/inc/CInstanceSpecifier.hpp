@@ -58,14 +58,25 @@ namespace core
         Bool                                operator<( const InstanceSpecifier &other ) const noexcept         { return m_metaModelIdentifier < other.m_metaModelIdentifier; }
 
     private:
-        // Validate identifier: one or more segments of [A-Za-z0-9_], separated by single '/'.
-        // No leading/trailing '/' and no empty segments. Uses Boost.Regex for C++14 compatibility.
+        // Validate identifier: accepts the following formats:
+        // 1. Simple identifier: [A-Za-z0-9_]+ (e.g., "test")
+        // 2. Relative path: [A-Za-z0-9_]+(/[A-Za-z0-9_]+)+ (e.g., "valid/meta_model")
+        // 3. Absolute path: /[A-Za-z0-9_]+(/[A-Za-z0-9_]+)* (e.g., "/tmp/test_kvs")
+        // Uses Boost.Regex for C++14 compatibility.
         static Bool IsValidMetaModelIdentifier( StringView id ) noexcept
         {
             if ( id.empty() ) {
                 return false;
             }
-            static const ::boost::regex re( "^[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*$" );
+            // Pattern breakdown:
+            // ^                              - Start of string
+            // (?:                            - Non-capturing group (one of three patterns):
+            //   /[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*  - Absolute path: starts with /, followed by segments
+            //   |                            - OR
+            //   [A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*   - Simple id or relative path: starts without /
+            // )
+            // $                              - End of string
+            static const ::boost::regex re( "^(?:/[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*|[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*)$" );
             return ::boost::regex_match( id.begin(), id.end(), re );
         }
         friend constexpr Bool operator==( StringView lhs, const InstanceSpecifier &rhs ) noexcept;

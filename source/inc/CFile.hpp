@@ -235,6 +235,77 @@ namespace core
                     return false;
                 }
             }
+            
+            /**
+             * @brief Write binary data to file
+             * @param filePath Path to the file to write
+             * @param data Pointer to data to write
+             * @param size Size of data in bytes
+             * @param createDirectories If true, create parent directories if they don't exist
+             * @return true on success, false on failure
+             */
+            static Bool WriteBinary(const String& filePath, const UInt8* data, Size size, Bool createDirectories = true) noexcept
+            {
+                if (!data || size == 0) {
+                    return false;
+                }
+                
+                // Create parent directory if needed
+                if (createDirectories) {
+                    try {
+                        fs::path path(filePath);
+                        auto parentPath = path.parent_path();
+                        if (!parentPath.empty() && !fs::exists(parentPath)) {
+#if __cplusplus >= 201703L && __has_include(<filesystem>)
+                            std::error_code ec;
+#else
+                            boost::system::error_code ec;
+#endif
+                            if (!fs::create_directories(parentPath, ec)) {
+                                return false;
+                            }
+                        }
+                    } catch (...) {
+                        return false;
+                    }
+                }
+                
+                try {
+                    std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
+                    if (!file.is_open()) {
+                        return false;
+                    }
+                    
+                    file.write(reinterpret_cast<const char*>(data), size);
+                    return file.good();
+                } catch (...) {
+                    return false;
+                }
+            }
+            
+            /**
+             * @brief Get file modification time (Unix timestamp in milliseconds)
+             * @param filePath Path to the file
+             * @return Modification time in milliseconds since epoch, 0 on error
+             */
+            static UInt64 getModificationTime(const String& filePath) noexcept
+            {
+                if (!exists(filePath)) {
+                    return 0;
+                }
+                
+                try {
+                    auto ftime = fs::last_write_time(fs::path(filePath));
+                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                        ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+                    );
+                    return std::chrono::duration_cast<std::chrono::milliseconds>(
+                        sctp.time_since_epoch()
+                    ).count();
+                } catch (...) {
+                    return 0;
+                }
+            }
         }; // class Util
         
         // ========== Instance-Based File Descriptor I/O ==========

@@ -112,6 +112,14 @@ set(MODULE_EXTERNAL_LIB
 # ==============================================================================
 # Build Shared Library
 # ==============================================================================
+# Create symlink for core headers to match include structure (lap/core)
+if(NOT CORE_STANDALONE_BUILD)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/lap)
+    file(CREATE_LINK ${CMAKE_CURRENT_SOURCE_DIR}/source/inc 
+         ${CMAKE_CURRENT_BINARY_DIR}/include/lap/core SYMBOLIC)
+    list(APPEND MODULE_EXTERNAL_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
+endif()
+
 set(ENABLE_BUILD_SHARED_LIBRARY ON CACHE BOOL "Build core shared library" FORCE)
 set(ENABLE_BUILD_WITH_PLATFORM_PREX ON)
 

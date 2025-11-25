@@ -125,6 +125,70 @@ namespace core
         { \
             lap::core::Memory::checkPtr(ObjPtr, #Hint); \
         }
+
+    // ========================================================================
+    // Symbol Visibility Control for Shared Libraries
+    // ========================================================================
+    
+    /**
+     * @brief Symbol visibility macros for controlling exports in shared libraries
+     * @note GCC Wiki: https://gcc.gnu.org/wiki/Visibility
+     * 
+     * Usage:
+     *   LAP_API void PublicFunction();              // Export function
+     *   class LAP_API PublicClass { ... };          // Export class
+     *   LAP_LOCAL void InternalFunction();          // Hide function
+     *   LAP_DEPRECATED("Use NewAPI") void OldAPI(); // Mark deprecated
+     * 
+     * Module-specific variants:
+     *   LAP_CORE_API, LAP_COM_API, LAP_LOG_API, etc.
+     *   Define MODULE_NAME_BUILDING when compiling the module
+     */
+    
+    /**
+     * @def LAP_API_EXPORT
+     * @brief Generic export macro for shared library symbols
+     */
+    #if defined(_WIN32) || defined(_WIN64)
+        // Windows: DLL export/import
+        #define LAP_API_EXPORT __declspec(dllexport)
+        #define LAP_API_IMPORT __declspec(dllimport)
+    #elif defined(__GNUC__) || defined(__clang__)
+        // GCC/Clang: Visibility attribute
+        #define LAP_API_EXPORT __attribute__((visibility("default")))
+        #define LAP_API_IMPORT __attribute__((visibility("default")))
+    #else
+        // Unknown compiler
+        #define LAP_API_EXPORT
+        #define LAP_API_IMPORT
+        #warning "Unknown compiler - symbol visibility not controlled"
+    #endif
+    
+    /**
+     * @def LAP_LOCAL
+     * @brief Mark symbol as internal (hidden from shared library users)
+     */
+    #if defined(__GNUC__) || defined(__clang__)
+        #define LAP_LOCAL __attribute__((visibility("hidden")))
+    #else
+        #define LAP_LOCAL
+    #endif
+    
+    /**
+     * @def LAP_DEPRECATED
+     * @brief Mark symbol as deprecated with custom message
+     */
+    #if defined(__GNUC__) || defined(__clang__)
+        #define LAP_DEPRECATED(msg) __attribute__((deprecated(msg)))
+    #elif defined(_MSC_VER)
+        #define LAP_DEPRECATED(msg) __declspec(deprecated(msg))
+    #else
+        #define LAP_DEPRECATED(msg)
+    #endif
+    
+    // Generic LAP API (for modules without specific macro)
+    #define LAP_API LAP_API_EXPORT
+    
 } // core
 } // lap
 

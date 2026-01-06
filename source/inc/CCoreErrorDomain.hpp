@@ -36,7 +36,10 @@ namespace core
         kInvalidMetaModelPath       = 138,
         kAlreadyInitialized         = 139,  // Platform already initialized
         kNotInitialized             = 140,  // Platform not initialized
-        kInternalError              = 141   // Internal initialization error
+        kInternalError              = 141,  // Internal initialization error
+        kOutOfMemory                = 142,  // Out of memory
+        kResourceExhausted          = 143,  // Resource exhausted (e.g., max chunks reached)
+        kWouldBlock                 = 144   // Operation would block (no data available)
     };
 
     inline constexpr const Char* CoreErrMessage( CoreErrc errCode )
@@ -56,6 +59,12 @@ namespace core
             return "Platform is not initialized";
         case CoreErrc::kInternalError:
             return "Internal error during initialization/de-initialization";
+        case CoreErrc::kOutOfMemory:
+            return "Out of memory";
+        case CoreErrc::kResourceExhausted:
+            return "Resource exhausted";
+        case CoreErrc::kWouldBlock:
+            return "Operation would block (no data available)";
         default:
             return "Unknown error";
         }
@@ -64,7 +73,6 @@ namespace core
     class CoreException : public Exception 
     {
     public:
-        IMP_OPERATOR_NEW(CoreException)
 
         explicit CoreException ( ErrorCode errorCode ) noexcept
             : Exception( errorCode )
@@ -85,7 +93,6 @@ namespace core
         using Exception     = CoreException;
 
     public:
-        IMP_OPERATOR_NEW(CoreErrorDomain)
 
         const Char*     Name () const noexcept override                                                     { return "Core"; }
         const Char*     Message ( CodeType errorCode ) const noexcept override                              { return CoreErrMessage( static_cast< Errc > ( errorCode ) ); }

@@ -24,7 +24,6 @@
 #include "CErrorCode.hpp"
 #include "CResult.hpp"
 #include "CFutureErrorDomain.hpp"
-#include "CMemory.hpp"
 
 namespace lap
 {
@@ -40,7 +39,6 @@ namespace core
     class Future final
     {
     public:
-        IMP_OPERATOR_NEW(Future)
         
 #ifdef __EXCEPTIONS
         T get ()                      

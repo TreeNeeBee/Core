@@ -25,7 +25,6 @@
 #include "CErrorCode.hpp"
 #include "CResult.hpp"
 #include "CFuture.hpp"
-#include "CMemory.hpp"
 
 namespace lap
 {
@@ -35,7 +34,6 @@ namespace core
     class Promise 
     {
     public:
-        IMP_OPERATOR_NEW(Promise)
         
         Promise () = default;
         Promise ( Promise &&other ) noexcept = default;

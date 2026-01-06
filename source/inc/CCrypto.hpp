@@ -45,7 +45,6 @@ namespace core
     class Crypto final
     {
     public:
-        IMP_OPERATOR_NEW(Crypto)
         
         // Environment variable name for HMAC secret key
         static constexpr const Char* ENV_HMAC_SECRET = "HMAC_SECRET";

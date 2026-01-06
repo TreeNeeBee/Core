@@ -42,7 +42,6 @@
 #include <unistd.h>
 #include "CTypedef.hpp"
 #include "CString.hpp"
-#include "CMemory.hpp"
 
 namespace lap
 {
@@ -57,7 +56,6 @@ namespace core
     class File final
     {
     public:
-        IMP_OPERATOR_NEW(File)
         
         // ========== Utility Class for Static File Operations ==========
         

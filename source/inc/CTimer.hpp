@@ -26,7 +26,6 @@
 #include <type_traits>
 #include "CTypedef.hpp"
 #include "CSync.hpp"
-#include "CMemory.hpp"
 
 namespace lap {
 namespace core {
@@ -46,7 +45,6 @@ public:
     using duration   = typename clock_type::duration;
 
 public:
-    IMP_OPERATOR_NEW(Timer)
 
     Timer() noexcept = default;
     Timer(const Timer&) = delete;

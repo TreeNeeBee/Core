@@ -50,6 +50,54 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(OpenSSL REQUIRED)
     find_package(ZLIB REQUIRED)
     
+    # ==============================================================================
+    # Memory Management Options
+    # ==============================================================================
+    option(ENABLE_MEMORY_POOL "Enable custom memory pool allocator" OFF)
+    option(ENABLE_JEMALLOC "Use jemalloc memory allocator" ON)  # Default enabled
+    option(ENABLE_SHARED_MEMORY_IPC "Enable shared memory shared memory allocator" OFF)
+    
+    # Ensure only one memory allocator option is enabled
+    if(ENABLE_MEMORY_POOL AND ENABLE_JEMALLOC)
+        message(FATAL_ERROR "[Core] ENABLE_MEMORY_POOL and ENABLE_JEMALLOC are mutually exclusive. Choose only one.")
+    endif()
+    
+    if(ENABLE_JEMALLOC)
+        # Try to find jemalloc library
+        find_library(JEMALLOC_LIB 
+            NAMES jemalloc libjemalloc
+            PATHS 
+                /usr/lib 
+                /usr/local/lib 
+                /usr/lib/x86_64-linux-gnu
+                /usr/lib/aarch64-linux-gnu
+                /usr/lib64
+        )
+        
+        # Try to find jemalloc header
+        find_path(JEMALLOC_INCLUDE_DIR 
+            NAMES jemalloc/jemalloc.h
+            PATHS 
+                /usr/include 
+                /usr/local/include
+        )
+        
+        if(JEMALLOC_LIB)
+            message(STATUS "[Core] Using jemalloc allocator: ${JEMALLOC_LIB}")
+            if(JEMALLOC_INCLUDE_DIR)
+                message(STATUS "[Core] jemalloc headers: ${JEMALLOC_INCLUDE_DIR}")
+            endif()
+        else()
+            message(WARNING "[Core] ENABLE_JEMALLOC is ON but jemalloc library not found. Falling back to system allocator.")
+            message(WARNING "[Core] Install jemalloc: sudo apt-get install libjemalloc-dev")
+            set(ENABLE_JEMALLOC OFF)
+        endif()
+    elseif(ENABLE_MEMORY_POOL)
+        message(STATUS "[Core] Using custom memory pool allocator")
+    else()
+        message(STATUS "[Core] Using system memory allocator (std::malloc/free)")
+    endif()
+    
     # Enable testing
     enable_testing()
     
@@ -149,6 +197,27 @@ if(TARGET lap_core)
     # Enforce strict memory layout checks
     target_compile_definitions(lap_core PRIVATE LAP_STRICT_LAYOUT=1)
     
+    # Memory management options
+    if(ENABLE_MEMORY_POOL)
+        target_compile_definitions(lap_core PUBLIC LAP_ENABLE_MEMORY_POOL)
+        message(STATUS "[Core] LAP_ENABLE_MEMORY_POOL defined")
+    endif()
+    
+    if(ENABLE_JEMALLOC AND JEMALLOC_LIB)
+        target_compile_definitions(lap_core PUBLIC LAP_USE_JEMALLOC)
+        target_link_libraries(lap_core PRIVATE ${JEMALLOC_LIB})
+        if(JEMALLOC_INCLUDE_DIR)
+            target_include_directories(lap_core PRIVATE ${JEMALLOC_INCLUDE_DIR})
+        endif()
+        message(STATUS "[Core] Linking with jemalloc: ${JEMALLOC_LIB}")
+        message(STATUS "[Core] LAP_USE_JEMALLOC compile definition added")
+    endif()
+    
+    if(ENABLE_SHARED_MEMORY_IPC)
+        target_compile_definitions(lap_core PUBLIC ENABLE_SHARED_MEMORY_IPC)
+        message(STATUS "[Core] shared memory shared memory allocator enabled")
+    endif()
+    
     # Suppress packed-member address warning on GCC/Clang
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(lap_core PRIVATE -Wno-address-of-packed-member)
@@ -177,6 +246,17 @@ set(MODULE_EXTERNAL_TEST_LIB
 )
 
 include("${BUILD_TEMPLATE_DIR}/Test.cmake.in")
+
+# Exclude tests that depend heavily on removed MemManager
+if(TARGET core_test)
+    get_target_property(TEST_SOURCES core_test SOURCES)
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_memory\\.cpp$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_memory_allocator\\.cpp$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_noexcept_extended\\.cpp$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_shm_allocator_broadcast\\.cpp$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_shm_async\\.cpp$")
+    set_target_properties(core_test PROPERTIES SOURCES "${TEST_SOURCES}")
+endif()
 
 # Configure test executable RPATH to find lap_core
 # Tests/benchmarks are for development only - not installed
@@ -218,33 +298,85 @@ if(ENABLE_BUILD_EXAMPLES)
             Threads::Threads 
             ${EXTRA_LIBS}
         )
+        
+        # Link jemalloc if enabled (for examples that use jemalloc API directly)
+        if(ENABLE_JEMALLOC AND JEMALLOC_LIB)
+            target_link_libraries(${EXAMPLE_NAME} PRIVATE ${JEMALLOC_LIB})
+            if(JEMALLOC_INCLUDE_DIR)
+                target_include_directories(${EXAMPLE_NAME} PRIVATE ${JEMALLOC_INCLUDE_DIR})
+            endif()
+        endif()
     endfunction()
     
-    # Memory Management Examples
-    add_core_example(core_memory_example memory_example.cpp Boost::filesystem Boost::regex)
-    add_core_example(global_operator_test global_operator_test.cpp Boost::filesystem Boost::regex)
-    add_core_example(direct_alignment_test direct_alignment_test.cpp 
-        Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
-    add_core_example(test_memory_allocator test_memory_allocator.cpp)
-    add_core_example(test_memory_allocator_debug test_memory_allocator_debug.cpp)
+    # Memory Management Examples (commented out - depend on removed MemManager)
+    # add_core_example(core_memory_example memory_example.cpp Boost::filesystem Boost::regex)
+    # add_core_example(global_operator_test global_operator_test.cpp Boost::filesystem Boost::regex)
+    # add_core_example(direct_alignment_test direct_alignment_test.cpp Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)  # Deleted
+    # add_core_example(test_memory_allocator test_memory_allocator.cpp)  # Deleted: depends on MemManager
+    # add_core_example(test_memory_allocator_debug test_memory_allocator_debug.cpp)  # Deleted: depends on MemManager
+    
+    # jemalloc Integration Test
+    add_core_example(test_jemalloc_integration test_jemalloc_integration.cpp)
     
     # Configuration Example (simplified)
     add_core_example(config_example config_example.cpp 
         Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
     
-    # Core Classes Examples
-    add_core_example(test_dynamic_magic test_dynamic_magic.cpp)
-    add_core_example(test_core_classes test_core_classes.cpp)
-    add_core_example(test_functional_classes test_functional_classes.cpp)
+    # Core Classes Examples (deleted - depend on MemManager)
+    # add_core_example(test_dynamic_magic test_dynamic_magic.cpp)
+    # add_core_example(test_core_classes test_core_classes.cpp)
+    # add_core_example(test_functional_classes test_functional_classes.cpp)
     
-    # Memory Leak Detection Examples
-    add_core_example(memory_leak_multithread_test memory_leak_multithread_test.cpp)
-    add_core_example(memory_leak_intentional_test memory_leak_intentional_test.cpp)
+    # Memory Leak Detection Examples (deleted - depend on MemManager)
+    # add_core_example(memory_leak_multithread_test memory_leak_multithread_test.cpp)
+    # add_core_example(memory_leak_intentional_test memory_leak_intentional_test.cpp)
     
-    # AUTOSAR Examples
-    add_core_example(abort_example abort_example.cpp)
-    add_core_example(simple_init_test simple_init_test.cpp)
-    add_core_example(initialization_example initialization_example.cpp)
+    # AUTOSAR Examples (deleted - depend on MemManager)
+    # add_core_example(abort_example abort_example.cpp)
+    # add_core_example(simple_init_test simple_init_test.cpp)
+    # add_core_example(test_pool_sizes test_pool_sizes.cpp)
+    # add_core_example(show_pool_stats show_pool_stats.cpp)
+    # add_core_example(test_simple_threshold test_simple_threshold.cpp)
+    # add_core_example(test_memory_trace test_memory_trace.cpp)
+    # add_core_example(test_jemalloc test_jemalloc.cpp)
+    # add_core_example(test_shared_memory_ipc test_shared_memory_ipc.cpp)
+    # add_core_example(initialization_example initialization_example.cpp)
+    
+    # SharedMemoryAllocator Tests (deleted - depend on MemManager)
+    # add_core_example(test_iceoryx2_api test_iceoryx2_api.cpp)
+    # add_core_example(test_message_queue test_message_queue.cpp)
+    add_core_example(event_example event_example.cpp)
+    
+    # Event system test (requires GTest)
+    add_executable(test_event_basic ${CMAKE_CURRENT_SOURCE_DIR}/test/examples/test_event_basic.cpp)
+    lap_configure_cxx_target(TARGET test_event_basic)
+    target_include_directories(test_event_basic PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
+    set_target_properties(test_event_basic PROPERTIES
+        BUILD_RPATH ".:$ORIGIN"
+        SKIP_BUILD_RPATH FALSE
+    )
+    target_link_libraries(test_event_basic PRIVATE 
+        ${PLATFORM_SYSTEM_TARGET}_core 
+        Threads::Threads
+        GTest::GTest
+        GTest::Main
+    )
+    
+    # Shared memory examples (deleted - depend on MemManager)
+    # add_core_example(test_shm_simple test_shm_simple.cpp)
+    # add_core_example(test_shm_integration test_shm_integration.cpp)
+    # add_core_example(test_segment_allocation test_segment_allocation.cpp)
+    # add_core_example(test_segment_simple test_segment_simple.cpp)
+    # add_core_example(test_segment_memory_leak test_segment_memory_leak.cpp)
+    # add_core_example(test_segment_cleanup test_segment_cleanup.cpp)
+    # add_core_example(test_mmap_shrink test_mmap_shrink.cpp)
+    # add_core_example(test_concurrent_shrink test_concurrent_shrink.cpp)
+    # add_core_example(test_segment_growth test_segment_growth.cpp)
+    # add_core_example(benchmark_segment_performance benchmark_segment_performance.cpp)
+    # add_core_example(benchmark_allocators benchmark_allocators.cpp)
+    # add_core_example(benchmark_shm_async benchmark_shm_async.cpp)
+    # add_core_example(test_concurrent test_concurrent.cpp)
+    # add_core_example(test_wait_policies test_wait_policies.cpp)
 endif()
 
 # ==============================================================================
@@ -276,13 +408,17 @@ if(ENABLE_BUILD_BENCHMARKS)
         )
     endfunction()
     
-    # Memory Performance Benchmarks
-    add_core_benchmark(alignment_performance_test alignment_performance_test.cpp)
-    add_core_benchmark(pool_vs_system_benchmark pool_vs_system_benchmark.cpp)
-    add_core_benchmark(system_malloc_comparison_test system_malloc_comparison_test.cpp)
+    # Memory Performance Benchmarks (deleted - depend on MemManager)
+    # add_core_benchmark(alignment_performance_test alignment_performance_test.cpp)
+    # add_core_benchmark(pool_vs_system_benchmark pool_vs_system_benchmark.cpp)
+    # add_core_benchmark(system_malloc_comparison_test system_malloc_comparison_test.cpp)
+    # add_core_benchmark(benchmark_dual_counter benchmark_dual_counter.cpp)
+    # add_core_benchmark(benchmark_mutex_optimization benchmark_mutex_optimization.cpp)
     
-    # Stress Tests
-    add_core_benchmark(memory_stress_test memory_stress_test.cpp Boost::filesystem Boost::regex)
+    # Stress Tests (deleted - depend on MemManager)
+    # add_core_benchmark(memory_stress_test memory_stress_test.cpp Boost::filesystem Boost::regex)
+    # add_core_benchmark(overnight_stress_test overnight_stress_test.cpp)
+    # add_core_benchmark(test_multithread_broadcast test_multithread_broadcast.cpp)
 endif()
 
 # ==============================================================================

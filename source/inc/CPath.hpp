@@ -31,7 +31,6 @@
 #include <cstring>
 #include "CTypedef.hpp"
 #include "CString.hpp"
-#include "CMemory.hpp"
 
 // Use std::filesystem (C++17) or fallback to boost::filesystem
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
@@ -51,7 +50,6 @@ namespace core
     class Path final
     {
     public:
-        IMP_OPERATOR_NEW(Path)
         
         static String getApplicationFolder( Bool bWithSlash = false ) noexcept
         {

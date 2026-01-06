@@ -20,7 +20,6 @@
 #define LAP_CORE_ERRORDOMAIN_HPP
 
 #include "CTypedef.hpp"
-#include "CMemory.hpp"
 
 namespace lap
 {
@@ -35,7 +34,6 @@ namespace core
         using SupportDataType   = Int32;
 
     public:
-        IMP_OPERATOR_NEW(ErrorDomain)
 
         constexpr IdType            Id () const noexcept                                                    { return m_id; }
         virtual const Char*         Name () const noexcept                                                  = 0;

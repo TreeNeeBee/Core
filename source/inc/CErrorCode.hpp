@@ -22,7 +22,6 @@
 #include "CTypedef.hpp"
 #include "CString.hpp"
 #include "CErrorDomain.hpp"
-#include "CMemory.hpp"
 
 namespace lap
 {
@@ -31,8 +30,6 @@ namespace core
     class ErrorCode final
     {
     public:
-        IMP_OPERATOR_NEW(ErrorCode)
-        
         template < typename EnumT >
         constexpr ErrorCode ( EnumT e, ErrorDomain::SupportDataType data = ErrorDomain::SupportDataType() ) noexcept
             : ErrorCode( MakeErrorCode( e, data ) )

@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstddef>
 #include "CInitialization.hpp"
-#include "CMemory.hpp"
+#include "memory/CMemory.hpp"
 
 using namespace lap::core;
 

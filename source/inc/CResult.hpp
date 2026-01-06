@@ -23,7 +23,6 @@
 #include "CTypedef.hpp"
 #include "COptional.hpp"
 #include "CErrorCode.hpp"
-#include "CMemory.hpp"
 #include <utility>  // for std::forward, std::move
 #include <type_traits>
 
@@ -35,7 +34,6 @@ namespace core
     class Result final
     {
     public:
-        IMP_OPERATOR_NEW(Result)
         
         using value_type = T;
         using error_type = E;
@@ -398,7 +396,6 @@ namespace core
     class Result< void, E >
     {
     public:
-        IMP_OPERATOR_NEW(Result)
         
         using value_type = void;
         using error_type = E;

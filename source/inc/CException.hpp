@@ -25,7 +25,6 @@
 #include <utility>
 #include <type_traits>
 #include "CErrorCode.hpp"
-#include "CMemory.hpp"
 
 namespace lap
 {
@@ -34,7 +33,6 @@ namespace core
     class Exception : public ::std::exception
     {
     public:
-        IMP_OPERATOR_NEW(Exception)
 
         explicit Exception ( ErrorCode err ) noexcept : m_errCode( err )    { ; }
         // Explicit copy constructor to ensure correct copy semantics and to

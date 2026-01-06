@@ -1,284 +1,161 @@
-# Core Module - Configuration Editor Tool
+# Core模块工具脚本
 
-A command-line tool for editing LightAP Core configuration files with automatic CRC32 and HMAC-SHA256 generation.
-
-## Overview
-
-The Configuration Editor (`config_editor.py`) provides a safe and convenient way to modify Core module configuration files while maintaining integrity through automatic checksum and HMAC signature generation.
-
-## Features
-
-- ✅ Modify JSON configuration fields with type-safe operations
-- ✅ Automatic CRC32 checksum calculation
-- ✅ Automatic HMAC-SHA256 signature generation
-- ✅ Configuration integrity verification
-- ✅ Support for nested fields (dot notation)
-- ✅ Automatic type conversion (boolean, number, string)
-- ✅ Create new configuration files from scratch
-
-## Prerequisites
-
-- Python 3.6+
-- No external dependencies (uses standard library only)
-
-## Quick Start
-
-### View Configuration
-
-```bash
-python3 tools/config_editor.py config.json
-```
-
-Display detailed content:
-```bash
-python3 tools/config_editor.py config.json --display
-```
-
-### Verify Configuration Integrity
-
-```bash
-# Using command-line secret
-python3 tools/config_editor.py config.json --verify --secret your_secret_key
-
-# Using environment variable (recommended)
-export HMAC_SECRET=your_secret_key
-python3 tools/config_editor.py config.json --verify
-```
-
-### Modify Configuration Fields
-
-Enable memory checker:
-```bash
-python3 tools/config_editor.py config.json --secret your_secret_key \
-    --set memory.check_enable=true
-```
-
-Modify multiple fields:
-```bash
-python3 tools/config_editor.py config.json --secret your_secret_key \
-    --set memory.check_enable=true \
-    --set memory.align=8 \
-    --set logging.level=info
-```
-
-Add nested objects:
-```bash
-python3 tools/config_editor.py config.json --secret your_secret_key \
-    --set database.host=localhost \
-    --set database.port=5432 \
-    --set database.enabled=true
-```
-
-### Create New Configuration File
-
-```bash
-python3 tools/config_editor.py new_config.json --create --secret your_secret_key \
-    --set app.name=MyApp \
-    --set app.version=1.0.0 \
-    --set app.debug=false
-```
-
-## 配置文件格式
-
-工具生成的配置文件包含三个部分：
-
-```jsonc
-{
-    "__metadata__": {
-        "version": 1,
-        "description": "",
-        "encrypted": false,
-        "timestamp": "2025-11-01 12:00:00",
-        "crc": "91668e54",
-        "hmac": "ec731c2691b1afc18d6eb540a2d37c08..."
-    },
-    "__update_policy__": {
-        "default": "on_change"
-    },
-    "memory": {
-        "check_enable": true,
-        "align": 4,
-        "pools": []
-    }
-## Configuration File Format
-
-The tool generates configuration files with three sections:
-
-```json
-{
-    "__metadata__": {
-        "version": 1,
-        "description": "Core module configuration",
-        "encrypted": false,
-        "timestamp": "2025-11-03 12:00:00",
-        "crc": "91668e54",
-        "hmac": "ec731c2691b1afc18d6eb540a2d37c08..."
-    },
-    "__update_policy__": {
-        "default": "on_change"
-    },
-    "memory": {
-        "check_enable": true,
-        "align": 8,
-        "pool_count": 5
-    }
-}
-```
-
-### Metadata Fields
-
-- `__metadata__`: Contains version, CRC checksum, HMAC signature, timestamp, encryption flag, description
-- `__update_policy__`: Configuration update policy settings
-- Application data: Actual configuration fields (e.g., `memory`, `logging`)
-
-### CRC32 and HMAC Calculation
-
-1. **CRC32**: Calculated on core JSON (excluding `__metadata__` and `__update_policy__`)
-   - Object keys sorted alphabetically
-   - Arrays maintain original order
-   
-2. **HMAC-SHA256**: Calculated on the same core JSON string using provided secret key
-
-## Environment Variables
-
-- `HMAC_SECRET`: Default HMAC secret key (avoids specifying in command line)
-
-```bash
-export HMAC_SECRET=your_secret_key
-python3 tools/config_editor.py config.json --verify
-```
-
-## Automatic Type Conversion
-
-The tool automatically converts string values to appropriate types:
-
-| Input | Converted Type | Example |
-|-------|----------------|---------|
-| `true`/`false` | Boolean | `--set enabled=true` → `true` |
-| `null` | Null | `--set value=null` → `null` |
-| Pure numbers | Integer | `--set port=8080` → `8080` |
-| Decimal | Float | `--set rate=1.5` → `1.5` |
-| Others | String | `--set name=app` → `"app"` |
-
-## Usage Examples
-
-### Example 1: Configure Memory Manager
-
-```bash
-# Enable memory checker and set alignment
-python3 tools/config_editor.py config.json --secret your_key \
-    --set memory.check_enable=true \
-    --set memory.align=8 \
-    --set memory.pool_count=5
-
-# Verify configuration
-python3 tools/config_editor.py config.json --verify --secret your_key
-```
-
-### Example 2: Configure Logging
-
-```bash
-python3 tools/config_editor.py config.json --secret your_key \
-    --set logging.level=info \
-    --set logging.file=/var/log/lightap.log \
-    --set logging.enabled=true
-```
-
-### Example 3: CI/CD Integration
-
-```bash
-#!/bin/bash
-# Update configuration before deployment
-export HMAC_SECRET=${CI_CONFIG_SECRET}
-
-python3 tools/config_editor.py config.json \
-    --set app.environment=production \
-    --set app.debug=false \
-    --set database.host=${DB_HOST}
-
-# Verify integrity
-if python3 tools/config_editor.py config.json --verify; then
-    echo "✓ Configuration verified"
-    ./deploy.sh
-else
-    echo "✗ Configuration verification failed!"
-    exit 1
-fi
-```
-
-## Error Handling
-
-### CRC32 Verification Failed
-
-```
-✗ CRC32: 91668e54 != 05199353
-```
-
-**Cause**: Configuration modified without regenerating CRC32
-
-**Solution**: Re-save configuration with tool:
-```bash
-python3 tools/config_editor.py config.json --secret your_key --set dummy=value
-```
-
-### HMAC Verification Failed
-
-```
-✗ HMAC: ec731c26... != d5517842...
-```
-
-**Causes**:
-1. Wrong secret key
-2. Configuration tampered
-
-**Solution**: Verify secret key or regenerate with correct key
-
-## Best Practices
-
-1. **Secret Management**: Never hardcode HMAC secrets in source code
-   - Use environment variables
-   - Use key management systems (e.g., HashiCorp Vault)
-
-2. **Backup**: Always backup configuration files before modification
-
-3. **Version Control**: Don't commit sensitive configuration to Git
-   - Use `.gitignore` for `*.json` config files
-   - Store templates without secrets instead
-
-4. **Validation**: Always verify configuration after modification
-   ```bash
-   python3 tools/config_editor.py config.json --verify
-   ```
-
-## Troubleshooting
-
-If you encounter issues, check:
-
-1. ✓ Python version >= 3.6
-2. ✓ JSON file format is valid
-3. ✓ File permissions allow read/write
-4. ✓ `HMAC_SECRET` environment variable is set correctly
-5. ✓ Configuration file path is correct
-
-## Integration with Core Module
-
-This tool is designed for use with the Core module's ConfigManager:
-
-- See [HMAC_SECRET_CONFIG.md](../doc/HMAC_SECRET_CONFIG.md) for security setup
-- See [QUICK_START.md](../doc/QUICK_START.md) for configuration usage
-- See [README.md](../README.md) for Core module overview
-
-## Related Documentation
-
-- [Core Module README](../README.md)
-- [HMAC Security Configuration](../doc/HMAC_SECRET_CONFIG.md)
-- [Configuration Quick Start](../doc/QUICK_START.md)
-
-## License
-
-Part of the LightAP project. See project license for details.
+此目录包含Core模块的构建、测试和维护脚本。
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: 2025-11-03
+## 🔨 构建脚本
+
+### build.sh
+**用途**: Core模块构建脚本
+
+**使用**:
+```bash
+./tools/build.sh
+```
+
+从项目根目录调用:
+```bash
+cd /workspace/LightAP/modules/Core
+./tools/build.sh
+```
+
+---
+
+## 🧪 测试脚本
+
+### run_overnight_test.sh
+**用途**: 启动长期稳定性测试（8小时压力测试）
+
+**使用**:
+```bash
+./tools/run_overnight_test.sh
+```
+
+**说明**:
+- 运行 `overnight_stress_test` 进行8小时压力测试
+- 自动记录输出到日志文件
+- 适合在后台运行（nohup模式）
+
+### monitor_overnight_test.sh
+**用途**: 实时监控长期测试的运行状态
+
+**使用**:
+```bash
+./tools/monitor_overnight_test.sh
+```
+
+**说明**:
+- 显示测试进程状态
+- 实时追踪日志输出
+- Ctrl+C 退出监控（测试继续运行）
+
+### check_test_status.sh
+**用途**: 检查测试状态和结果摘要
+
+**使用**:
+```bash
+./tools/check_test_status.sh
+```
+
+**说明**:
+- 检查测试是否仍在运行
+- 显示最新的测试输出
+- 总结测试结果
+
+### test_lockfree_optimization.sh
+**用途**: 测试lock-free优化的性能
+
+**使用**:
+```bash
+./tools/test_lockfree_optimization.sh
+```
+
+**说明**:
+- 运行lock-free性能基准测试
+- 对比不同配置的性能差异
+
+---
+
+## 🛠️ 配置工具
+
+### config_editor.py
+**用途**: Core配置文件编辑器（Python脚本）
+
+**使用**:
+```bash
+python3 tools/config_editor.py
+```
+
+**说明**:
+- 交互式配置编辑
+- 验证配置有效性
+- 生成配置模板
+
+### example_usage.sh
+**用途**: 工具使用示例
+
+**说明**:
+- 展示常见工作流程
+- 脚本使用示例
+
+---
+
+## 📁 脚本调用约定
+
+### 从项目根目录调用
+所有脚本应该从 `/workspace/LightAP/modules/Core` 目录调用：
+
+```bash
+cd /workspace/LightAP/modules/Core
+./tools/<script_name>.sh
+```
+
+### 路径处理
+脚本内部使用相对路径时，应基于Core模块根目录。
+
+---
+
+## 🔄 工作流示例
+
+### 完整构建和测试流程
+```bash
+cd /workspace/LightAP/modules/Core
+
+# 1. 构建
+./tools/build.sh
+
+# 2. 启动长期测试
+./tools/run_overnight_test.sh
+
+# 3. 监控测试（另一个终端）
+./tools/monitor_overnight_test.sh
+
+# 4. 检查结果
+./tools/check_test_status.sh
+```
+
+### 快速性能测试
+```bash
+cd /workspace/LightAP/modules/Core
+./tools/test_lockfree_optimization.sh
+```
+
+---
+
+## 📝 维护说明
+
+添加新脚本时：
+1. 将脚本放入 `tools/` 目录
+2. 添加执行权限: `chmod +x tools/new_script.sh`
+3. 更新本 README.md 文档
+4. 确保脚本可从Core根目录调用
+
+脚本命名规范：
+- 使用小写字母和下划线
+- 清晰描述脚本功能
+- 示例: `run_overnight_test.sh`, `check_test_status.sh`
+
+---
+
+*最后更新: 2025-12-30*

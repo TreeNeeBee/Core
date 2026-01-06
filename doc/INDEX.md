@@ -1,378 +1,224 @@
-# LightAP Core 文档索引# Core Module - Documentation Index
+# Core模块文档索引
 
+📚 **最后更新**: 2025-12-30
 
+---
 
-欢迎查阅 LightAP Core 模块文档。本目录包含完整的 API 参考、使用指南和设计文档。## 📚 Active Documentation
+## 📖 用户文档
 
+### 主要指南
+- [README.md](../README.md) - 项目概览和特性
+- [README_CN.md](../README_CN.md) - 中文版README  
+- [BUILDING.md](../BUILDING.md) - 编译和构建指南
+- [CHANGES.md](../CHANGES.md) - 变更日志
+- [RELEASE_NOTES.md](../RELEASE_NOTES.md) - 发布说明
+- [RELEASE_NOTES_CN.md](../RELEASE_NOTES_CN.md) - 中文版发布说明
 
+### 配置和使用
+- [current/MEMORY_OPTIONS.md](current/MEMORY_OPTIONS.md) - 内存管理配置选项
+- [HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md) - 配置文件安全加密
+- [QUICK_START.md](QUICK_START.md) - 快速开始指南
+- [MEMORY_MANAGEMENT_GUIDE.md](MEMORY_MANAGEMENT_GUIDE.md) - 内存管理完整指南
 
----### Root Level
+---
 
-- **[README.md](../README.md)** - Core module overview, features, and quick start
+## 🔬 当前有效的技术文档
 
-## 📖 快速导航- **[CHANGES.md](../CHANGES.md)** - Repository-level changelog and version history
+### SharedMemory设计 (iceoryx2架构)
+- [LOCK_FREE_ICEORYX2_IMPLEMENTATION.md](LOCK_FREE_ICEORYX2_IMPLEMENTATION.md) - Lock-free iceoryx2实现
+- [ICEORYX2_COMPLETE_IMPLEMENTATION.md](ICEORYX2_COMPLETE_IMPLEMENTATION.md) - 完整实现文档
+- [SHARED_MEMORY_CONCURRENCY_ANALYSIS.md](SHARED_MEMORY_CONCURRENCY_ANALYSIS.md) - 并发分析
+- [SHM_ARCHITECTURE_ANALYSIS.md](SHM_ARCHITECTURE_ANALYSIS.md) - 架构分析
 
+### 性能和优化
+- [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) - 性能基准测试报告
+- [ICEORYX2_VS_EPOLL.md](ICEORYX2_VS_EPOLL.md) - iceoryx2 vs epoll对比
+- [JEMALLOC_VS_MALLOC_COMPARISON.md](JEMALLOC_VS_MALLOC_COMPARISON.md) - jemalloc性能对比
+- [JEMALLOC_VERIFICATION.md](JEMALLOC_VERIFICATION.md) - jemalloc验证报告
 
+### 内存管理
+- [MEMORY_POOL_CONFIG_MIGRATION.md](MEMORY_POOL_CONFIG_MIGRATION.md) - 内存池配置迁移
+- [MEMORY_POOL_CONFIG_VERIFICATION.md](MEMORY_POOL_CONFIG_VERIFICATION.md) - 配置验证
+- [MEMORY_POOL_GROWTH_QUICK_REFERENCE.md](MEMORY_POOL_GROWTH_QUICK_REFERENCE.md) - 快速参考
+- [MEMORY_POOL_QUICK_CARD.md](MEMORY_POOL_QUICK_CARD.md) - 速查卡片
 
-### 入门指南### doc/
+### Dual-Counter机制
+- [DUAL_COUNTER_ANALYSIS.md](DUAL_COUNTER_ANALYSIS.md) - Dual-counter分析
+- [DUAL_COUNTER_PROGRESS.md](DUAL_COUNTER_PROGRESS.md) - 实现进度
+- [DUAL_COUNTER_REFACTORING_PLAN.md](DUAL_COUNTER_REFACTORING_PLAN.md) - 重构计划
 
-- **[快速开始](QUICK_START.md)** - 5 分钟快速上手，包含基本示例- **[QUICK_START.md](QUICK_START.md)** - Quick start guide for Core Memory Management
+### AUTOSAR合规
+- [AUTOSAR_REFACTORING_PLAN.md](AUTOSAR_REFACTORING_PLAN.md) - AUTOSAR重构计划
+- [R24_11_FEATURES_COMPLETION_REPORT.md](R24_11_FEATURES_COMPLETION_REPORT.md) - R24-11特性报告
+- [PHASE1_COMPLETION_REPORT.md](PHASE1_COMPLETION_REPORT.md) - Phase 1完成报告
+- [AUTOSAR_AP_SWS_Core.pdf](AUTOSAR_AP_SWS_Core.pdf) - AUTOSAR AP标准文档
 
-- **[内存管理指南](MEMORY_MANAGEMENT_GUIDE.md)** - 详细的内存池架构和最佳实践- **[CAbort_Refactoring_Summary.md](CAbort_Refactoring_Summary.md)** - AUTOSAR AP Abort implementation summary
+---
 
-- **[HMAC 安全配置](HMAC_SECRET_CONFIG.md)** - 配置文件加密和完整性验证- **[HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md)** - Configuration security setup guide
+## 📊 测试和验证报告
 
-- **[THIRD_PARTY.md](THIRD_PARTY.md)** - Third-party dependencies and licenses
+### 最新报告 (2025-12-30)
+- [reports/CODE_CLEANUP_REPORT.md](reports/CODE_CLEANUP_REPORT.md) - 代码清理报告
+  - 删除902行冗余代码
+  - 移除4个重复测试文件
+  - 清理所有DEBUG输出
 
-### 开发文档
+- [reports/ID_HANDLE_VALIDATION_SUMMARY.md](reports/ID_HANDLE_VALIDATION_SUMMARY.md) - ID-based Handle验证
+  - iceoryx2风格的Handle机制
+  - 100%测试通过率
+  - 解决了指针失效问题
 
-- **[AUTOSAR 重构计划](AUTOSAR_REFACTORING_PLAN.md)** - R24-11 标准合规路线图### test/
+- [reports/TEST_STRUCTURE_CLEANUP.md](reports/TEST_STRUCTURE_CLEANUP.md) - 测试结构梳理
+  - 8个核心测试保留
+  - 职责清晰分离
 
-- **[R24-11 功能完成报告](R24_11_FEATURES_COMPLETION_REPORT.md)** - 特性实现状态和测试覆盖- **[test/README.md](../test/README.md)** - Test organization and usage guide
+### 运行状态
+- [current/OVERNIGHT_TEST_STATUS.md](current/OVERNIGHT_TEST_STATUS.md) - 长期稳定性测试状态
 
-- **[Phase 1 完成报告](PHASE1_COMPLETION_REPORT.md)** - 第一阶段重构总结
+---
 
-- **[内存重构总结](MEMORY_REFACTORING_SUMMARY_2025-11-12.md)** - 内存管理模块重构细节### tools/
+## 🗄️ 归档文档
 
-- **[tools/README.md](../tools/README.md)** - Configuration Editor tool documentation
+### 历史重构文档 (archive/old_refactoring/)
 
-### 标准与许可- **[tools/config_editor.py](../tools/config_editor.py)** - JSON configuration editor with HMAC/CRC validation
+已完成的重构项目（2024-2025）：
 
-- **[AUTOSAR AP SWS Core](AUTOSAR_AP_SWS_Core.pdf)** - AUTOSAR Adaptive Platform R24-11 标准- **[tools/example_usage.sh](../tools/example_usage.sh)** - Configuration editor usage examples
+#### Dual-Counter架构演进
+- [DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md](archive/old_refactoring/DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md)
+- [DUAL_COUNTER_REFACTORING_SUMMARY.md](archive/old_refactoring/DUAL_COUNTER_REFACTORING_SUMMARY.md)
 
-- **[第三方依赖](THIRD_PARTY.md)** - 第三方库许可证信息
+#### iceoryx2迁移
+- [ICEORYX2_ARCHITECTURE_FIX.md](archive/old_refactoring/ICEORYX2_ARCHITECTURE_FIX.md)
+- [ICEORYX2_REFACTORING_SUMMARY.md](archive/old_refactoring/ICEORYX2_REFACTORING_SUMMARY.md)
 
-## 📦 Archived Documentation (doc/archive/)
+#### Lock-Free优化
+- [LOCKFREE_OPTIMIZATION_REPORT.md](archive/old_refactoring/LOCKFREE_OPTIMIZATION_REPORT.md)
 
-### 测试报告
+#### 内存管理演进
+- [MEMORY_REFACTORING.md](archive/old_refactoring/MEMORY_REFACTORING.md)
+- [CRITICAL_RESOURCE_ANALYSIS.md](archive/old_refactoring/CRITICAL_RESOURCE_ANALYSIS.md)
 
-- **[完整测试报告](../build/modules/Core/TEST_REPORT.md)** - 最新测试结果和覆盖率Historical summaries, implementation reports, and completed audits.
+这些文档记录了SharedMemoryAllocator从最初的设计到当前**ID-based Handle机制**的完整演进过程。
 
+### 其他归档
+- [archive/](archive/) - 更多历史文档和设计草案
 
+---
 
----**Total:** 9 documents (36.9K) - [Archive Index](archive/README.md)
-
-
-
-## 📋 主要内容### Configuration & Memory Management (2)
-
-- `memory_alignment_audit.md` - Comprehensive memory alignment analysis
-
-### 1. 核心概念- `alignment_optimization_summary.md` - Alignment optimization implementation
-
-
-
-#### AUTOSAR 初始化### AUTOSAR & Standards Compliance (3)
-
-所有 LightAP Core 应用程序必须遵循 AUTOSAR 初始化规范：- `ERRORDOMAIN_AUTOSAR_COMPLIANCE.md` - ErrorDomain AUTOSAR standards compliance
-
-- `ERROR_DOMAIN_LIFECYCLE_IMPROVEMENT.md` - ErrorDomain lifecycle simplification
-
-```cpp- `AUTOSAR_UTILITIES_SUMMARY.md` - AUTOSAR utilities optimization
-
-#include "CInitialization.hpp"
-
-### Integration & Testing (2)
-
-int main() {- `IMP_OPERATOR_NEW_TEST_REPORT.md` - Comprehensive test results
-
-    // 初始化- `IMP_OPERATOR_NEW_SUMMARY.md` - IMP_OPERATOR_NEW integration approach
-
-    auto initResult = lap::core::Initialize();
-
-    if (!initResult.HasValue()) {### Phase Completions & Analysis (2)
-
-        return 1;- `IMPROVEMENT_PROPOSAL.md` - Code analysis and optimization proposals
-
-    }- `Phase1_COMPLETION_REPORT.md` - C++17 upgrade completion report
-
-    
-
-    // 应用程序逻辑...## 📖 Documentation Guidelines
-
-    
-
-    // 去初始化### Active vs Archived
-
-    lap::core::Deinitialize();- **Active docs** are maintained and reflect current implementation
-
-    return 0;- **Archived docs** are historical records, kept for reference but not updated
-
-}
-
-```### When to Archive
-
-Archive documentation when:
-
-#### 内存管理1. Implementation is complete and stable
-
-- **内存池**: 针对小对象（≤1024 字节）优化的池分配器2. Document served as temporary work summary
-
-- **全局拦截**: 自动拦截 `new`/`delete` 操作3. Content is superseded by newer documentation
-
-- **STL 集成**: `StlMemoryAllocator<T>` 支持标准容器4. Document is historical report (phases, migrations, etc.)
-
-- **泄漏检测**: 内置的内存追踪和泄漏报告
-
-### Documentation Structure
-
-#### 配置管理```
-
-- **JSON 格式**: 人类可读的配置文件Core/
-
-- **模块隔离**: 独立的命名空间├── README.md              # Main overview
-
-- **热重载**: 支持运行时配置更新├── CHANGES.md             # Changelog
-
-- **HMAC 验证**: 可选的加密完整性校验├── THIRD_PARTY.md         # Dependencies
-
-├── doc/
-
-#### 错误处理│   ├── QUICK_START.md     # Getting started
-
-- **Result<T>**: 函数式错误处理模式│   ├── [Feature].md       # Feature documentation
-
-- **Optional<T>**: 可选值表示│   └── archive/           # Historical docs
-
-- **ErrorCode/ErrorDomain**: AUTOSAR 错误代码系统└── test/
-
-- **Exception**: 异常类层次结构    └── README.md          # Test guide
+## 🗂️ 文档组织结构
 
 ```
-
-### 2. 模块组织
-
-## 🔍 Finding Documentation
-
-```
-
-Core/### By Topic
-
-├── source/inc/         # 公共 API 头文件
-
-│   ├── CInitialization.hpp**Getting Started:**
-
-│   ├── CMemory.hpp- Quick Start: [doc/QUICK_START.md](QUICK_START.md)
-
-│   ├── CMemoryManager.hpp- Main README: [README.md](../README.md)
-
-│   ├── CConfig.hpp
-
-│   ├── CResult.hpp**Configuration:**
-
-│   ├── COptional.hpp- Editor Tool: [tools/README.md](../tools/README.md)
-
-│   ├── CVariant.hpp- Security Setup: [doc/HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md)
-
-│   ├── CFuture.hpp
-
-│   ├── CSync.hpp**Testing:**
-
-│   └── ...- Test Guide: [test/README.md](../test/README.md)
-
-├── source/src/         # 实现文件
-
-├── test/unittest/      # 单元测试**AUTOSAR Compliance:**
-
-├── test/examples/      # 示例程序- Abort Handling: [doc/CAbort_Refactoring_Summary.md](CAbort_Refactoring_Summary.md)
-
-├── test/benchmark/     # 性能测试- Historical: [doc/archive/](archive/) (AUTOSAR_*, ERRORDOMAIN_*)
-
-└── doc/                # 文档（本目录）
-
-```**Memory Management:**
-
-- Quick Start: [doc/QUICK_START.md](QUICK_START.md)
-
-### 3. 主要特性- Historical: [doc/archive/](archive/) (memory_alignment_audit.md, alignment_optimization_summary.md)
-
-
-
-#### ✅ AUTOSAR R24-11 合规**Implementation History:**
-
-- 初始化/去初始化 (SWS_CORE_15003/15004)- Changelog: [CHANGES.md](../CHANGES.md)
-
-- Result<T> 模式 (SWS_CORE_00701)- Phase Reports: [doc/archive/Phase1_COMPLETION_REPORT.md](archive/)
-
-- Optional<T> (SWS_CORE_01301)
-
-- Variant<T...> (SWS_CORE_01601)**Dependencies:**
-
-- Future/Promise (SWS_CORE_00321/00341)- Third-party Libraries: [doc/THIRD_PARTY.md](THIRD_PARTY.md)
-
-- ErrorCode/ErrorDomain (SWS_CORE_00502/00110)
-
-- AbortHandler (SWS_CORE_00051-00054)## 📝 Archive Summary
-
-- InstanceSpecifier (SWS_CORE_08xxx)
-
-**Total:** 9 documents (36.9K retained, 6 files pruned)
-
-#### ✅ 高性能内存管理
-
-- 池分配器 (32/64/128/256/512/1024 字节)See [doc/archive/README.md](archive/README.md) for complete catalog.
-
-- 无锁快速路径
-
-- O(1) 分配/释放**Cleanup History (2025-11-03):**
-
-- 多线程安全- Removed temporary work products (test reorganization summary, audit reports)
-
-- 内存对齐配置 (1/4/8 字节)- Removed superseded documentation (old config READMEs, memory README)
-
-- Retained historical design documentation and phase reports
-
-#### ✅ 完整测试覆盖
-
-- 395/397 单元测试通过 (99.5%)## 🔄 Documentation Maintenance
-
-- 13/14 集成测试通过 (92.86%)
-
-- 性能基准测试**Last updated:** 2025-11-03
-
-- 内存泄漏检测
-
-**Active documentation count:** 11 files
-
-### 4. API 分类- Root: 2 (README, CHANGES)
-
-- doc/: 4 (QUICK_START, CAbort, HMAC_SECRET_CONFIG, THIRD_PARTY)
-
-#### 初始化与生命周期- tools/: 3 (README, config_editor.py, example_usage.sh)
-
-```cpp- test/: 1 (README)
-
-Result<void> Initialize();           // 平台初始化- Archive: 9 (historical)
-
-Result<void> Deinitialize();         // 平台去初始化
-
-```**Documentation structure:**
-
-```
-
-#### 内存管理Core/
-
-```cpp├── README.md              # Module overview
-
-void* Memory::malloc(size_t size);                      // 分配内存├── CHANGES.md             # Changelog
-
-void Memory::free(void* ptr);                           // 释放内存├── doc/
-
-MemoryStats Memory::getMemoryStats();                   // 获取统计信息│   ├── INDEX.md           # This file
-
-│   ├── QUICK_START.md     # Getting started
-
-// STL 分配器│   ├── [Feature].md       # Feature docs
-
-StlMemoryAllocator<T>                                   // STL 兼容分配器│   └── archive/           # Historical (9 files)
-
-Vector<T, StlMemoryAllocator<T>> vec;                   // 使用自定义分配器的容器├── test/
-
-```│   └── README.md          # Test guide
-
-└── tools/
-
-#### 配置管理    ├── README.md          # Config editor docs
-
-```cpp    ├── config_editor.py   # Config tool
-
-ConfigManager& ConfigManager::getInstance();    └── example_usage.sh   # Examples
-
-bool initialize(const String& filePath);```
-
-int getInt(const String& key, int defaultValue);
-String getString(const String& key, const String& defaultValue);
-void setInt(const String& key, int value);
-bool save();
-```
-
-#### 错误处理
-```cpp
-Result<T> function();                                   // 返回结果或错误
-Optional<T> findValue();                                // 可选值
-
-if (result.HasValue()) {
-    auto value = result.Value();
-} else {
-    auto error = result.Error();
-}
-```
-
-#### 同步原语
-```cpp
-Mutex mutex;                                            // 互斥锁
-Event event;                                            // 事件信号
-Semaphore sem(1);                                       // 信号量
-
-std::lock_guard<Mutex> lock(mutex);                    // RAII 锁
-event.wait();                                           // 等待事件
-event.signal();                                         // 发送信号
-```
-
-#### 异步操作
-```cpp
-Promise<T> promise;                                     // Promise
-Future<T> future = promise.GetFuture();                 // Future
-promise.SetValue(value);                                // 设置值
-
-auto status = future.WaitFor(timeout);                  // 等待超时
-if (status == FutureStatus::kReady) {
-    auto value = future.Get();
-}
+Core/
+├── README.md                    # 主文档
+├── BUILDING.md                  # 编译指南
+├── CHANGES.md                   # 变更日志
+├── RELEASE_NOTES.md            # 发布说明
+│
+└── doc/                         # 文档目录
+    ├── INDEX.md                 # 📍 本文档
+    │
+    ├── current/                 # ✅ 当前有效配置和状态
+    │   ├── MEMORY_OPTIONS.md            # 内存配置选项
+    │   └── OVERNIGHT_TEST_STATUS.md     # 测试状态
+    │
+    ├── reports/                 # 📊 测试和清理报告 (2025-12-30)
+    │   ├── CODE_CLEANUP_REPORT.md
+    │   ├── ID_HANDLE_VALIDATION_SUMMARY.md
+    │   └── TEST_STRUCTURE_CLEANUP.md
+    │
+    ├── archive/                 # 🗄️ 归档文档
+    │   └── old_refactoring/     # 历史重构记录
+    │       ├── DUAL_COUNTER_*.md
+    │       ├── ICEORYX2_*.md
+    │       ├── LOCKFREE_*.md
+    │       ├── MEMORY_*.md
+    │       └── CRITICAL_*.md
+    │
+    └── [设计文档]               # 当前有效的设计文档
+        ├── LOCK_FREE_ICEORYX2_IMPLEMENTATION.md
+        ├── SHARED_MEMORY_CONCURRENCY_ANALYSIS.md
+        ├── BENCHMARK_REPORT.md
+        └── ...
 ```
 
 ---
 
-## 📊 文档统计
+## 🎯 快速导航
 
-- **总文档数**: 10+ Markdown 文件
-- **代码示例**: 50+ 完整示例
-- **API 数量**: 100+ 公共接口
-- **测试用例**: 395 个单元测试
+### 我想...
 
----
+**了解Core模块的基本功能？**  
+→ [README.md](../README.md)
 
-## 🔄 最近更新
+**开始编译和使用？**  
+→ [BUILDING.md](../BUILDING.md) 和 [QUICK_START.md](QUICK_START.md)
 
-### 2025-11-13
-- ✅ 完成 AUTOSAR R24-11 Initialize/Deinitialize 全覆盖
-- ✅ 修复 test_memory_allocator_debug 编译问题
-- ✅ 完整测试套件验证 (13/14 通过)
-- ✅ 优化 README 和文档结构
-- ✅ 将 check_alignment 移动到 examples 目录
+**配置内存管理？**  
+→ [current/MEMORY_OPTIONS.md](current/MEMORY_OPTIONS.md)
 
-### 2025-11-12
-- ✅ 完成内存管理模块重构
-- ✅ 实现 R24-11 核心类型
-- ✅ Phase 1 功能全部完成
+**了解SharedMemory的设计？**  
+→ [LOCK_FREE_ICEORYX2_IMPLEMENTATION.md](LOCK_FREE_ICEORYX2_IMPLEMENTATION.md)
 
----
+**查看最新的代码变更？**  
+→ [reports/CODE_CLEANUP_REPORT.md](reports/CODE_CLEANUP_REPORT.md)
 
-## 📞 获取帮助
+**了解ID-based Handle机制？**  
+→ [reports/ID_HANDLE_VALIDATION_SUMMARY.md](reports/ID_HANDLE_VALIDATION_SUMMARY.md)
 
-- **问题反馈**: [GitHub Issues](https://github.com/TreeNeeBee/LightAP/issues)
-- **邮件联系**: ddkv587@gmail.com
-- **文档更新**: 欢迎提交 PR 改进文档
+**查看测试结构？**  
+→ [reports/TEST_STRUCTURE_CLEANUP.md](reports/TEST_STRUCTURE_CLEANUP.md)
 
----
+**了解历史演进？**  
+→ [archive/old_refactoring/](archive/old_refactoring/)
 
-## 📖 相关资源
-
-### 外部链接
-- [AUTOSAR 官方网站](https://www.autosar.org/)
-- [AUTOSAR Adaptive Platform 规范](https://www.autosar.org/standards/adaptive-platform/)
-- [C++17 标准](https://isocpp.org/std/the-standard)
-- [Google Test 文档](https://google.github.io/googletest/)
-- [nlohmann/json 文档](https://json.nlohmann.me/)
-
-### 内部链接
-- [主项目 README](../README.md)
-- [源代码](../source/)
-- [测试代码](../test/)
-- [构建配置](../CMakeLists.txt)
+**查看长期测试状态？**  
+→ [current/OVERNIGHT_TEST_STATUS.md](current/OVERNIGHT_TEST_STATUS.md)
 
 ---
 
-**文档维护者**: LightAP Core Team  
-**最后更新**: 2025-11-13  
-**文档版本**: 1.0.0
+## 📝 文档维护指南
+
+### 添加新文档
+
+| 文档类型 | 存放位置 | 命名规范 |
+|---------|---------|---------|
+| 设计文档 | `doc/` | `FEATURE_NAME.md` |
+| 测试报告 | `doc/reports/` | `REPORT_NAME.md` |
+| 配置指南 | `doc/current/` | `CONFIG_NAME.md` |
+| 归档文档 | `doc/archive/[category]/` | 保持原名 |
+
+### 归档规则
+
+当某个设计被完全替代时：
+1. 将文档移至 `archive/[category]/`
+2. 在文档开头添加归档说明：
+   ```markdown
+   > ⚠️ **已归档** (YYYY-MM-DD)
+   > 
+   > 本设计已被 [新设计](../NEW_DESIGN.md) 替代。
+   > 保留此文档仅供历史参考。
+   ```
+3. 更新本INDEX.md
+
+### 文档分类
+
+- **设计文档**: 架构、实现细节、API设计
+- **测试报告**: 验证结果、性能测试、清理报告
+- **配置指南**: 使用说明、配置选项、最佳实践
+- **归档文档**: 已完成的重构、过时的设计
+
+---
+
+## 📚 参考资料
+
+### 外部标准
+- [AUTOSAR Adaptive Platform R24-11](https://www.autosar.org/)
+- [iceoryx2](https://github.com/eclipse-iceoryx/iceoryx2) - 零拷贝IPC框架
+
+### 相关工具
+- [jemalloc](http://jemalloc.net/) - 内存分配器
+- [Google Test](https://github.com/google/googletest) - 单元测试框架
+
+---
+
+*📍 提示: 本文档是Core模块的文档导航入口，定期更新以反映最新的文档结构。*

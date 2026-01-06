@@ -1,0 +1,992 @@
+/**
+ * @file        test_shm_allocator.cpp
+ * @brief       Comprehensive unit tests for SharedMemoryAllocator
+ * @date        2025-12-27
+ * @details     Full test coverage for iceoryx2-style zero-copy IPC allocator
+ *              including Publisher/Subscriber API, message queues, ownership,
+ *              round-robin scheduling, ABA prevention, and error handling
+ */
+
+#include <gtest/gtest.h>
+#include <thread>
+#include <atomic>
+#include <vector>
+#include <chrono>
+#include "memory/CSharedMemoryAllocator.hpp"
+#include "MemoryCommon.hpp"
+
+using namespace lap::core;
+using namespace lap::core::memory_internal;
+using namespace std::chrono_literals;
+
+// ============================================================================
+// Test Fixture
+// ============================================================================
+
+class SharedMemoryAllocatorTest : public ::testing::Test {
+protected:
+    SharedMemoryAllocator allocator_;
+    SharedMemoryAllocatorConfig config_;
+
+    void SetUp() override {
+        // Default configuration for most tests
+        config_.chunk_count = 64;
+        config_.max_chunk_size = 4096;
+        config_.enable_safe_overflow = true;
+        config_.enable_debug_trace = false;
+    }
+
+    void TearDown() override {
+        // Allocator auto-cleanup in destructor
+    }
+};
+
+// ============================================================================
+// Basic Initialization Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, InitializeDefault) {
+    EXPECT_TRUE(allocator_.initialize(config_));
+}
+
+TEST_F(SharedMemoryAllocatorTest, InitializeWithCustomConfig) {
+    config_.chunk_count = 128;
+    config_.max_chunk_size = 8192;
+    config_.enable_safe_overflow = false;
+    config_.enable_debug_trace = true;
+    
+    EXPECT_TRUE(allocator_.initialize(config_));
+}
+
+TEST_F(SharedMemoryAllocatorTest, InitializeInvalidConfig) {
+    config_.chunk_count = 0;  // Invalid
+    EXPECT_FALSE(allocator_.initialize(config_));
+    
+    config_.chunk_count = 64;
+    config_.max_chunk_size = 0;  // Invalid
+    EXPECT_FALSE(allocator_.initialize(config_));
+}
+
+TEST_F(SharedMemoryAllocatorTest, DoubleInitialization) {
+    EXPECT_TRUE(allocator_.initialize(config_));
+    
+    // Second initialization should fail or reset
+    SharedMemoryAllocatorConfig new_config = config_;
+    new_config.chunk_count = 32;
+    EXPECT_FALSE(allocator_.initialize(new_config));
+}
+
+// ============================================================================
+// Publisher/Subscriber Management Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, CreatePublisher) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    auto result = allocator_.createPublisher(pub);
+    
+    EXPECT_TRUE(result.HasValue());
+    EXPECT_EQ(pub.publisher_id, 1u);
+    EXPECT_NE(pub.internal_queue, nullptr);
+}
+
+TEST_F(SharedMemoryAllocatorTest, CreateMultiplePublishers) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    std::vector<PublisherHandle> publishers;
+    for (int i = 0; i < 10; ++i) {
+        PublisherHandle pub;
+        auto result = allocator_.createPublisher(pub);
+        
+        EXPECT_TRUE(result.HasValue());
+        EXPECT_EQ(pub.publisher_id, static_cast<UInt32>(i + 1));
+        publishers.push_back(pub);
+    }
+    
+    // Cleanup
+    for (auto& pub : publishers) {
+        allocator_.destroyPublisher(pub);
+    }
+}
+
+TEST_F(SharedMemoryAllocatorTest, CreateMaxPublishers) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    std::vector<PublisherHandle> publishers;
+    
+    // Create 64 publishers (max limit)
+    for (int i = 0; i < 64; ++i) {
+        PublisherHandle pub;
+        auto result = allocator_.createPublisher(pub);
+        EXPECT_TRUE(result.HasValue());
+        publishers.push_back(pub);
+    }
+    
+    // 65th should fail
+    PublisherHandle pub_overflow;
+    auto result = allocator_.createPublisher(pub_overflow);
+    EXPECT_FALSE(result.HasValue());
+    
+    // Cleanup
+    for (auto& pub : publishers) {
+        allocator_.destroyPublisher(pub);
+    }
+}
+
+TEST_F(SharedMemoryAllocatorTest, CreateSubscriber) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    SubscriberHandle sub;
+    auto result = allocator_.createSubscriber(sub);
+    
+    EXPECT_TRUE(result.HasValue());
+    EXPECT_EQ(sub.subscriber_id, 1u);
+    EXPECT_NE(sub.internal_state, nullptr);
+}
+
+TEST_F(SharedMemoryAllocatorTest, CreateMultipleSubscribers) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    std::vector<SubscriberHandle> subscribers;
+    for (int i = 0; i < 10; ++i) {
+        SubscriberHandle sub;
+        auto result = allocator_.createSubscriber(sub);
+        
+        EXPECT_TRUE(result.HasValue());
+        EXPECT_EQ(sub.subscriber_id, static_cast<UInt32>(i + 1));
+        subscribers.push_back(sub);
+    }
+    
+    // Cleanup
+    for (auto& sub : subscribers) {
+        allocator_.destroySubscriber(sub);
+    }
+}
+
+TEST_F(SharedMemoryAllocatorTest, DestroyPublisher) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    // Destroy should succeed
+    allocator_.destroyPublisher(pub);
+    
+    // Handle should be invalidated
+    EXPECT_EQ(pub.publisher_id, 0u);
+    EXPECT_EQ(pub.internal_queue, nullptr);
+}
+
+TEST_F(SharedMemoryAllocatorTest, DestroySubscriber) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    SubscriberHandle sub;
+    allocator_.createSubscriber(sub);
+    
+    // Destroy should succeed
+    allocator_.destroySubscriber(sub);
+    
+    // Handle should be invalidated
+    EXPECT_EQ(sub.subscriber_id, 0u);
+    EXPECT_EQ(sub.internal_state, nullptr);
+}
+
+// ============================================================================
+// Loan/Send/Receive/Release API Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, LoanBasic) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    SharedMemoryMemoryBlock block;
+    auto result = allocator_.loan(pub, 256, block);
+    
+    EXPECT_TRUE(result.HasValue());
+    EXPECT_NE(block.ptr, nullptr);
+    EXPECT_EQ(block.size, 256u);
+    EXPECT_EQ(block.owner_id, pub.publisher_id);
+    EXPECT_TRUE(block.is_loaned);
+    
+    // Cleanup
+    allocator_.release(pub, block);
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, LoanMultipleSizes) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    // Test various sizes
+    std::vector<Size> sizes = {64, 256, 1024, 4096};
+    std::vector<SharedMemoryMemoryBlock> blocks;
+    
+    for (auto size : sizes) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.loan(pub, size, block);
+        
+        EXPECT_TRUE(result.HasValue());
+        EXPECT_GE(block.size, size);  // May be rounded up
+        blocks.push_back(block);
+    }
+    
+    // Cleanup
+    for (auto& block : blocks) {
+        allocator_.release(pub, block);
+    }
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, LoanExceedsMaxChunkSize) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    // Request size larger than max_chunk_size
+    SharedMemoryMemoryBlock block;
+    auto result = allocator_.loan(pub, config_.max_chunk_size + 1024, block);
+    
+    if (config_.enable_safe_overflow) {
+        // Should succeed with heap allocation
+        EXPECT_TRUE(result.HasValue());
+        EXPECT_NE(block.ptr, nullptr);
+        allocator_.release(pub, block);
+    } else {
+        // Should fail
+        EXPECT_FALSE(result.HasValue());
+    }
+    
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, LoanPoolExhaustion) {
+    config_.chunk_count = 4;  // Small pool
+    config_.enable_safe_overflow = false;
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    std::vector<SharedMemoryMemoryBlock> blocks;
+    
+    // Loan all chunks
+    for (int i = 0; i < 4; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.loan(pub, 256, block);
+        EXPECT_TRUE(result.HasValue());
+        blocks.push_back(block);
+    }
+    
+    // Next loan should fail (pool exhausted)
+    SharedMemoryMemoryBlock overflow_block;
+    auto result = allocator_.loan(pub, 256, overflow_block);
+    EXPECT_FALSE(result.HasValue());
+    
+    // Cleanup
+    for (auto& block : blocks) {
+        allocator_.release(pub, block);
+    }
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, SendBasic) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    SharedMemoryMemoryBlock block;
+    allocator_.loan(pub, 128, block);
+    
+    // Write data
+    int* payload = static_cast<int*>(block.ptr);
+    *payload = 42;
+    
+    // Send
+    auto result = allocator_.send(pub, block);
+    EXPECT_TRUE(result.HasValue());
+    
+    // Block should be moved to queue
+    // (Cannot access block after send)
+    
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, SendOwnershipViolation) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub1, pub2;
+    allocator_.createPublisher(pub1);
+    allocator_.createPublisher(pub2);
+    
+    // Publisher 1 loans a block
+    SharedMemoryMemoryBlock block;
+    allocator_.loan(pub1, 128, block);
+    EXPECT_EQ(block.owner_id, pub1.publisher_id);
+    
+    // Publisher 2 tries to send (should fail)
+    auto result = allocator_.send(pub2, block);
+    EXPECT_FALSE(result.HasValue());
+    
+    // Cleanup
+    allocator_.release(pub1, block);
+    allocator_.destroyPublisher(pub1);
+    allocator_.destroyPublisher(pub2);
+}
+
+TEST_F(SharedMemoryAllocatorTest, ReceiveBasic) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    SubscriberHandle sub;
+    allocator_.createPublisher(pub);
+    allocator_.createSubscriber(sub);
+    
+    // Loan and send
+    SharedMemoryMemoryBlock send_block;
+    allocator_.loan(pub, 128, send_block);
+    int* payload = static_cast<int*>(send_block.ptr);
+    *payload = 99;
+    allocator_.send(pub, send_block);
+    
+    // Receive
+    SharedMemoryMemoryBlock recv_block;
+    auto result = allocator_.receive(sub, recv_block);
+    
+    EXPECT_TRUE(result.HasValue());
+    EXPECT_NE(recv_block.ptr, nullptr);
+    EXPECT_EQ(recv_block.owner_id, sub.subscriber_id);
+    
+    // Verify data
+    int* recv_payload = static_cast<int*>(recv_block.ptr);
+    EXPECT_EQ(*recv_payload, 99);
+    
+    // Cleanup
+    allocator_.release(sub, recv_block);
+    allocator_.destroyPublisher(pub);
+    allocator_.destroySubscriber(sub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, ReceiveEmptyQueue) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    SubscriberHandle sub;
+    allocator_.createSubscriber(sub);
+    
+    // Try to receive from empty queue
+    SharedMemoryMemoryBlock block;
+    auto result = allocator_.receive(sub, block);
+    
+    EXPECT_FALSE(result.HasValue());
+    EXPECT_EQ(result.Error(), ErrorCode::kWouldBlock);
+    
+    allocator_.destroySubscriber(sub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, ReleaseBasic) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    // Loan a block
+    SharedMemoryMemoryBlock block;
+    allocator_.loan(pub, 256, block);
+    void* original_ptr = block.ptr;
+    
+    // Release
+    auto result = allocator_.release(pub, block);
+    EXPECT_TRUE(result.HasValue());
+    
+    // Block should be returned to pool
+    // Loan again should get same chunk
+    SharedMemoryMemoryBlock block2;
+    allocator_.loan(pub, 256, block2);
+    EXPECT_EQ(block2.ptr, original_ptr);  // Reused
+    
+    // Cleanup
+    allocator_.release(pub, block2);
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, ReleaseOwnershipViolation) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    SubscriberHandle sub;
+    allocator_.createPublisher(pub);
+    allocator_.createSubscriber(sub);
+    
+    // Publisher loans a block
+    SharedMemoryMemoryBlock block;
+    allocator_.loan(pub, 128, block);
+    
+    // Subscriber tries to release (should fail)
+    block.owner_id = sub.subscriber_id;  // Fake ownership
+    auto result = allocator_.release(sub, block);
+    EXPECT_FALSE(result.HasValue());
+    
+    // Cleanup
+    block.owner_id = pub.publisher_id;
+    allocator_.release(pub, block);
+    allocator_.destroyPublisher(pub);
+    allocator_.destroySubscriber(sub);
+}
+
+// ============================================================================
+// Message Queue FIFO Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, MessageQueueFIFOOrder) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    SubscriberHandle sub;
+    allocator_.createPublisher(pub);
+    allocator_.createSubscriber(sub);
+    
+    // Send 10 messages with sequence numbers
+    const int NUM_MSGS = 10;
+    for (int i = 0; i < NUM_MSGS; ++i) {
+        SharedMemoryMemoryBlock block;
+        allocator_.loan(pub, 64, block);
+        
+        int* payload = static_cast<int*>(block.ptr);
+        *payload = i + 1;  // 1, 2, 3, ..., 10
+        
+        allocator_.send(pub, block);
+    }
+    
+    // Receive all messages and verify FIFO order
+    for (int i = 0; i < NUM_MSGS; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.receive(sub, block);
+        
+        ASSERT_TRUE(result.HasValue());
+        
+        int* payload = static_cast<int*>(block.ptr);
+        EXPECT_EQ(*payload, i + 1);  // Should be in order
+        
+        allocator_.release(sub, block);
+    }
+    
+    // Queue should be empty now
+    SharedMemoryMemoryBlock block;
+    auto result = allocator_.receive(sub, block);
+    EXPECT_FALSE(result.HasValue());
+    
+    allocator_.destroyPublisher(pub);
+    allocator_.destroySubscriber(sub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, MessageQueueMultiplePublishers) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub1, pub2;
+    SubscriberHandle sub;
+    allocator_.createPublisher(pub1);
+    allocator_.createPublisher(pub2);
+    allocator_.createSubscriber(sub);
+    
+    // Publisher 1 sends messages
+    for (int i = 0; i < 3; ++i) {
+        SharedMemoryMemoryBlock block;
+        allocator_.loan(pub1, 64, block);
+        int* payload = static_cast<int*>(block.ptr);
+        *payload = 100 + i;  // 100, 101, 102
+        allocator_.send(pub1, block);
+    }
+    
+    // Publisher 2 sends messages
+    for (int i = 0; i < 3; ++i) {
+        SharedMemoryMemoryBlock block;
+        allocator_.loan(pub2, 64, block);
+        int* payload = static_cast<int*>(block.ptr);
+        *payload = 200 + i;  // 200, 201, 202
+        allocator_.send(pub2, block);
+    }
+    
+    // Each publisher's queue should maintain FIFO
+    std::vector<int> received;
+    for (int i = 0; i < 6; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.receive(sub, block);
+        ASSERT_TRUE(result.HasValue());
+        
+        int* payload = static_cast<int*>(block.ptr);
+        received.push_back(*payload);
+        
+        allocator_.release(sub, block);
+    }
+    
+    // Check that messages from each publisher are in order
+    // (but interleaved due to round-robin)
+    int pub1_count = 0, pub2_count = 0;
+    for (int val : received) {
+        if (val >= 100 && val < 200) {
+            EXPECT_EQ(val, 100 + pub1_count);
+            pub1_count++;
+        } else {
+            EXPECT_EQ(val, 200 + pub2_count);
+            pub2_count++;
+        }
+    }
+    
+    EXPECT_EQ(pub1_count, 3);
+    EXPECT_EQ(pub2_count, 3);
+    
+    allocator_.destroyPublisher(pub1);
+    allocator_.destroyPublisher(pub2);
+    allocator_.destroySubscriber(sub);
+}
+
+// ============================================================================
+// Round-Robin Scheduling Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, RoundRobinFairScheduling) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    // Create 3 publishers
+    PublisherHandle pub1, pub2, pub3;
+    allocator_.createPublisher(pub1);
+    allocator_.createPublisher(pub2);
+    allocator_.createPublisher(pub3);
+    
+    // Create 1 subscriber
+    SubscriberHandle sub;
+    allocator_.createSubscriber(sub);
+    
+    // Each publisher sends 5 messages
+    auto send_from_pub = [&](PublisherHandle& pub, int pub_id) {
+        for (int i = 0; i < 5; ++i) {
+            SharedMemoryMemoryBlock block;
+            allocator_.loan(pub, 64, block);
+            int* payload = static_cast<int*>(block.ptr);
+            *payload = pub_id * 100 + i;
+            allocator_.send(pub, block);
+        }
+    };
+    
+    send_from_pub(pub1, 1);  // 100, 101, 102, 103, 104
+    send_from_pub(pub2, 2);  // 200, 201, 202, 203, 204
+    send_from_pub(pub3, 3);  // 300, 301, 302, 303, 304
+    
+    // Receive all messages
+    std::vector<int> counts(4, 0);  // Index by publisher ID
+    
+    for (int i = 0; i < 15; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.receive(sub, block);
+        ASSERT_TRUE(result.HasValue());
+        
+        int* payload = static_cast<int*>(block.ptr);
+        int pub_id = *payload / 100;
+        counts[pub_id]++;
+        
+        allocator_.release(sub, block);
+    }
+    
+    // Each publisher should have all messages received
+    EXPECT_EQ(counts[1], 5);
+    EXPECT_EQ(counts[2], 5);
+    EXPECT_EQ(counts[3], 5);
+    
+    allocator_.destroyPublisher(pub1);
+    allocator_.destroyPublisher(pub2);
+    allocator_.destroyPublisher(pub3);
+    allocator_.destroySubscriber(sub);
+}
+
+// ============================================================================
+// ABA Prevention Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, ABASequenceIncrement) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    SubscriberHandle sub;
+    allocator_.createPublisher(pub);
+    allocator_.createSubscriber(sub);
+    
+    // Perform multiple loan-send-receive-release cycles
+    for (int i = 0; i < 20; ++i) {
+        SharedMemoryMemoryBlock block;
+        allocator_.loan(pub, 128, block);
+        
+        ChunkHeader* chunk = static_cast<ChunkHeader*>(block.chunk_header);
+        uint64_t seq_before = chunk->sequence.load(std::memory_order_relaxed);
+        
+        allocator_.send(pub, block);
+        
+        uint64_t seq_after = chunk->sequence.load(std::memory_order_relaxed);
+        EXPECT_EQ(seq_after, seq_before + 1);
+        
+        allocator_.receive(sub, block);
+        allocator_.release(sub, block);
+    }
+    
+    allocator_.destroyPublisher(pub);
+    allocator_.destroySubscriber(sub);
+}
+
+// ============================================================================
+// Concurrent Access Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, ConcurrentPublishers) {
+    config_.chunk_count = 256;
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    constexpr int NUM_PUBLISHERS = 4;
+    constexpr int MSGS_PER_PUB = 100;
+    
+    std::vector<PublisherHandle> publishers(NUM_PUBLISHERS);
+    for (auto& pub : publishers) {
+        allocator_.createPublisher(pub);
+    }
+    
+    SubscriberHandle sub;
+    allocator_.createSubscriber(sub);
+    
+    std::atomic<int> total_sent{0};
+    
+    // Launch publisher threads
+    std::vector<std::thread> threads;
+    for (int i = 0; i < NUM_PUBLISHERS; ++i) {
+        threads.emplace_back([&, i]() {
+            auto& pub = publishers[i];
+            for (int j = 0; j < MSGS_PER_PUB; ++j) {
+                SharedMemoryMemoryBlock block;
+                auto result = allocator_.loan(pub, 128, block);
+                if (result.HasValue()) {
+                    int* payload = static_cast<int*>(block.ptr);
+                    *payload = i * 1000 + j;
+                    
+                    result = allocator_.send(pub, block);
+                    if (result.HasValue()) {
+                        total_sent.fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+            }
+        });
+    }
+    
+    // Wait for all publishers
+    for (auto& t : threads) {
+        t.join();
+    }
+    
+    // Receive all messages
+    int received_count = 0;
+    while (received_count < total_sent.load()) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.receive(sub, block);
+        if (result.HasValue()) {
+            received_count++;
+            allocator_.release(sub, block);
+        } else {
+            std::this_thread::sleep_for(1ms);
+        }
+    }
+    
+    EXPECT_EQ(received_count, total_sent.load());
+    
+    // Cleanup
+    for (auto& pub : publishers) {
+        allocator_.destroyPublisher(pub);
+    }
+    allocator_.destroySubscriber(sub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, ConcurrentSubscribers) {
+    config_.chunk_count = 256;
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    constexpr int NUM_SUBSCRIBERS = 4;
+    std::vector<SubscriberHandle> subscribers(NUM_SUBSCRIBERS);
+    for (auto& sub : subscribers) {
+        allocator_.createSubscriber(sub);
+    }
+    
+    // Send messages
+    constexpr int NUM_MSGS = 400;
+    for (int i = 0; i < NUM_MSGS; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.loan(pub, 128, block);
+        if (result.HasValue()) {
+            int* payload = static_cast<int*>(block.ptr);
+            *payload = i;
+            allocator_.send(pub, block);
+        }
+    }
+    
+    std::atomic<int> total_received{0};
+    
+    // Launch subscriber threads
+    std::vector<std::thread> threads;
+    for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
+        threads.emplace_back([&, i]() {
+            auto& sub = subscribers[i];
+            int local_count = 0;
+            
+            while (local_count < NUM_MSGS / NUM_SUBSCRIBERS) {
+                SharedMemoryMemoryBlock block;
+                auto result = allocator_.receive(sub, block);
+                if (result.HasValue()) {
+                    local_count++;
+                    total_received.fetch_add(1, std::memory_order_relaxed);
+                    allocator_.release(sub, block);
+                } else {
+                    std::this_thread::sleep_for(1ms);
+                }
+            }
+        });
+    }
+    
+    // Wait for all subscribers
+    for (auto& t : threads) {
+        t.join();
+    }
+    
+    EXPECT_EQ(total_received.load(), NUM_MSGS);
+    
+    // Cleanup
+    allocator_.destroyPublisher(pub);
+    for (auto& sub : subscribers) {
+        allocator_.destroySubscriber(sub);
+    }
+}
+
+// ============================================================================
+// Edge Cases and Error Handling Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, InvalidPublisherHandle) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle invalid_pub{0, nullptr};
+    SharedMemoryMemoryBlock block;
+    
+    auto result = allocator_.loan(invalid_pub, 128, block);
+    EXPECT_FALSE(result.HasValue());
+}
+
+TEST_F(SharedMemoryAllocatorTest, InvalidSubscriberHandle) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    SubscriberHandle invalid_sub{0, nullptr};
+    SharedMemoryMemoryBlock block;
+    
+    auto result = allocator_.receive(invalid_sub, block);
+    EXPECT_FALSE(result.HasValue());
+}
+
+TEST_F(SharedMemoryAllocatorTest, ZeroSizeLoan) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    SharedMemoryMemoryBlock block;
+    auto result = allocator_.loan(pub, 0, block);
+    
+    EXPECT_FALSE(result.HasValue());
+    
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, NullBlockPointer) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    SharedMemoryMemoryBlock null_block{nullptr, 0, nullptr, false, 0};
+    
+    auto result = allocator_.send(pub, null_block);
+    EXPECT_FALSE(result.HasValue());
+    
+    allocator_.destroyPublisher(pub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, DoubleRelease) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    SharedMemoryMemoryBlock block;
+    allocator_.loan(pub, 128, block);
+    
+    // First release should succeed
+    auto result1 = allocator_.release(pub, block);
+    EXPECT_TRUE(result1.HasValue());
+    
+    // Second release should fail (already released)
+    auto result2 = allocator_.release(pub, block);
+    EXPECT_FALSE(result2.HasValue());
+    
+    allocator_.destroyPublisher(pub);
+}
+
+// ============================================================================
+// Legacy API Compatibility Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, LegacyLoanRelease) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    // Test old API without Publisher/Subscriber
+    SharedMemoryMemoryBlock block;
+    auto result = allocator_.loan(256, block);
+    
+    EXPECT_TRUE(result.HasValue());
+    EXPECT_NE(block.ptr, nullptr);
+    EXPECT_GE(block.size, 256u);
+    
+    // Release
+    result = allocator_.release(block);
+    EXPECT_TRUE(result.HasValue());
+}
+
+TEST_F(SharedMemoryAllocatorTest, LegacyAllocateToFree) {
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    // Use legacy allocate/free API
+    void* ptr = allocator_.allocate(512);
+    EXPECT_NE(ptr, nullptr);
+    
+    // Write some data
+    int* data = static_cast<int*>(ptr);
+    for (int i = 0; i < 10; ++i) {
+        data[i] = i * i;
+    }
+    
+    // Verify data
+    for (int i = 0; i < 10; ++i) {
+        EXPECT_EQ(data[i], i * i);
+    }
+    
+    // Free
+    allocator_.free(ptr);
+}
+
+// ============================================================================
+// Performance Stress Tests
+// ============================================================================
+
+TEST_F(SharedMemoryAllocatorTest, HighThroughputStress) {
+    config_.chunk_count = 512;
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    SubscriberHandle sub;
+    allocator_.createPublisher(pub);
+    allocator_.createSubscriber(sub);
+    
+    constexpr int ITERATIONS = 10000;
+    
+    auto start = std::chrono::steady_clock::now();
+    
+    for (int i = 0; i < ITERATIONS; ++i) {
+        // Loan
+        SharedMemoryMemoryBlock block;
+        auto loan_result = allocator_.loan(pub, 256, block);
+        ASSERT_TRUE(loan_result.HasValue());
+        
+        // Write data
+        int* payload = static_cast<int*>(block.ptr);
+        *payload = i;
+        
+        // Send
+        auto send_result = allocator_.send(pub, block);
+        ASSERT_TRUE(send_result.HasValue());
+        
+        // Receive
+        auto recv_result = allocator_.receive(sub, block);
+        ASSERT_TRUE(recv_result.HasValue());
+        
+        // Verify
+        payload = static_cast<int*>(block.ptr);
+        EXPECT_EQ(*payload, i);
+        
+        // Release
+        auto release_result = allocator_.release(sub, block);
+        ASSERT_TRUE(release_result.HasValue());
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    
+    std::cout << "High-throughput stress test: " << ITERATIONS 
+              << " iterations in " << duration.count() << "ms "
+              << "(" << (ITERATIONS * 1000.0 / duration.count()) << " ops/sec)\n";
+    
+    allocator_.destroyPublisher(pub);
+    allocator_.destroySubscriber(sub);
+}
+
+TEST_F(SharedMemoryAllocatorTest, MemoryLeakDetection) {
+    config_.chunk_count = 32;
+    ASSERT_TRUE(allocator_.initialize(config_));
+    
+    PublisherHandle pub;
+    allocator_.createPublisher(pub);
+    
+    // Loan all chunks
+    std::vector<SharedMemoryMemoryBlock> blocks;
+    for (int i = 0; i < 32; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.loan(pub, 256, block);
+        if (result.HasValue()) {
+            blocks.push_back(block);
+        }
+    }
+    
+    size_t loaned_count = blocks.size();
+    
+    // Release all chunks
+    for (auto& block : blocks) {
+        allocator_.release(pub, block);
+    }
+    
+    blocks.clear();
+    
+    // Should be able to loan the same number again
+    for (size_t i = 0; i < loaned_count; ++i) {
+        SharedMemoryMemoryBlock block;
+        auto result = allocator_.loan(pub, 256, block);
+        EXPECT_TRUE(result.HasValue()) << "Failed to re-loan chunk " << i;
+        if (result.HasValue()) {
+            blocks.push_back(block);
+        }
+    }
+    
+    EXPECT_EQ(blocks.size(), loaned_count);
+    
+    // Cleanup
+    for (auto& block : blocks) {
+        allocator_.release(pub, block);
+    }
+    allocator_.destroyPublisher(pub);
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

@@ -9,7 +9,6 @@
  */
 
 #include "CInitialization.hpp"
-#include "CMemoryManager.hpp"
 #include "CConfig.hpp"
 #include "CCoreErrorDomain.hpp"
 #include <atomic>
@@ -34,16 +33,12 @@ static std::mutex g_init_mutex;
  * @brief Internal function to perform actual initialization work.
  * 
  * This function initializes core components in the correct sequence:
- * 1. Memory Manager (ensures singleton is created)
- * 2. Configuration Manager (ensures singleton is created)
+ * 1. Configuration Manager (ensures singleton is created)
  * 
  * @returns Result<void> indicating success or failure
  */
 static Result<void> performInitialization() {
-    // Initialize memory manager (ensures the singleton exists)
-    (void)MemoryManager::getInstance()->initialize();
-
-    // // Ensure configuration manager singleton exists
+    // Ensure configuration manager singleton exists
     // (void)ConfigManager::getInstance();
 
     return Result<void>{};
@@ -53,14 +48,12 @@ static Result<void> performInitialization() {
  * @brief Internal function to perform actual de-initialization work.
  * 
  * De-initializes components in reverse order of initialization.
- * Note: Singletons are not explicitly destroyed, they will be cleaned up
- * at process exit.
  * 
  * @returns Result<void> indicating success or failure
  */
 static Result<void> performDeinitialization() {
-    // Note: ConfigManager and CMemoryManager are singletons
-    // They will be cleaned up automatically at process exit
+    // Note: ConfigManager is a singleton
+    // It will be cleaned up automatically at process exit
     // For more sophisticated cleanup, we would need explicit shutdown methods
 
     return Result<void>{};

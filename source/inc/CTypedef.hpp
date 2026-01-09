@@ -58,6 +58,10 @@ namespace core
     using Int64                 = ::std::int64_t;
     using UInt64                = ::std::uint64_t;
 
+    // Pointer-sized integer types
+    using IntPtr                = ::std::intptr_t;
+    using UIntPtr               = ::std::uintptr_t;
+
     // Legacy aliases for compatibility
     using INT                   = Int32;
     using LONG                  = Int32;

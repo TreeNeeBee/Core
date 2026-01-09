@@ -39,7 +39,19 @@ namespace core
         kInternalError              = 141,  // Internal initialization error
         kOutOfMemory                = 142,  // Out of memory
         kResourceExhausted          = 143,  // Resource exhausted (e.g., max chunks reached)
-        kWouldBlock                 = 144   // Operation would block (no data available)
+        kWouldBlock                 = 144,  // Operation would block (no data available)
+        
+        // IPC Error Codes (145-160)
+        kIPCShmCreateFailed         = 145,  // Failed to create shared memory
+        kIPCShmNotFound             = 146,  // Shared memory not found
+        kIPCShmMapFailed            = 147,  // Failed to map shared memory
+        kIPCShmStatFailed           = 148,  // Failed to stat shared memory
+        kIPCShmInvalidMagic         = 149,  // Invalid magic number in shared memory
+        kIPCChunkPoolExhausted      = 150,  // Chunk pool exhausted
+        kIPCQueueFull               = 151,  // Subscriber queue full
+        kIPCQueueEmpty              = 152,  // Subscriber queue empty
+        kIPCInvalidChunkIndex       = 153,  // Invalid chunk index
+        kIPCInvalidState            = 154   // Invalid chunk state
     };
 
     inline constexpr const Char* CoreErrMessage( CoreErrc errCode )
@@ -65,6 +77,26 @@ namespace core
             return "Resource exhausted";
         case CoreErrc::kWouldBlock:
             return "Operation would block (no data available)";
+        case CoreErrc::kIPCShmCreateFailed:
+            return "Failed to create shared memory";
+        case CoreErrc::kIPCShmNotFound:
+            return "Shared memory not found";
+        case CoreErrc::kIPCShmMapFailed:
+            return "Failed to map shared memory";
+        case CoreErrc::kIPCShmStatFailed:
+            return "Failed to stat shared memory";
+        case CoreErrc::kIPCShmInvalidMagic:
+            return "Invalid magic number in shared memory";
+        case CoreErrc::kIPCChunkPoolExhausted:
+            return "Chunk pool exhausted";
+        case CoreErrc::kIPCQueueFull:
+            return "Subscriber queue full";
+        case CoreErrc::kIPCQueueEmpty:
+            return "Subscriber queue empty";
+        case CoreErrc::kIPCInvalidChunkIndex:
+            return "Invalid chunk index";
+        case CoreErrc::kIPCInvalidState:
+            return "Invalid chunk state";
         default:
             return "Unknown error";
         }

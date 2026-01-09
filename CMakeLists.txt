@@ -279,6 +279,98 @@ option(ENABLE_BUILD_EXAMPLES "Build core examples" ON)
 if(ENABLE_BUILD_EXAMPLES)
     message(STATUS "[Core] Building examples...")
     
+    # IPC Test Executables
+    message(STATUS "[Core] Adding IPC tests...")
+    
+    # Helper function for IPC tests
+    function(add_ipc_test TEST_NAME SOURCE_FILE)
+        add_executable(${TEST_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/${SOURCE_FILE})
+        lap_configure_cxx_target(TARGET ${TEST_NAME})
+        target_include_directories(${TEST_NAME} PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
+        set_target_properties(${TEST_NAME} PROPERTIES
+            BUILD_RPATH ".:$ORIGIN"
+            SKIP_BUILD_RPATH FALSE
+        )
+        target_link_libraries(${TEST_NAME} PRIVATE 
+            ${PLATFORM_SYSTEM_TARGET}_core 
+            Threads::Threads
+            rt
+        )
+    endfunction()
+    
+    # Add IPC tests
+    add_ipc_test(test_spsc test_spsc.cpp)
+    add_ipc_test(test_spmc test_spmc.cpp)
+    
+    # ==============================================================================
+    # IPC Usage Examples
+    # ==============================================================================
+    message(STATUS "[Core] Adding IPC examples...")
+    
+    # Simple SPSC example
+    add_ipc_test(example_simple_spsc example_simple_spsc.cpp)
+    
+    # Zero-copy SPSC example
+    add_ipc_test(example_zerocopy_spsc example_zerocopy_spsc.cpp)
+    
+    # SPMC broadcast example
+    add_ipc_test(example_broadcast_spmc example_broadcast_spmc.cpp)
+    
+    # ==============================================================================
+    # IPC Benchmarks
+    # ==============================================================================
+    message(STATUS "[Core] Adding IPC benchmarks...")
+    
+    # Latency benchmark
+    add_ipc_test(benchmark_ipc_latency benchmark_ipc_latency.cpp)
+    
+    # Throughput benchmark
+    add_ipc_test(benchmark_ipc_throughput benchmark_ipc_throughput.cpp)
+    
+    # ==============================================================================
+    # IPC Stress Tests - Multi-Process
+    # ==============================================================================
+    message(STATUS "[Core] Adding IPC multi-process stress tests...")
+    
+    # Publisher process (standalone executable)
+    add_executable(publisher_process
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/publisher_process.cpp
+    )
+    lap_configure_cxx_target(TARGET publisher_process)
+    target_include_directories(publisher_process PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
+    set_target_properties(publisher_process PROPERTIES
+        BUILD_RPATH ".:$ORIGIN"
+        SKIP_BUILD_RPATH FALSE
+    )
+    target_link_libraries(publisher_process PRIVATE 
+        ${PLATFORM_SYSTEM_TARGET}_core 
+        Threads::Threads
+        rt
+    )
+    
+    # Subscriber process (standalone executable)
+    add_executable(subscriber_process
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/subscriber_process.cpp
+    )
+    lap_configure_cxx_target(TARGET subscriber_process)
+    target_include_directories(subscriber_process PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
+    set_target_properties(subscriber_process PROPERTIES
+        BUILD_RPATH ".:$ORIGIN"
+        SKIP_BUILD_RPATH FALSE
+    )
+    target_link_libraries(subscriber_process PRIVATE 
+        ${PLATFORM_SYSTEM_TARGET}_core 
+        Threads::Threads
+        rt
+    )
+    
+    # Copy stress test orchestration script to build directory
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/stress_test.sh
+        ${CMAKE_CURRENT_BINARY_DIR}/stress_test.sh
+        COPYONLY
+    )
+    
     # Helper function to create example targets
     function(add_core_example EXAMPLE_NAME SOURCE_FILE)
         add_executable(${EXAMPLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/test/examples/${SOURCE_FILE})

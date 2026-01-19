@@ -50,8 +50,10 @@ namespace core
         kIPCChunkPoolExhausted      = 150,  // Chunk pool exhausted
         kIPCQueueFull               = 151,  // Subscriber queue full
         kIPCQueueEmpty              = 152,  // Subscriber queue empty
-        kIPCInvalidChunkIndex       = 153,  // Invalid chunk index
-        kIPCInvalidState            = 154   // Invalid chunk state
+        kIPCInvalidQueueIndex       = 153,  // Invalid queue index
+        kIPCRetry                   = 154,  // Retry operation
+        kIPCInvalidChunkIndex       = 155,  // Invalid chunk index
+        kIPCInvalidState            = 156   // Invalid chunk state
     };
 
     inline constexpr const Char* CoreErrMessage( CoreErrc errCode )

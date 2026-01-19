@@ -1,5 +1,5 @@
 # ==============================================================================
-# Core Module - CMake Configuration
+# Core Module - CMake Configuration (Simplified with BuildTemplate)
 # ==============================================================================
 # This CMakeLists.txt supports both:
 # 1. Standalone build (with BuildTemplate as submodule)
@@ -9,23 +9,28 @@
 cmake_minimum_required(VERSION 3.10.2)
 
 # ==============================================================================
-# Detect Build Mode
+# Detect Build Mode and Include BuildTemplate
 # ==============================================================================
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    # Standalone mode: This is the root project
+    # Standalone mode
     set(CORE_STANDALONE_BUILD ON)
     message(STATUS "[Core] Standalone build mode detected")
     
     project(Core VERSION 1.0.0 LANGUAGES CXX)
     
-    # C++ Standard Configuration (C++17 with C++14 fallback)
+    # Set default build type to Release
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (default: Release)" FORCE)
+    endif()
+    
+    # C++ Standard Configuration
     if(NOT DEFINED CMAKE_CXX_STANDARD)
         set(CMAKE_CXX_STANDARD 17)
     endif()
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
     
-    # Detect C++17 compiler support
+    # Detect C++17 support
     include(CheckCXXCompilerFlag)
     check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
     if(COMPILER_SUPPORTS_CXX17)
@@ -50,92 +55,41 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     find_package(OpenSSL REQUIRED)
     find_package(ZLIB REQUIRED)
     
-    # ==============================================================================
-    # Memory Management Options
-    # ==============================================================================
-    option(ENABLE_MEMORY_POOL "Enable custom memory pool allocator" OFF)
-    option(ENABLE_JEMALLOC "Use jemalloc memory allocator" ON)  # Default enabled
-    option(ENABLE_SHARED_MEMORY_IPC "Enable shared memory shared memory allocator" OFF)
+    # Shared Memory IPC option
+    option(ENABLE_SHARED_MEMORY_IPC "Enable shared memory allocator" OFF)
     
-    # Ensure only one memory allocator option is enabled
-    if(ENABLE_MEMORY_POOL AND ENABLE_JEMALLOC)
-        message(FATAL_ERROR "[Core] ENABLE_MEMORY_POOL and ENABLE_JEMALLOC are mutually exclusive. Choose only one.")
-    endif()
-    
-    if(ENABLE_JEMALLOC)
-        # Try to find jemalloc library
-        find_library(JEMALLOC_LIB 
-            NAMES jemalloc libjemalloc
-            PATHS 
-                /usr/lib 
-                /usr/local/lib 
-                /usr/lib/x86_64-linux-gnu
-                /usr/lib/aarch64-linux-gnu
-                /usr/lib64
-        )
-        
-        # Try to find jemalloc header
-        find_path(JEMALLOC_INCLUDE_DIR 
-            NAMES jemalloc/jemalloc.h
-            PATHS 
-                /usr/include 
-                /usr/local/include
-        )
-        
-        if(JEMALLOC_LIB)
-            message(STATUS "[Core] Using jemalloc allocator: ${JEMALLOC_LIB}")
-            if(JEMALLOC_INCLUDE_DIR)
-                message(STATUS "[Core] jemalloc headers: ${JEMALLOC_INCLUDE_DIR}")
-            endif()
-        else()
-            message(WARNING "[Core] ENABLE_JEMALLOC is ON but jemalloc library not found. Falling back to system allocator.")
-            message(WARNING "[Core] Install jemalloc: sudo apt-get install libjemalloc-dev")
-            set(ENABLE_JEMALLOC OFF)
-        endif()
-    elseif(ENABLE_MEMORY_POOL)
-        message(STATUS "[Core] Using custom memory pool allocator")
-    else()
-        message(STATUS "[Core] Using system memory allocator (std::malloc/free)")
-    endif()
-    
-    # Enable testing
     enable_testing()
     
-    # Override BuildTemplate's RPATH defaults before including it
-    # BuildTemplate sets CMAKE_BUILD_RPATH to "." which causes CWD-dependent library loading
-    # RPATH search order: 1) current directory (.) 2) $ORIGIN for build, or install path
+    # Override BuildTemplate's RPATH defaults
     set(CMAKE_BUILD_RPATH ".:$ORIGIN" CACHE STRING "Build RPATH" FORCE)
     set(CMAKE_INSTALL_RPATH "$ORIGIN" CACHE STRING "Install RPATH" FORCE)
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE CACHE BOOL "Don't add link directories to RPATH" FORCE)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE CACHE BOOL "Don't add link dirs to RPATH" FORCE)
     
-    # Include BuildTemplate (should be in BuildTemplate/ subdirectory)
+    # Include BuildTemplate
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/BuildTemplate/Config.cmake.in")
         include("${CMAKE_CURRENT_SOURCE_DIR}/BuildTemplate/Config.cmake.in")
+        include("${CMAKE_CURRENT_SOURCE_DIR}/BuildTemplate/IPCHelpers.cmake.in")
+        include("${CMAKE_CURRENT_SOURCE_DIR}/BuildTemplate/ModuleHelpers.cmake.in")
         set(BUILD_TEMPLATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/BuildTemplate")
         
-        # Remove BuildTemplate's hardcoded -Wl,-rpath,. from compiler flags
-        # This causes "." to be added to RUNPATH, making library loading CWD-dependent
+        # Remove BuildTemplate's hardcoded -Wl,-rpath,.
         string(REPLACE "-Wl,-rpath,." "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
         string(REPLACE "-Wl,-rpath,." "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}" CACHE STRING "C flags" FORCE)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "CXX flags" FORCE)
     else()
         message(FATAL_ERROR 
-            "[Core] BuildTemplate not found!\n"
-            "Please initialize the submodule:\n"
-            "  git submodule update --init --recursive\n"
-            "Or clone with submodules:\n"
-            "  git clone --recursive <repository-url>"
-        )
+            "[Core] BuildTemplate not found! Run: git submodule update --init --recursive")
     endif()
 else()
-    # Integrated mode: Part of LightAP project
+    # Integrated mode
     set(CORE_STANDALONE_BUILD OFF)
     message(STATUS "[Core] Integrated build mode (part of LightAP)")
     
-    # Include BuildTemplate from parent project
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../BuildTemplate/Config.cmake.in")
         include("${CMAKE_CURRENT_SOURCE_DIR}/../../BuildTemplate/Config.cmake.in")
+        include("${CMAKE_CURRENT_SOURCE_DIR}/../../BuildTemplate/IPCHelpers.cmake.in")
+        include("${CMAKE_CURRENT_SOURCE_DIR}/../../BuildTemplate/ModuleHelpers.cmake.in")
         set(BUILD_TEMPLATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../BuildTemplate")
     else()
         message(FATAL_ERROR "[Core] BuildTemplate not found at ../../BuildTemplate/")
@@ -145,22 +99,11 @@ endif()
 # ==============================================================================
 # Module Configuration
 # ==============================================================================
-set(MODULE_NAME "Core")
-set(MODULE_VERNO 1.0.0)
-set(MODULE_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(MODULE_SOURCE_CXX_DIR ${MODULE_ROOT_DIR}/source)
-set(MODULE_EXTERNAL_LIB 
-    Boost::filesystem 
-    Boost::regex 
-    ZLIB::ZLIB 
-    OpenSSL::SSL 
-    OpenSSL::Crypto
-)
+# Note: lap_setup_module from ModuleHelpers expects TARGET parameter
+# We'll configure manually here since we have complex setup
+message(STATUS "[Core] Configuring module...")
 
-# ==============================================================================
-# Build Shared Library
-# ==============================================================================
-# Create symlink for core headers to match include structure (lap/core)
+# Create symlink for core headers (lap/core structure)
 if(NOT CORE_STANDALONE_BUILD)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/lap)
     file(CREATE_LINK ${CMAKE_CURRENT_SOURCE_DIR}/source/inc 
@@ -168,6 +111,26 @@ if(NOT CORE_STANDALONE_BUILD)
     list(APPEND MODULE_EXTERNAL_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
 endif()
 
+# Print configuration summary
+lap_print_config()
+
+# ==============================================================================
+# Build Main Shared Library (NORMAL mode by default)
+# ==============================================================================
+set(MODULE_NAME "core")
+set(MODULE_VERSION "1.0.0")
+set(MODULE_VERNO "1.0.0")
+set(MODULE_SOURCE_CXX_DIR "source")
+set(MODULE_INCLUDE_DIR "source/inc")
+set(MODULE_EXTERNAL_LIB 
+    Boost::filesystem 
+    Boost::regex 
+    Boost::system
+    ZLIB::ZLIB 
+    OpenSSL::SSL 
+    OpenSSL::Crypto
+    Threads::Threads
+)
 set(ENABLE_BUILD_SHARED_LIBRARY ON CACHE BOOL "Build core shared library" FORCE)
 set(ENABLE_BUILD_WITH_PLATFORM_PREX ON)
 
@@ -175,342 +138,162 @@ include("${BUILD_TEMPLATE_DIR}/SharedLibrary.cmake.in")
 
 # Configure library target
 if(TARGET lap_core)
-    # Ensure public symbols are exported for consumers (tests/examples)
-    # BuildTemplate defaults to hidden visibility; override to default here for Core API
     set_target_properties(lap_core PROPERTIES
         CXX_VISIBILITY_PRESET default
         VISIBILITY_INLINES_HIDDEN OFF
-        # Set RPATH for runtime library search
-        # BUILD: . (current dir first) then $ORIGIN (build dir relative)
-        # INSTALL: $ORIGIN only (installed library location)
         BUILD_RPATH ".:$ORIGIN"
         INSTALL_RPATH "$ORIGIN"
-        # Don't skip RPATH for install
         SKIP_BUILD_RPATH FALSE
         BUILD_WITH_INSTALL_RPATH FALSE
         INSTALL_RPATH_USE_LINK_PATH FALSE
     )
-
-    # Enable internal logging
-    target_compile_definitions(lap_core PRIVATE __INNER_LOG_ENABLE)
     
-    # Enforce strict memory layout checks
-    target_compile_definitions(lap_core PRIVATE LAP_STRICT_LAYOUT=1)
+    target_compile_definitions(lap_core PRIVATE 
+        __INNER_LOG_ENABLE
+        LAP_STRICT_LAYOUT=1
+    )
     
-    # Memory management options
-    if(ENABLE_MEMORY_POOL)
-        target_compile_definitions(lap_core PUBLIC LAP_ENABLE_MEMORY_POOL)
-        message(STATUS "[Core] LAP_ENABLE_MEMORY_POOL defined")
-    endif()
+    # IPC Memory Footprint Configuration
+    set(LIGHTAP_IPC_MODE "NORMAL" CACHE STRING "IPC mode: SHRINK|NORMAL|EXTEND")
+    set_property(CACHE LIGHTAP_IPC_MODE PROPERTY STRINGS "SHRINK" "NORMAL" "EXTEND")
+    lap_configure_ipc_mode(TARGET lap_core MODE ${LIGHTAP_IPC_MODE})
     
-    if(ENABLE_JEMALLOC AND JEMALLOC_LIB)
-        target_compile_definitions(lap_core PUBLIC LAP_USE_JEMALLOC)
-        target_link_libraries(lap_core PRIVATE ${JEMALLOC_LIB})
-        if(JEMALLOC_INCLUDE_DIR)
-            target_include_directories(lap_core PRIVATE ${JEMALLOC_INCLUDE_DIR})
-        endif()
-        message(STATUS "[Core] Linking with jemalloc: ${JEMALLOC_LIB}")
-        message(STATUS "[Core] LAP_USE_JEMALLOC compile definition added")
-    endif()
-    
+    # IPC shared memory option
     if(ENABLE_SHARED_MEMORY_IPC)
         target_compile_definitions(lap_core PUBLIC ENABLE_SHARED_MEMORY_IPC)
-        message(STATUS "[Core] shared memory shared memory allocator enabled")
     endif()
     
-    # Suppress packed-member address warning on GCC/Clang
+    # Suppress packed-member address warning
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(lap_core PRIVATE -Wno-address-of-packed-member)
     endif()
+endif()
+
+# ==============================================================================
+# Build IPC Mode-Specific Libraries for Testing
+# ==============================================================================
+if(TARGET lap_core)
+    message(STATUS "[Core] Creating IPC mode-specific libraries...")
     
-    # Optional: Require HMAC_SECRET environment variable (uncomment for strict mode)
-    # target_compile_definitions(lap_core PRIVATE REQUIRE_HMAC_SECRET_ENV)
+    # SHRINK mode library
+    lap_add_ipc_mode_library(
+        BASE_TARGET lap_core
+        MODE SHRINK
+        OUTPUT_NAME lap_core_shrink
+        LINK_LIBRARIES ${MODULE_EXTERNAL_LIB}
+        COMPILE_DEFINITIONS __INNER_LOG_ENABLE LAP_STRICT_LAYOUT=1
+        COMPILE_OPTIONS $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-address-of-packed-member>
+    )
+    
+    # EXTEND mode library
+    lap_add_ipc_mode_library(
+        BASE_TARGET lap_core
+        MODE EXTEND
+        OUTPUT_NAME lap_core_extend
+        LINK_LIBRARIES ${MODULE_EXTERNAL_LIB}
+        COMPILE_DEFINITIONS __INNER_LOG_ENABLE LAP_STRICT_LAYOUT=1
+        COMPILE_OPTIONS $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-address-of-packed-member>
+    )
 endif()
 
 # ==============================================================================
 # Unit Tests
 # ==============================================================================
-set(MODULE_TEST_DIR ${MODULE_ROOT_DIR}/test)
-set(ENABLE_BUILD_TEST ON CACHE BOOL "Build core tests" FORCE)
-set(ENABLE_BUILD_UNITTEST ON CACHE BOOL "Build core unit tests" FORCE)
-set(MODULE_EXTERNAL_TEST_LIB 
-    ${PLATFORM_SYSTEM_TARGET}_core 
-    Threads::Threads 
-    Boost::filesystem 
-    Boost::regex 
-    ZLIB::ZLIB 
-    OpenSSL::SSL 
-    OpenSSL::Crypto 
-    GTest::GTest 
-    GTest::Main
-)
+option(ENABLE_BUILD_UNITTEST "Build unit tests" ON)
 
-include("${BUILD_TEMPLATE_DIR}/Test.cmake.in")
-
-# Exclude tests that depend heavily on removed MemManager
-if(TARGET core_test)
-    get_target_property(TEST_SOURCES core_test SOURCES)
-    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_memory\\.cpp$")
-    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_memory_allocator\\.cpp$")
-    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_noexcept_extended\\.cpp$")
-    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_shm_allocator_broadcast\\.cpp$")
-    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_shm_async\\.cpp$")
-    set_target_properties(core_test PROPERTIES SOURCES "${TEST_SOURCES}")
-endif()
-
-# Configure test executable RPATH to find lap_core
-# Tests/benchmarks are for development only - not installed
-if(TARGET core_test)
-    set_target_properties(core_test PROPERTIES
-        # BUILD: . (current dir first) then $ORIGIN (build dir relative)
-        BUILD_RPATH ".:$ORIGIN"
-        # Tests are not installed, no INSTALL_RPATH needed
-        SKIP_BUILD_RPATH FALSE
-        BUILD_WITH_INSTALL_RPATH FALSE
-        INSTALL_RPATH_USE_LINK_PATH FALSE
+if(ENABLE_BUILD_UNITTEST AND TARGET lap_core)
+    message(STATUS "[Core] Building unit tests...")
+    
+    # IPC Mode-Specific Tests
+    lap_add_ipc_test(
+        NAME test_ipc_shrink
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_shrink.cpp
+        LINK_LIBRARIES lap_core_shrink Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
+    
+    lap_add_ipc_test(
+        NAME test_ipc_normal
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_normal.cpp
+        LINK_LIBRARIES lap_core Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
+    
+    lap_add_ipc_test(
+        NAME test_ipc_extend
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_extend.cpp
+        LINK_LIBRARIES lap_core_extend Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
+    
+    lap_add_ipc_test(
+        NAME test_controlblock_size
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_controlblock_size.cpp
+        LINK_LIBRARIES lap_core Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
     )
 endif()
 
 # ==============================================================================
-# Examples - Simple demonstration programs
+# Examples
 # ==============================================================================
-option(ENABLE_BUILD_EXAMPLES "Build core examples" ON)
+option(ENABLE_BUILD_EXAMPLES "Build examples" ON)
 
-if(ENABLE_BUILD_EXAMPLES)
+if(ENABLE_BUILD_EXAMPLES AND TARGET lap_core)
     message(STATUS "[Core] Building examples...")
     
-    # IPC Test Executables
-    message(STATUS "[Core] Adding IPC tests...")
-    
-    # Helper function for IPC tests
-    function(add_ipc_test TEST_NAME SOURCE_FILE)
-        add_executable(${TEST_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/${SOURCE_FILE})
-        lap_configure_cxx_target(TARGET ${TEST_NAME})
-        target_include_directories(${TEST_NAME} PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
-        set_target_properties(${TEST_NAME} PROPERTIES
-            BUILD_RPATH ".:$ORIGIN"
-            SKIP_BUILD_RPATH FALSE
-        )
-        target_link_libraries(${TEST_NAME} PRIVATE 
-            ${PLATFORM_SYSTEM_TARGET}_core 
-            Threads::Threads
-            rt
-        )
-    endfunction()
-    
-    # Add IPC tests
-    add_ipc_test(test_spsc test_spsc.cpp)
-    add_ipc_test(test_spmc test_spmc.cpp)
-    
-    # ==============================================================================
-    # IPC Usage Examples
-    # ==============================================================================
-    message(STATUS "[Core] Adding IPC examples...")
-    
-    # Simple SPSC example
-    add_ipc_test(example_simple_spsc example_simple_spsc.cpp)
-    
-    # Zero-copy SPSC example
-    add_ipc_test(example_zerocopy_spsc example_zerocopy_spsc.cpp)
-    
-    # SPMC broadcast example
-    add_ipc_test(example_broadcast_spmc example_broadcast_spmc.cpp)
-    
-    # ==============================================================================
-    # IPC Benchmarks
-    # ==============================================================================
-    message(STATUS "[Core] Adding IPC benchmarks...")
-    
-    # Latency benchmark
-    add_ipc_test(benchmark_ipc_latency benchmark_ipc_latency.cpp)
-    
-    # Throughput benchmark
-    add_ipc_test(benchmark_ipc_throughput benchmark_ipc_throughput.cpp)
-    
-    # ==============================================================================
-    # IPC Stress Tests - Multi-Process
-    # ==============================================================================
-    message(STATUS "[Core] Adding IPC multi-process stress tests...")
-    
-    # Publisher process (standalone executable)
-    add_executable(publisher_process
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/publisher_process.cpp
-    )
-    lap_configure_cxx_target(TARGET publisher_process)
-    target_include_directories(publisher_process PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
-    set_target_properties(publisher_process PROPERTIES
-        BUILD_RPATH ".:$ORIGIN"
-        SKIP_BUILD_RPATH FALSE
-    )
-    target_link_libraries(publisher_process PRIVATE 
-        ${PLATFORM_SYSTEM_TARGET}_core 
-        Threads::Threads
-        rt
+    # IPC Examples requiring specific modes (individual handling)
+    lap_add_example_executable(
+        NAME stress_test_shrink
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/stress_test_shrink.cpp
+        LINK_LIBRARIES lap_core_shrink Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+        ENABLE_LOGGING
     )
     
-    # Subscriber process (standalone executable)
-    add_executable(subscriber_process
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/subscriber_process.cpp
-    )
-    lap_configure_cxx_target(TARGET subscriber_process)
-    target_include_directories(subscriber_process PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
-    set_target_properties(subscriber_process PROPERTIES
-        BUILD_RPATH ".:$ORIGIN"
-        SKIP_BUILD_RPATH FALSE
-    )
-    target_link_libraries(subscriber_process PRIVATE 
-        ${PLATFORM_SYSTEM_TARGET}_core 
-        Threads::Threads
-        rt
+    lap_add_example_executable(
+        NAME stress_test_extend
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/stress_test_extend.cpp
+        LINK_LIBRARIES lap_core_extend Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+        ENABLE_LOGGING
     )
     
-    # Copy stress test orchestration script to build directory
-    configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/stress_test.sh
-        ${CMAKE_CURRENT_BINARY_DIR}/stress_test.sh
-        COPYONLY
+    lap_add_example_executable(
+        NAME ipc_chain_example
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/ipc_chain_example.cpp
+        LINK_LIBRARIES lap_core_shrink Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+        ENABLE_LOGGING
     )
     
-    # Helper function to create example targets
-    function(add_core_example EXAMPLE_NAME SOURCE_FILE)
-        add_executable(${EXAMPLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/test/examples/${SOURCE_FILE})
-        lap_configure_cxx_target(TARGET ${EXAMPLE_NAME})
-        target_include_directories(${EXAMPLE_NAME} PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
-        
-        # Set RPATH: current dir first, then $ORIGIN (for development/debugging)
-        set_target_properties(${EXAMPLE_NAME} PROPERTIES
-            BUILD_RPATH ".:$ORIGIN"
-            SKIP_BUILD_RPATH FALSE
-        )
-        
-        # Parse optional additional libraries
-        set(EXTRA_LIBS ${ARGN})
-        target_link_libraries(${EXAMPLE_NAME} PRIVATE 
-            ${PLATFORM_SYSTEM_TARGET}_core 
-            Threads::Threads 
-            ${EXTRA_LIBS}
-        )
-        
-        # Link jemalloc if enabled (for examples that use jemalloc API directly)
-        if(ENABLE_JEMALLOC AND JEMALLOC_LIB)
-            target_link_libraries(${EXAMPLE_NAME} PRIVATE ${JEMALLOC_LIB})
-            if(JEMALLOC_INCLUDE_DIR)
-                target_include_directories(${EXAMPLE_NAME} PRIVATE ${JEMALLOC_INCLUDE_DIR})
-            endif()
-        endif()
-    endfunction()
-    
-    # Memory Management Examples (commented out - depend on removed MemManager)
-    # add_core_example(core_memory_example memory_example.cpp Boost::filesystem Boost::regex)
-    # add_core_example(global_operator_test global_operator_test.cpp Boost::filesystem Boost::regex)
-    # add_core_example(direct_alignment_test direct_alignment_test.cpp Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)  # Deleted
-    # add_core_example(test_memory_allocator test_memory_allocator.cpp)  # Deleted: depends on MemManager
-    # add_core_example(test_memory_allocator_debug test_memory_allocator_debug.cpp)  # Deleted: depends on MemManager
-    
-    # jemalloc Integration Test
-    add_core_example(test_jemalloc_integration test_jemalloc_integration.cpp)
-    
-    # Configuration Example (simplified)
-    add_core_example(config_example config_example.cpp 
-        Boost::filesystem Boost::regex ZLIB::ZLIB OpenSSL::SSL OpenSSL::Crypto)
-    
-    # Core Classes Examples (deleted - depend on MemManager)
-    # add_core_example(test_dynamic_magic test_dynamic_magic.cpp)
-    # add_core_example(test_core_classes test_core_classes.cpp)
-    # add_core_example(test_functional_classes test_functional_classes.cpp)
-    
-    # Memory Leak Detection Examples (deleted - depend on MemManager)
-    # add_core_example(memory_leak_multithread_test memory_leak_multithread_test.cpp)
-    # add_core_example(memory_leak_intentional_test memory_leak_intentional_test.cpp)
-    
-    # AUTOSAR Examples (deleted - depend on MemManager)
-    # add_core_example(abort_example abort_example.cpp)
-    # add_core_example(simple_init_test simple_init_test.cpp)
-    # add_core_example(test_pool_sizes test_pool_sizes.cpp)
-    # add_core_example(show_pool_stats show_pool_stats.cpp)
-    # add_core_example(test_simple_threshold test_simple_threshold.cpp)
-    # add_core_example(test_memory_trace test_memory_trace.cpp)
-    # add_core_example(test_jemalloc test_jemalloc.cpp)
-    # add_core_example(test_shared_memory_ipc test_shared_memory_ipc.cpp)
-    # add_core_example(initialization_example initialization_example.cpp)
-    
-    # SharedMemoryAllocator Tests (deleted - depend on MemManager)
-    # add_core_example(test_iceoryx2_api test_iceoryx2_api.cpp)
-    # add_core_example(test_message_queue test_message_queue.cpp)
-    add_core_example(event_example event_example.cpp)
-    
-    # Event system test (requires GTest)
-    add_executable(test_event_basic ${CMAKE_CURRENT_SOURCE_DIR}/test/examples/test_event_basic.cpp)
-    lap_configure_cxx_target(TARGET test_event_basic)
-    target_include_directories(test_event_basic PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
-    set_target_properties(test_event_basic PROPERTIES
-        BUILD_RPATH ".:$ORIGIN"
-        SKIP_BUILD_RPATH FALSE
-    )
-    target_link_libraries(test_event_basic PRIVATE 
-        ${PLATFORM_SYSTEM_TARGET}_core 
-        Threads::Threads
-        GTest::GTest
-        GTest::Main
+    # NORMAL mode examples (batch processing)
+    lap_add_examples_batch(
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc
+        SOURCES camera_fusion_example.cpp
+        LINK_LIBRARIES lap_core Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+        ENABLE_LOGGING
     )
     
-    # Shared memory examples (deleted - depend on MemManager)
-    # add_core_example(test_shm_simple test_shm_simple.cpp)
-    # add_core_example(test_shm_integration test_shm_integration.cpp)
-    # add_core_example(test_segment_allocation test_segment_allocation.cpp)
-    # add_core_example(test_segment_simple test_segment_simple.cpp)
-    # add_core_example(test_segment_memory_leak test_segment_memory_leak.cpp)
-    # add_core_example(test_segment_cleanup test_segment_cleanup.cpp)
-    # add_core_example(test_mmap_shrink test_mmap_shrink.cpp)
-    # add_core_example(test_concurrent_shrink test_concurrent_shrink.cpp)
-    # add_core_example(test_segment_growth test_segment_growth.cpp)
-    # add_core_example(benchmark_segment_performance benchmark_segment_performance.cpp)
-    # add_core_example(benchmark_allocators benchmark_allocators.cpp)
-    # add_core_example(benchmark_shm_async benchmark_shm_async.cpp)
-    # add_core_example(test_concurrent test_concurrent.cpp)
-    # add_core_example(test_wait_policies test_wait_policies.cpp)
+    lap_add_examples_batch(
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test/examples
+        SOURCES config_example.cpp
+        LINK_LIBRARIES lap_core ${MODULE_EXTERNAL_LIB}
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
 endif()
 
 # ==============================================================================
-# Benchmarks - Performance and stress tests
+# Benchmarks
 # ==============================================================================
-option(ENABLE_BUILD_BENCHMARKS "Build core benchmarks" ON)
+option(ENABLE_BUILD_BENCHMARKS "Build benchmarks" ON)
 
-if(ENABLE_BUILD_BENCHMARKS)
+if(ENABLE_BUILD_BENCHMARKS AND TARGET lap_core)
     message(STATUS "[Core] Building benchmarks...")
     
-    # Helper function to create benchmark targets
-    function(add_core_benchmark BENCHMARK_NAME SOURCE_FILE)
-        add_executable(${BENCHMARK_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/test/benchmark/${SOURCE_FILE})
-        lap_configure_cxx_target(TARGET ${BENCHMARK_NAME})
-        target_include_directories(${BENCHMARK_NAME} PRIVATE ${MODULE_SOURCE_CXX_DIR}/inc)
-        
-        # Set RPATH: current dir first, then $ORIGIN (for development/debugging)
-        set_target_properties(${BENCHMARK_NAME} PROPERTIES
-            BUILD_RPATH ".:$ORIGIN"
-            SKIP_BUILD_RPATH FALSE
-        )
-        
-        # Parse optional additional libraries
-        set(EXTRA_LIBS ${ARGN})
-        target_link_libraries(${BENCHMARK_NAME} PRIVATE 
-            ${PLATFORM_SYSTEM_TARGET}_core 
-            Threads::Threads 
-            ${EXTRA_LIBS}
-        )
-    endfunction()
-    
-    # Memory Performance Benchmarks (deleted - depend on MemManager)
-    # add_core_benchmark(alignment_performance_test alignment_performance_test.cpp)
-    # add_core_benchmark(pool_vs_system_benchmark pool_vs_system_benchmark.cpp)
-    # add_core_benchmark(system_malloc_comparison_test system_malloc_comparison_test.cpp)
-    # add_core_benchmark(benchmark_dual_counter benchmark_dual_counter.cpp)
-    # add_core_benchmark(benchmark_mutex_optimization benchmark_mutex_optimization.cpp)
-    
-    # Stress Tests (deleted - depend on MemManager)
-    # add_core_benchmark(memory_stress_test memory_stress_test.cpp Boost::filesystem Boost::regex)
-    # add_core_benchmark(overnight_stress_test overnight_stress_test.cpp)
-    # add_core_benchmark(test_multithread_broadcast test_multithread_broadcast.cpp)
+    # Add benchmark examples here using lap_add_benchmark_executable()
+    # (Currently no benchmarks defined)
 endif()
 
 # ==============================================================================
@@ -518,7 +301,7 @@ endif()
 # ==============================================================================
 if(CORE_STANDALONE_BUILD)
     # Install library with export support
-    install(TARGETS lap_core
+    install(TARGETS lap_core lap_core_shrink lap_core_extend
         EXPORT CoreTargets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
@@ -547,12 +330,9 @@ if(CORE_STANDALONE_BUILD)
         DESTINATION share/doc/lap-core
     )
     
-    # ===========================================================================
-    # CMake Package Configuration (支持 find_package)
-    # ===========================================================================
+    # CMake Package Configuration
     include(CMakePackageConfigHelpers)
     
-    # 导出目标
     install(EXPORT CoreTargets
         FILE CoreTargets.cmake
         NAMESPACE LightAP::
@@ -560,7 +340,6 @@ if(CORE_STANDALONE_BUILD)
         COMPONENT Development
     )
     
-    # 配置包配置文件
     set(CMAKE_INSTALL_INCLUDEDIR "include/lap/core")
     configure_package_config_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/CoreConfig.cmake.in
@@ -569,14 +348,12 @@ if(CORE_STANDALONE_BUILD)
         PATH_VARS CMAKE_INSTALL_INCLUDEDIR
     )
     
-    # 生成版本文件
     write_basic_package_version_file(
         ${CMAKE_CURRENT_BINARY_DIR}/CoreConfigVersion.cmake
         VERSION ${MODULE_VERNO}
         COMPATIBILITY SameMajorVersion
     )
     
-    # 安装配置文件
     install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/CoreConfig.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/CoreConfigVersion.cmake
@@ -584,7 +361,7 @@ if(CORE_STANDALONE_BUILD)
         COMPONENT Development
     )
     
-    message(STATUS "[Core] CMake package configuration will be installed to lib/cmake/Core")
+    message(STATUS "[Core] CMake package will be installed to lib/cmake/Core")
 endif()
 
 # ==============================================================================
@@ -596,11 +373,12 @@ message(STATUS "================================================================
 message(STATUS "  Build mode:       ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard:     C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Standalone:       ${CORE_STANDALONE_BUILD}")
-message(STATUS "  Library:          ${PLATFORM_SYSTEM_TARGET}_core")
+message(STATUS "  Library:          lap_core (${LIGHTAP_IPC_MODE} mode)")
+message(STATUS "  Mode libraries:   lap_core_shrink, lap_core_extend")
 message(STATUS "  Unit tests:       ${ENABLE_BUILD_UNITTEST}")
 message(STATUS "  Examples:         ${ENABLE_BUILD_EXAMPLES}")
 message(STATUS "  Benchmarks:       ${ENABLE_BUILD_BENCHMARKS}")
-if(NOT CORE_STANDALONE_BUILD)
+if(CORE_STANDALONE_BUILD)
     message(STATUS "  Install prefix:   ${CMAKE_INSTALL_PREFIX}")
     message(STATUS "  Export targets:   YES (CoreTargets.cmake)")
 endif()

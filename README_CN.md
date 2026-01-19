@@ -3,7 +3,7 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/std/the-standard)
 [![AUTOSAR](https://img.shields.io/badge/AUTOSAR-AP%20R24--11-orange.svg)](https://www.autosar.org/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](../../)
-[![Tests](https://img.shields.io/badge/tests-395%2F397-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/tests-408%2F408-brightgreen.svg)](test/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **LightAP Core** 是符合 AUTOSAR Adaptive Platform R24-11 标准的基础模块，提供内存管理、配置管理、错误处理和同步原语等核心功能。
@@ -14,14 +14,11 @@
 
 ## ✨ 核心特性
 
-### 🧠 统一内存管理
+### 🧠 AUTOSAR 生命周期管理
 - **AUTOSAR 合规初始化** - 完整实现 `Initialize()`/`Deinitialize()` 生命周期管理
-- **高性能内存池** - 优化的对象池分配器，支持小对象（≤1024 字节）
-- **全局拦截** - 透明拦截 `new`/`delete` 操作符，零代码侵入
-- **线程安全** - 无锁快速路径，最小化线程竞争
-- **内存追踪** - 内置泄漏检测、统计和调试支持
-- **STL 集成** - `StlMemoryAllocator<T>` 无缝支持标准容器
-- **动态对齐** - 运行时可配置对齐 (1/4/8 字节)
+- **统一入口点** - 所有 LightAP 应用必须通过标准初始化流程
+- **资源管理** - 自动管理模块生命周期和资源清理
+- **错误处理** - Result 模式的初始化错误报告
 
 ### 🏛️ AUTOSAR 适配平台类型
 - **核心类型**: `String`, `StringView`, `Vector`, `Map`, `Optional`, `Variant`, `Span`
@@ -142,31 +139,23 @@ int main() {
 }
 ```
 
-### 内存管理
+### AUTOSAR 类型使用
 
 ```cpp
-#include "CMemory.hpp"
+#include "CString.hpp"
+#include "CVector.hpp"
+#include "CMap.hpp"
 using namespace lap::core;
 
-// 1. 透明的池分配（自动）
-auto* obj = new MyClass();  // 自动使用内存池
-delete obj;                  // 线程安全释放
-
-// 2. STL 容器（推荐）
-Vector<int> vec;            // 使用 lap_core 内存池
+// AUTOSAR 标准容器
+Vector<int> vec;            // 使用标准分配器
 vec.push_back(42);
 
-Map<String, int> map;       // 高效的小对象分配
+Map<String, int> map;       // 键值对映射
 map["answer"] = 42;
 
-// 3. 显式内存分配
-void* ptr = Memory::malloc(1024);
-Memory::free(ptr);
-
-// 4. 内存统计
-auto stats = Memory::getMemoryStats();
-std::cout << "Allocated: " << stats.currentAllocSize << " bytes\n";
-std::cout << "Blocks: " << stats.currentAllocCount << "\n";
+String str = "Hello, AUTOSAR";
+StringView view = str;      // 零拷贝字符串视图
 ```
 
 ### 配置管理
@@ -343,10 +332,9 @@ Total Tests:  14
 Passed:       13 (92.86%)
 Failed:       1  (仅类名注册辅助功能，不影响核心功能)
 
-✓ 单元测试: 395/397 通过 (99.5%)
+✓ 单元测试: 408/408 通过 (100%)
 ✓ 初始化测试: 2/2 通过
-✓ 内存管理测试: 5/5 通过
-✓ STL 分配器测试: 2/2 通过
+✓ IPC 测试: 8/8 通过
 ✓ 配置管理测试: 1/1 通过
 ✓ 基准测试: 2/2 通过
 ✓ 错误处理测试: 1/1 通过
@@ -370,24 +358,23 @@ Failed:       1  (仅类名注册辅助功能，不影响核心功能)
 ```bash
 ./simple_init_test               # AUTOSAR 初始化示例
 ./config_example                 # 配置管理演示
-./test_memory_allocator          # STL 分配器测试
-./test_core_classes              # 核心类内存追踪
+./camera_fusion_example          # IPC 零拷贝图像传输
+./test_refcount_simple           # IPC 引用计数测试
 ./abort_example                  # 中止处理演示
-./check_alignment                # 内存对齐检查
 ```
 
 ### 运行基准测试
 
 ```bash
-./memory_stress_test             # 多线程压力测试 (4 线程, 4000 次操作)
-./alignment_performance_test     # 对齐开销测试
-./pool_vs_system_benchmark      # 池分配 vs 系统 malloc
+./camera_fusion_example          # IPC 高速图像传输测试
+./run_4h_stress_test.sh          # 4 小时稳定性测试
+./run_8h_stress_test.sh          # 8 小时极限压测
 ```
 
-**性能数据：**
-- **吞吐量**: 666,667 ops/sec (4 线程并发)
-- **延迟**: ~200 ns/操作 (malloc + memset + read + free)
-- **对齐开销**: 1-byte vs 8-byte alignment < 3%
+**IPC 性能数据：**
+- **延迟**: < 5μs (Publisher Loan → Subscriber Receive 全流程)
+- **吞吐量**: 90-95 FPS (5.3MB 图像，零拷贝)
+- **稳定性**: 8 小时无错误，1.08M 消息
 
 ---
 
@@ -395,7 +382,7 @@ Failed:       1  (仅类名注册辅助功能，不影响核心功能)
 
 ### 完整文档
 - **[快速入门指南](doc/QUICK_START.md)** - 5 分钟上手
-- **[内存管理指南](doc/MEMORY_MANAGEMENT_GUIDE.md)** - 内存池架构和使用
+- **[IPC 设计架构](doc/IPC_DESIGN_ARCHITECTURE.md)** - 零拷贝通信设计
 - **[API 索引](doc/INDEX.md)** - 完整 API 列表
 - **[AUTOSAR 重构计划](doc/AUTOSAR_REFACTORING_PLAN.md)** - R24-11 合规路线图
 - **[第三方依赖](doc/THIRD_PARTY.md)** - 许可证信息
@@ -418,8 +405,6 @@ Core/
 ├── source/
 │   ├── inc/                    # 公共 API 头文件（安装时导出）
 │   │   ├── CInitialization.hpp # AUTOSAR 初始化/去初始化
-│   │   ├── CMemory.hpp         # 内存管理和分配器
-│   │   ├── CMemoryManager.hpp  # 内存池管理器
 │   │   ├── CConfig.hpp         # 配置管理
 │   │   ├── CResult.hpp         # Result<T> 错误处理
 │   │   ├── COptional.hpp       # Optional<T>
@@ -427,36 +412,29 @@ Core/
 │   │   ├── CFuture.hpp         # Future<T>/Promise<T>
 │   │   ├── CSync.hpp           # 同步原语
 │   │   ├── CException.hpp      # 异常类层次
-│   │   ├── CAbortHandler.hpp   # 中止处理
+│   │   ├── CAbort.hpp          # 中止处理
+│   │   ├── ipc/                # IPC 零拷贝通信
 │   │   └── ...
 │   └── src/                    # 实现文件
 │       ├── CInitialization.cpp
-│       ├── CMemory.cpp
-│       ├── CMemoryManager.cpp
 │       ├── CConfig.cpp
 │       └── ...
 ├── test/
 │   ├── unittest/               # 单元测试（GTest）
 │   │   ├── test_main.cpp       # 测试主入口
 │   │   ├── test_initialization.cpp
-│   │   ├── test_memory_manager.cpp
-│   │   ├── test_memory_allocator.cpp
+│   │   ├── test_ipc.cpp        # IPC 测试
 │   │   ├── config_test.cpp
 │   │   └── ...
 │   ├── examples/               # 使用示例和演示程序
 │   │   ├── simple_init_test.cpp
 │   │   ├── initialization_example.cpp
 │   │   ├── config_example.cpp
-│   │   ├── memory_example.cpp
-│   │   ├── test_core_classes.cpp
-│   │   ├── test_functional_classes.cpp
+│   │   ├── camera_fusion_example.cpp  # IPC 零拷贝示例
+│   │   ├── test_refcount_simple.cpp
 │   │   ├── abort_example.cpp
-│   │   ├── check_alignment.cpp
 │   │   └── ...
 │   └── benchmark/              # 性能基准测试
-│       ├── memory_stress_test.cpp
-│       ├── alignment_performance_test.cpp
-│       ├── pool_vs_system_benchmark.cpp
 │       └── ...
 ├── doc/                        # 文档
 │   ├── INDEX.md
@@ -534,10 +512,11 @@ Core/
 
 ```json
 {
-  "memory": {
-    "pool_sizes": [32, 64, 128, 256, 512, 1024],
-    "align": 8,
-    "enable_leak_detection": true
+  "ipc": {
+    "mode": "NORMAL",
+    "chunk_size": 2097152,
+    "chunk_count": 128,
+    "queue_capacity": 128
   },
   "logging": {
     "level": "info",
@@ -610,14 +589,15 @@ Core/
 
 ## 📊 统计信息
 
-- **代码行数**: ~25,000 行 C++
-- **测试覆盖**: 99.5% (395/397 单元测试)
-- **API 数量**: 100+ 公共接口
-- **文档页数**: 50+ Markdown 文档
-- **示例程序**: 20+ 完整示例
+- **代码行数**: ~30,000 行 C++
+- **测试覆盖**: 100% (408/408 单元测试)
+- **API 数量**: 120+ 公共接口
+- **文档页数**: 60+ Markdown 文档
+- **示例程序**: 25+ 完整示例
+- **IPC 性能**: < 5μs 延迟, 90+ FPS (5.3MB 数据)
 
 ---
 
-**构建日期**: 2025-11-13  
-**版本**: 1.0.0  
+**构建日期**: 2026-01-19  
+**版本**: 1.1.0  
 **状态**: ✅ 生产就绪

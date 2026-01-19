@@ -31,7 +31,7 @@ namespace ipc
      * - O(1) allocation and deallocation
      * 
      * Memory Layout in Shared Memory:
-     * [ControlBlock][ChunkHeader[0]][Payload[0]][ChunkHeader[1]][Payload[1]]...
+     * [ControlBlock][sub queue[0]]...[sub queue[100]][ChunkHeader[0]][Payload[0]][ChunkHeader[1]][Payload[1]]...
      */
     class ChunkPoolAllocator
     {
@@ -45,13 +45,12 @@ namespace ipc
             : base_addr_(base_addr)
             , control_(control)
             , chunk_pool_start_(nullptr)
+            , chunk_stride_(0)
         {
-            // ChunkPool starts at fixed offset 2MB (after ControlBlock + Queue regions)
-            if (base_addr_ && control_)
-            {
-                UInt8* addr = reinterpret_cast<UInt8*>(base_addr_);
-                addr += kChunkPoolOffset;  // Fixed 2MB offset
-                chunk_pool_start_ = reinterpret_cast<ChunkHeader*>(addr);
+            if ( base_addr_ && control_ ) {
+                Byte* addr = reinterpret_cast< Byte* >( base_addr_ );
+                addr += kChunkPoolOffset;
+                chunk_pool_start_ = reinterpret_cast< ChunkHeader* >(addr);
             }
         }
         
@@ -60,13 +59,13 @@ namespace ipc
          * @details Must be called once by the creator
          * @return Result
          */
-        Result<void> Initialize() noexcept;
+        Result< void > Initialize() noexcept;
         
         /**
          * @brief Allocate a chunk (lock-free)
          * @return Optional chunk index (empty if pool exhausted)
          */
-        Optional<UInt32> Allocate() noexcept;
+        UInt32 Allocate() noexcept;
         
         /**
          * @brief Deallocate a chunk (lock-free)
@@ -92,27 +91,27 @@ namespace ipc
          * @brief Check if pool is exhausted
          * @return true if no chunks available
          */
-        bool IsExhausted() const noexcept
+        inline Bool IsExhausted() const noexcept
         {
-            return control_->free_list_head.load(std::memory_order_acquire) == kInvalidChunkIndex;
+            return control_->pool_state.free_list_head.load(std::memory_order_acquire) == kInvalidChunkIndex;
         }
         
         /**
          * @brief Get allocated chunk count
          * @return Number of allocated chunks
          */
-        UInt32 GetAllocatedCount() const noexcept
+        inline UInt32 GetAllocatedCount() const noexcept
         {
-            return control_->allocated_count.load(std::memory_order_acquire);
+            return control_->header.max_chunks - control_->pool_state.remain_count.load(std::memory_order_acquire);
         }
         
         /**
          * @brief Get maximum chunks
          * @return Maximum number of chunks
          */
-        UInt32 GetMaxChunks() const noexcept
+        inline UInt32 GetMaxChunks() const noexcept
         {
-            return control_->max_chunks;
+            return control_->header.max_chunks;
         }
         
     private:
@@ -121,11 +120,12 @@ namespace ipc
          * @param index Chunk index
          * @return Chunk header address
          */
-        ChunkHeader* GetChunkAt(UInt32 index) const noexcept;
+        inline ChunkHeader* GetChunkAt(UInt32 index) const noexcept;
         
         void* base_addr_;              ///< Shared memory base address
         ControlBlock* control_;        ///< Control block
         ChunkHeader* chunk_pool_start_; ///< First chunk header address
+        UInt64 chunk_stride_;          ///< Cached aligned stride between chunks
     };
     
 }  // namespace ipc

@@ -15,10 +15,8 @@
 - [RELEASE_NOTES_CN.md](../RELEASE_NOTES_CN.md) - 中文版发布说明
 
 ### 配置和使用
-- [current/MEMORY_OPTIONS.md](current/MEMORY_OPTIONS.md) - 内存管理配置选项
 - [HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md) - 配置文件安全加密
-- [QUICK_START.md](QUICK_START.md) - 快速开始指南
-- [MEMORY_MANAGEMENT_GUIDE.md](MEMORY_MANAGEMENT_GUIDE.md) - 内存管理完整指南
+- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) - IPC 零拷贝设计架构
 
 ---
 
@@ -34,13 +32,10 @@
 - [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) - 性能基准测试报告
 - [ICEORYX2_VS_EPOLL.md](ICEORYX2_VS_EPOLL.md) - iceoryx2 vs epoll对比
 - [JEMALLOC_VS_MALLOC_COMPARISON.md](JEMALLOC_VS_MALLOC_COMPARISON.md) - jemalloc性能对比
-- [JEMALLOC_VERIFICATION.md](JEMALLOC_VERIFICATION.md) - jemalloc验证报告
 
-### 内存管理
-- [MEMORY_POOL_CONFIG_MIGRATION.md](MEMORY_POOL_CONFIG_MIGRATION.md) - 内存池配置迁移
-- [MEMORY_POOL_CONFIG_VERIFICATION.md](MEMORY_POOL_CONFIG_VERIFICATION.md) - 配置验证
-- [MEMORY_POOL_GROWTH_QUICK_REFERENCE.md](MEMORY_POOL_GROWTH_QUICK_REFERENCE.md) - 快速参考
-- [MEMORY_POOL_QUICK_CARD.md](MEMORY_POOL_QUICK_CARD.md) - 速查卡片
+### IPC 设计
+- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) - IPC 零拷贝设计架构
+- [SHARED_MEMORY_CONCURRENCY_ANALYSIS.md](SHARED_MEMORY_CONCURRENCY_ANALYSIS.md) - 共享内存并发分析
 
 ### Dual-Counter机制
 - [DUAL_COUNTER_ANALYSIS.md](DUAL_COUNTER_ANALYSIS.md) - Dual-counter分析
@@ -118,7 +113,6 @@ Core/
     ├── INDEX.md                 # 📍 本文档
     │
     ├── current/                 # ✅ 当前有效配置和状态
-    │   ├── MEMORY_OPTIONS.md            # 内存配置选项
     │   └── OVERNIGHT_TEST_STATUS.md     # 测试状态
     │
     ├── reports/                 # 📊 测试和清理报告 (2025-12-30)
@@ -151,10 +145,10 @@ Core/
 → [README.md](../README.md)
 
 **开始编译和使用？**  
-→ [BUILDING.md](../BUILDING.md) 和 [QUICK_START.md](QUICK_START.md)
+→ [BUILDING.md](../BUILDING.md) 和 [README.md](../README.md)
 
-**配置内存管理？**  
-→ [current/MEMORY_OPTIONS.md](current/MEMORY_OPTIONS.md)
+**了解IPC零拷贝设计？**  
+→ [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md)
 
 **了解SharedMemory的设计？**  
 → [LOCK_FREE_ICEORYX2_IMPLEMENTATION.md](LOCK_FREE_ICEORYX2_IMPLEMENTATION.md)

@@ -19,6 +19,10 @@
 #ifndef LAP_CORE_MACRODEFINE_HPP
 #define LAP_CORE_MACRODEFINE_HPP
 
+#ifdef LAP_BUILD_ENABLE_ASSERT
+    #include <cassert>
+#endif
+
 // Define INNER_CORE_LOG outside of namespaces to access global std
 #ifdef __INNER_LOG_ENABLE
 #include <cstdio>
@@ -46,8 +50,39 @@ namespace core
     #define DEF_LAP_DEBUG_VARIABLE
     #endif
 
+    #define DEF_LAP_MIN( a, b )                      ( ( (a) < (b) ) ? (a) : (b) )
+    #define DEF_LAP_MAX( a, b )                      ( ( (a) > (b) ) ? (a) : (b) )
+
     #define DEF_LAP_IF_LIKELY( x )                  __builtin_expect(!!(x), 1)
     #define DEF_LAP_IF_UNLIKELY( x )                __builtin_expect(!!(x), 0)
+
+    #define DEF_LAP_CACHELINE_ALIGN                 alignas(64)   ///< Align to cache line size (64 bytes) 
+    #define DEF_LAP_ATT_PACKAGE                     __attribute__((packed))   ///< Pack structure (no padding)
+
+    #if __x86_64__ || __ppc64__ || __aarch64__
+    #define DEF_LAP_ATT_SYS_ALIGN                   __attribute__((aligned(8)))
+    #define DEF_LAP_SYS_ALIGN                       alignas(8)   ///< C++11 standard alignment for struct
+    #else
+    #define DEF_LAP_ATT_SYS_ALIGN                   __attribute__((aligned(4)))
+    #define DEF_LAP_SYS_ALIGN                       alignas(4)   ///< C++11 standard alignment for struct
+    #endif
+
+    #define DEF_LAP_ALIGN_FORMAT( x, _alignSize )  ( ( ( ( x ) + _alignSize - 1 ) / _alignSize ) * _alignSize )
+
+    #ifdef LAP_BUILD_ENABLE_ASSERT
+        #define DEF_LAP_ASSERT( x, msg )            assert( x && msg )
+    #else
+        #define DEF_LAP_ASSERT( x, msg )
+    #endif
+
+    #define DEF_LAP_STATIC_ASSERT( x, msg )         static_assert( x, msg )
+
+
+    #define DEF_LAP_STATIC_ASSERT_CACHELINE( x ) \
+        DEF_LAP_STATIC_ASSERT( sizeof( x ) % 64 == 0, "Size of " #x " must be multiple of cache line size (64 bytes)" )
+
+    #define DEF_LAP_STATIC_ASSERT_CACHELINE_MATCH( x, cache_line ) \
+        DEF_LAP_STATIC_ASSERT( sizeof( x ) <= cache_line, "Size of " #x " must be less or match cache line size (" #cache_line " bytes)" )
 
     // ========================================================================
     // Symbol Visibility Control for Shared Libraries

@@ -2,8 +2,8 @@
  * @file        ControlBlock.hpp
  * @author      LightAP Core Team
  * @brief       Shared memory control block structure
- * @date        2026-01-07
- * @details     Control block resides at the beginning of shared memory segment
+ * @date        2026-01-13
+ * @details     Control block with configurable memory footprint (SHRINK/NORMAL/EXTEND)
  * @copyright   Copyright (c) 2026
  * @note        Based on iceoryx2 design
  */
@@ -11,6 +11,7 @@
 #define LAP_CORE_IPC_CONTROL_BLOCK_HPP
 
 #include "IPCTypes.hpp"
+#include "IPCConfig.hpp"
 #include <atomic>
 
 namespace lap
@@ -20,169 +21,184 @@ namespace core
 namespace ipc
 {
     /**
-     * @brief Control block at the start of shared memory
-     * @details Contains metadata and management structures for the IPC segment
+     * @brief Optimized control block with configurable memory footprint
+     * @details Size varies by mode:
+     * - SHRINK: 256B (4 cache lines, no snapshots)
+     * - NORMAL: 576B (9 cache lines, double-buffered snapshots)
+     * - EXTEND: 576B (9 cache lines, double-buffered snapshots)
      * 
      * Memory Layout:
-     * - Control block metadata
-     * - ChunkPool management (free-list, counters)
-     * - WaitSet for loan failures
+     * - Cache Line 0: Header metadata (64B)
+     * - Cache Line 1: ChunkPool state (64B)
+     * - Cache Line 2: Registry control (64B)
+     * - Cache Line 3+: Snapshots (SHRINK: 64B, NORMAL/EXTEND: 384B for 2×192B)
      */
     struct alignas(kCacheLineSize) ControlBlock
     {
-        // ====================================================================
-        // Magic and Version
-        // ====================================================================
-        
-        std::atomic<UInt32> magic_number;     ///< 0xICE02525 for validation
-        std::atomic<UInt32> version;          ///< IPC version
-        std::atomic<UInt32> state;            ///< Initialization state
-        UInt32 padding0;                      ///< Padding for alignment
-        
-        // ====================================================================
-        // Service Configuration (immutable after initialization)
-        // ====================================================================
-        
-        UInt32 max_chunks;                    ///< Maximum number of chunks
-        UInt32 max_subscriber_queues;         ///< Maximum subscriber queues
-        UInt32 queue_capacity;                ///< Capacity per queue
-        UInt32 padding1;                      ///< Padding
-        
-        UInt64 chunk_size;                    ///< Size of each chunk (including header)
-        UInt64 chunk_alignment;               ///< Chunk alignment requirement
-        
-        // ====================================================================
-        // ChunkPool Management (lock-free)
-        // ====================================================================
-        
-        std::atomic<UInt32> free_list_head;   ///< Head of free list (chunk index)
-        std::atomic<UInt32> allocated_count;  ///< Number of allocated chunks
-        std::atomic<bool>   is_initialized;   ///< Initialization complete flag
-        UInt8 padding2[3];                    ///< Padding
-        
-        // ====================================================================
-        // WaitSet for Loan Failures
-        // ====================================================================
-        
-        /// Event flags for loan wait mechanism
-        /// bit 0: HAS_FREE_CHUNK - ChunkPool has available chunks
-        std::atomic<UInt32> loan_waitset;
-        
-        // ====================================================================
-        // Statistics (atomic counters)
-        // ====================================================================
-        
-        std::atomic<UInt32> publisher_count;   ///< Active publisher count
-        std::atomic<UInt32> subscriber_count;  ///< Active subscriber count
-        
-        std::atomic<UInt64> total_allocations; ///< Total allocations
-        std::atomic<UInt64> total_deallocations; ///< Total deallocations
-        
-        // ====================================================================
-        // SubscriberRegistry (lock-free double-buffered snapshot)
-        // ====================================================================
-        
-        /// Snapshot structure for subscriber queue indices
-        struct SubscriberSnapshot
+        //=====================================================================
+        // Cache Line 0: Header Metadata (64B)
+        //=====================================================================
+        struct DEF_LAP_SYS_ALIGN
         {
-            UInt32 count;                          ///< Number of active subscribers
-            UInt32 queue_indices[kMaxSubscribers]; ///< Array of queue indices
-            UInt64 version;                        ///< Version number for change detection
-            UInt32 padding[3];                     ///< Padding to cache line boundary
-            
-            SubscriberSnapshot() noexcept
-                : count(0), version(0)
-            {
-                for (UInt32 i = 0; i < kMaxSubscribers; ++i)
-                {
-                    queue_indices[i] = kInvalidChunkIndex;
-                }
-                padding[0] = padding[1] = padding[2] = 0;
-            }
+            std::atomic<UInt32> magic;        ///< 0xICE02525 for validation
+            UInt32 max_chunks;                ///< Maximum chunks in pool
+            UInt32 chunk_size;                ///< Fixed chunk size (bytes)
+            std::atomic<UInt32> version;      ///< IPC version
+            std::atomic<UInt8> ref_count;     ///< Reference count
+            UInt8 max_subscribers;            ///< Maximum subscribers
+            UInt16 queue_capacity;            ///< Capacity per subscriber queue (64/256/1024)
+        } header;
+        DEF_LAP_STATIC_ASSERT( sizeof( header ) <= 32, "Header must be exactly 20 bytes" );
+        
+        //=====================================================================
+        // Cache Line 0: ChunkPool State (64B)
+        //=====================================================================
+        struct DEF_LAP_SYS_ALIGN
+        {
+            std::atomic<UInt32> free_list_head;  ///< Free list head index
+            std::atomic<UInt32> remain_count;      ///< Current free chunks
+        } pool_state;
+        DEF_LAP_STATIC_ASSERT( sizeof( pool_state ) == 8, "Header must be exactly 8 bytes" );
+        
+        //=====================================================================
+        // Cache Line 1: Registry Control (64B)
+        //=====================================================================
+        /**
+        * @brief Subscriber snapshot structure (size varies by mode)
+        * @details Used for double-buffered lock-free iteration by Publisher
+        */
+        struct DEF_LAP_SYS_ALIGN SubscriberSnapshot
+        {
+            UInt8 count;                            ///< Number of active subscribers
+            UInt8 version;                          ///< Snapshot version (incremented on update)
+            UInt8 queue_indices[kMaxSubscribers];   ///< Subscriber queue indices (2 in SHRINK, 30 in NORMAL, 62 in EXTEND)
         };
-        
-        /// Double-buffered snapshots for lock-free read
-        std::atomic<UInt32> active_snapshot_index; ///< Current active snapshot (0 or 1)
-        SubscriberSnapshot  snapshots[2];          ///< Double buffer
-        std::atomic<UInt32> write_index;           ///< Current write buffer index
-        std::atomic<UInt32> next_queue_index;      ///< Allocator for unique queue indices
-        
-        // ====================================================================
+
+        struct DEF_LAP_SYS_ALIGN
+        {
+        #ifdef LIGHTAP_IPC_MODE_SHRINK
+            struct DEF_LAP_SYS_ALIGN
+            {
+                std::atomic<UInt8> ready_mask;           ///< Bitmask of active subscribers (2 bits)
+                std::atomic<UInt8> active_snapshot_index;///< Active snapshot (0 or 1)
+                std::atomic<UInt8> subscriber_count;     ///< Active subscriber count
+                UInt8 reserved;
+            } registry_control;
+            DEF_LAP_STATIC_ASSERT( sizeof( registry_control ) <= sizeof(void*), "Header must be exactly 4 bytes" );
+
+            SubscriberSnapshot snapshots[2];
+        #elif defined(LIGHTAP_IPC_MODE_NORMAL)
+            struct DEF_LAP_SYS_ALIGN
+            {
+                std::atomic<UInt32> ready_mask;           ///< Bitmask of active subscribers (32 bits)
+                std::atomic<UInt8> active_snapshot_index;///< Active snapshot (0 or 1)
+                std::atomic<UInt8> subscriber_count;     ///< Active subscriber count
+                UInt8 reserved[2];                       ///< Align to 64 bytes
+            } registry_control;
+            DEF_LAP_STATIC_ASSERT( sizeof( registry_control ) == 8, "Header must be exactly 8 bytes" );
+
+            SubscriberSnapshot snapshots[2];
+        #else // EXTEND
+            struct DEF_LAP_SYS_ALIGN
+            {
+                std::atomic<UInt64> ready_mask;           ///< Bitmask of active subscribers (32 bits)
+                std::atomic<UInt8> active_snapshot_index;///< Active snapshot (0 or 1)
+                std::atomic<UInt8> subscriber_count;     ///< Active subscriber count
+                UInt8 reserved[6];                       ///< Align to 64 bytes
+            } registry_control;
+            DEF_LAP_STATIC_ASSERT( sizeof( registry_control ) == 16, "Header must be exactly 16 bytes" );
+
+            SubscriberSnapshot snapshots[2];
+        #endif  
+        } registry;
+
+        #if defined(LIGHTAP_IPC_MODE_SHRINK)
+            static_assert( sizeof(SubscriberSnapshot) <= 8, "SubscriberSnapshot must fit in 8 bytes as SHRINK mode" );
+        #elif defined(LIGHTAP_IPC_MODE_NORMAL)
+            static_assert(sizeof(SubscriberSnapshot) <= 64, "SubscriberSnapshot must fit in 64 bytes as NORMAL mode");
+        #else // EXTEND
+            static_assert(sizeof(SubscriberSnapshot) <= 128, "SubscriberSnapshot must fit in 128 bytes as EXTEND mode");
+        #endif
+
+        //=====================================================================
         // Methods
-        // ====================================================================
+        //=====================================================================
         
         /**
          * @brief Initialize control block
          * @param max_chunks Maximum chunks in pool
+         * @param max_subscribers Maximum subscribers (≤kMaxSubscribers)
          * @param chunk_size Size of each chunk
-         * @param max_queues Maximum subscriber queues
-         * @param queue_cap Queue capacity
+         * @param queue_capacity Capacity per queue (≤kQueueCapacity)
          */
         void Initialize(UInt32 max_chunks, 
-                       UInt64 chunk_size,
-                       UInt32 max_queues = kMaxSubscribers,
-                       UInt32 queue_cap = kDefaultQueueCapacity) noexcept
+                       UInt8 max_subscribers,
+                       UInt32 chunk_size,
+                       UInt32 queue_capacity = kQueueCapacity) noexcept
         {
-            magic_number.store(kIPCMagicNumber, std::memory_order_release);
-            version.store(kIPCVersion, std::memory_order_release);
-            state.store(0, std::memory_order_release);
+            // Initialize header
+            header.magic.store(kIPCMagicNumber, std::memory_order_release);
+            header.version.store(kIPCVersion, std::memory_order_release);
+            header.max_chunks = max_chunks;
+            header.max_subscribers = max_subscribers > kMaxSubscribers ? kMaxSubscribers : max_subscribers;
+            header.chunk_size = chunk_size;
+            header.ref_count.store( 0, std::memory_order_release );
+            header.queue_capacity = queue_capacity > kQueueCapacity ? kQueueCapacity : queue_capacity;
             
-            this->max_chunks = max_chunks;
-            this->chunk_size = chunk_size;
-            this->max_subscriber_queues = max_queues;
-            this->queue_capacity = queue_cap;
-            this->chunk_alignment = kCacheLineSize;
+            // Initialize pool state in chunkpool
+            pool_state.free_list_head.store( kInvalidChunkIndex, std::memory_order_release );
+            pool_state.remain_count.store( max_chunks, std::memory_order_release );
             
-            free_list_head.store(0, std::memory_order_release);
-            allocated_count.store(0, std::memory_order_release);
-            is_initialized.store(false, std::memory_order_release);
+            // Initialize registry control
+            registry.registry_control.ready_mask.store(0, std::memory_order_release);
+            registry.registry_control.active_snapshot_index.store(0, std::memory_order_release);
+            registry.registry_control.subscriber_count.store(0, std::memory_order_release);
             
-            loan_waitset.store(EventFlag::kHasFreeChunk, std::memory_order_release);
-            
-            publisher_count.store(0, std::memory_order_release);
-            subscriber_count.store(0, std::memory_order_release);
-            
-            total_allocations.store(0, std::memory_order_release);
-            total_deallocations.store(0, std::memory_order_release);
-            
-            // Initialize SubscriberRegistry
-            active_snapshot_index.store(0, std::memory_order_release);
-            write_index.store(0, std::memory_order_release);
-            next_queue_index.store(0, std::memory_order_release);
-            snapshots[0] = SubscriberSnapshot();
-            snapshots[1] = SubscriberSnapshot();
+            // Initialize both snapshots
+            for ( UInt8 i = 0; i < 2; ++i ) {
+                registry.snapshots[i].count = 0;
+                registry.snapshots[i].version = 0;
+                for ( UInt8 j = 0; j < kMaxSubscribers; ++j ) {
+                    registry.snapshots[i].queue_indices[j] = 0xFF;  // Use UInt8 max as invalid
+                }
+            }
         }
         
         /**
          * @brief Validate magic number and version
          * @return true if valid
          */
-        bool Validate() const noexcept
+        Bool Validate() const noexcept
         {
-            return magic_number.load(std::memory_order_acquire) == kIPCMagicNumber &&
-                   version.load(std::memory_order_acquire) == kIPCVersion;
+            return header.magic.load(std::memory_order_acquire) == kIPCMagicNumber &&
+                   header.version.load(std::memory_order_acquire) == kIPCVersion;
         }
         
         /**
-         * @brief Mark initialization as complete
+         * @brief Get current active snapshot (for Publisher iteration)
+         * @return Snapshot copy
          */
-        void MarkInitialized() noexcept
+        SubscriberSnapshot GetSnapshot() const noexcept
         {
-            is_initialized.store(true, std::memory_order_release);
+            UInt32 active_idx = registry.registry_control.active_snapshot_index.load(std::memory_order_acquire);
+            SubscriberSnapshot result = registry.snapshots[active_idx];
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return result;
         }
         
         /**
-         * @brief Check if initialized
-         * @return true if initialized
+         * @brief Get subscriber count
+         * @return Number of active subscribers
          */
-        bool IsInitialized() const noexcept
+        UInt32 GetSubscriberCount() const noexcept
         {
-            return is_initialized.load(std::memory_order_acquire);
+            return registry.registry_control.subscriber_count.load(std::memory_order_acquire);
         }
     };
-    
-    static_assert(sizeof(ControlBlock) % kCacheLineSize == 0, 
-                  "ControlBlock must be cache-line aligned");
+
+    #if defined(LIGHTAP_IPC_MODE_SHRINK)
+        DEF_LAP_STATIC_ASSERT( sizeof(ControlBlock) <= 64, "ControlBlock must fit in 64 bytes as SHRINK mode" );
+    #endif
     
     /**
      * @brief Subscriber Queue in shared memory (SPSC queue)
@@ -195,60 +211,67 @@ namespace ipc
      */
     struct alignas(kCacheLineSize) SubscriberQueue
     {
-        std::atomic<bool> active;              ///< Queue is allocated
-        UInt32 subscriber_id;                  ///< Subscriber ID
-        std::atomic<UInt32> queue_full_policy; ///< Policy when full
-        UInt32 padding0;                       ///< Padding
+        std::atomic<UInt8> STmin;             ///< ms for min interval
         
-        // SPSC Ring Buffer fields
-        std::atomic<UInt32> head;              ///< Consumer index
-        std::atomic<UInt32> tail;              ///< Producer index
+    #if defined(LIGHTAP_IPC_MODE_SHRINK)
+        UInt8 capacity;                       ///< Fixed capacity (power of 2)
+        std::atomic<UInt8> head;              ///< Consumer index
+        std::atomic<UInt8> tail;              ///< Producer index
+    #elif defined(LIGHTAP_IPC_MODE_NORMAL)
+        UInt16 capacity;                       ///< Fixed capacity (power of 2)
+        std::atomic<UInt16> head;              ///< Consumer index
+        std::atomic<UInt16> tail;              ///< Producer index
+    #else // EXTEND
         UInt32 capacity;                       ///< Fixed capacity (power of 2)
-        UInt32 padding1;                       ///< Padding
-        
-        // Statistics
-        std::atomic<UInt64> overrun_count;     ///< Messages dropped due to full
-        std::atomic<UInt64> last_receive_time; ///< Last receive timestamp
-        
+        std::atomic<UInt32> head;              ///< Consumer index
+        std::atomic<UInt32> tail;              ///< Producer index      
+    #endif
+
+        // WaitSet for blocking receive
+        std::atomic<UInt32> queue_waitset;     ///< Event flags for queue operations
+    
         // Ring buffer storage (chunk indices)
         // This array follows this struct in memory
         // UInt32 buffer[capacity];  // Allocated separately
-        
+
+        //=====================================================================
         /**
          * @brief Initialize queue
          * @param cap Capacity (must be power of 2)
          */
-        void Initialize(UInt32 cap) noexcept
+        void Initialize( UInt32 cap, UInt8 stmin = 0 ) noexcept
         {
-            active.store(false, std::memory_order_release);
-            subscriber_id = 0;
-            queue_full_policy.store(static_cast<UInt32>(QueueFullPolicy::kOverwrite), 
-                                   std::memory_order_release);
-            
-            head.store(0, std::memory_order_release);
-            tail.store(0, std::memory_order_release);
             capacity = cap;
-            
-            overrun_count.store(0, std::memory_order_release);
-            last_receive_time.store(0, std::memory_order_release);
+
+            STmin.store( stmin, std::memory_order_release );
+            head.store( 0, std::memory_order_release );
+            tail.store( 0, std::memory_order_release );
+
+            queue_waitset.store( EventFlag::kNone, std::memory_order_release );
         }
         
         /**
          * @brief Get buffer start address
          * @return Pointer to buffer array
          */
-        UInt32* GetBuffer() noexcept
+        inline UInt32* GetBuffer() noexcept
         {
             // Buffer follows immediately after this struct
-            return reinterpret_cast<UInt32*>(this + 1);
+            return reinterpret_cast< UInt32* >( this + 1 );
         }
         
-        const UInt32* GetBuffer() const noexcept
+        inline const UInt32* GetBuffer() const noexcept
         {
-            return reinterpret_cast<const UInt32*>(this + 1);
+            return reinterpret_cast< const UInt32* >( this + 1 );
         }
     };
+
+    constexpr static UInt32 kControlBlockSize = sizeof(ControlBlock);
+    constexpr static UInt32 kSubscriberQueueSize = sizeof( SubscriberQueue ) + kQueueCapacity * sizeof( UInt32 ); 
     
+    constexpr static UInt32 kQueueRegionOffset = kControlBlockSize;
+    constexpr static UInt32 kChunkPoolOffset = kControlBlockSize + kSubscriberQueueSize * kMaxSubscribers;
+
 }  // namespace ipc
 }  // namespace core
 }  // namespace lap

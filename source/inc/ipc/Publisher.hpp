@@ -14,13 +14,12 @@
 #include "Sample.hpp"
 #include "SharedMemoryManager.hpp"
 #include "ChunkPoolAllocator.hpp"
-#include "SubscriberRegistryOps.hpp"
+#include "SubscriberRegistry.hpp"
 #include "IPCEventHooks.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
 #include "Message.hpp"
-#include <memory>
-#include <type_traits>
+#include "CTypedef.hpp"
 
 namespace lap
 {
@@ -33,10 +32,12 @@ namespace ipc
      */
     struct PublisherConfig
     {
-        UInt32 max_chunks = kDefaultMaxChunks;      ///< Maximum chunks in pool
-        UInt64 chunk_size = 0;                      ///< Chunk size (payload), 0 means default
-        LoanFailurePolicy loan_policy = LoanFailurePolicy::kError;  ///< Loan failure policy
-        bool auto_cleanup = false;                   ///< Auto cleanup shared memory
+        UInt32 max_chunks       = kDefaultMaxChunks;            ///< Maximum chunks in pool
+        UInt32 chunk_size       = 0;                            ///< Chunk size (payload)
+        UInt64 loan_timeout     = 100000000;                    ///< Loan timeout (ns), 0 means no wait
+        UInt64 publish_timeout  = 100000000;                    ///< Publish timeout (ns), 0 means no wait
+        LoanPolicy loan_policy  = LoanPolicy::kError;           ///< Loan failure policy
+        PublishPolicy policy    = PublishPolicy::kOverwrite;    ///< Policy when full
     };
     
     /**
@@ -52,7 +53,6 @@ namespace ipc
      * 
      * @note T must be Message or a class derived from Message
      */
-    template <typename T>
     class Publisher
     {
     public:
@@ -62,7 +62,7 @@ namespace ipc
          * @param config Configuration
          * @return Result with publisher or error
          */
-        static Result<Publisher<T>> Create(const String& service_name,
+        static Result< Publisher > Create(const String& shmPath,
                                           const PublisherConfig& config = {}) noexcept;
         
         /**
@@ -70,65 +70,21 @@ namespace ipc
          */
         ~Publisher() noexcept = default;
         
-        // Delete copy
+        // Delete copy - external users must use Create()
         Publisher(const Publisher&) = delete;
         Publisher& operator=(const Publisher&) = delete;
-        
-        // Allow move
+
+        // Allow move - required by Result<Publisher>
         Publisher(Publisher&&) noexcept = default;
         Publisher& operator=(Publisher&&) noexcept = default;
-        
-        /**
-         * @brief Loan a chunk for writing
-         * @return Result with Sample or error
-         * 
-         * @details
-         * - Allocates chunk from pool
-         * - Returns RAII Sample wrapper
-         * - Behavior on pool exhaustion depends on loan_policy
-         */
-        Result<Sample<T>> Loan() noexcept;
-        
-        /**
-         * @brief Send sample to all subscribers
-         * @param sample Sample to send (moved)
-         * @param policy Queue full policy
-         * @return Result
-         * 
-         * @details
-         * - Transitions chunk state to kSent
-         * - Enqueues chunk index to all subscriber queues
-         * - Increments ref count for each subscriber
-         */
-        Result<void> Send(Sample<T>&& sample, 
-                         QueueFullPolicy policy = QueueFullPolicy::kDrop) noexcept;
-        
-        /**
-         * @brief Convenience: Loan, copy data, and send
-         * @param data Data to copy
-         * @param policy Queue full policy
-         * @return Result
-         */
-        Result<void> SendCopy(const T& data,
-                             QueueFullPolicy policy = QueueFullPolicy::kDrop) noexcept;
-        
-        /**
-         * @brief Convenience: Loan, construct in-place, and send
-         * @tparam Args Constructor argument types
-         * @param policy Queue full policy
-         * @param args Constructor arguments
-         * @return Result
-         */
-        template <typename... Args>
-        Result<void> SendEmplace(QueueFullPolicy policy, Args&&... args) noexcept;
         
         /**
          * @brief Get service name
          * @return Service name
          */
-        const String& GetServiceName() const noexcept
+        inline const String& GetShmPath() const noexcept
         {
-            return service_name_;
+            return shm_path_;
         }
         
         /**
@@ -141,13 +97,13 @@ namespace ipc
          * @brief Check if chunk pool is exhausted
          * @return true if exhausted
          */
-        bool IsChunkPoolExhausted() const noexcept;
+        Bool IsChunkPoolExhausted() const noexcept;
         
         /**
          * @brief Set event hooks for monitoring
          * @param hooks Event hooks implementation
          */
-        void SetEventHooks(std::shared_ptr<IPCEventHooks> hooks) noexcept
+        void SetEventHooks(SharedHandle<IPCEventHooks> hooks) noexcept
         {
             event_hooks_ = std::move(hooks);
         }
@@ -160,27 +116,106 @@ namespace ipc
         {
             return event_hooks_.get();
         }
+
+        /**
+         * @brief Loan a chunk for writing
+         * @return Result with Sample or error
+         * 
+         * @details
+         * - Allocates chunk from pool
+         * - Returns RAII Sample wrapper
+         * - Behavior on pool exhaustion depends on loan_policy
+         * 
+         * @note For external use, prefer SendCopy() or SendEmplace() instead.
+         *       This method is protected to allow advanced usage in derived classes.
+         */
+        Result< Sample > Loan() noexcept;
         
+        /**
+         * @brief Send sample to all subscribers
+         * @param sample Sample to send (moved)
+         * @param policy Queue full policy
+         * @return Result
+         * 
+         * @details
+         * - Transitions chunk state to kSent
+         * - Enqueues chunk index to all subscriber queues
+         * - Increments ref count for each subscriber
+         * 
+         * @note For external use, prefer SendCopy() or SendEmplace() instead.
+         *       This method is protected to allow advanced usage in derived classes.
+         */
+        Result< void > Send( Sample&& sample, 
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
+        
+        Result< void > Send( Byte* buffer, Size size,
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
+        
+        /**
+         * @brief Send message using lambda/function to write payload
+         * @tparam Fn Callable type with signature Size(Byte*, Size)
+         * @param write_fn Function to write data to chunk
+         * @param policy Publish policy
+         * @return Result with success or error
+         * 
+         * @details
+         * - Template implementation must be in header for proper instantiation
+         * - Loans a chunk, calls write_fn to populate it, then sends
+         * - write_fn should return number of bytes written
+         */
+        template<class Fn>
+        Result< void > Send( Fn&& write_fn,
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept
+        {
+            static_assert(std::is_invocable_r_v<Size, Fn, Byte*, Size>,
+                      "Fn must be callable like Size(Byte*, Size)");
+
+            auto sample_result = Loan();
+            if ( !sample_result ) {
+                return Result< void >( sample_result.Error() );
+            }
+
+            auto sample = std::move( sample_result ).Value();
+
+            // Call fill function to populate chunk
+            Byte* chunk_ptr = sample.RawData();
+            Size chunk_size = sample.RawDataSize();
+            Size written_size = write_fn( chunk_ptr, chunk_size );
+
+            if ( written_size > chunk_size ) {
+                // Fill function wrote more than chunk size
+                return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+            }
+            return Send( std::move( sample ), policy );
+        }
+
     private:
         /**
          * @brief Private constructor
          */
-        Publisher(const String& service_name,
+        Publisher( const String& shmPath,
                  const PublisherConfig& config,
-                 std::unique_ptr<SharedMemoryManager> shm,
-                 std::unique_ptr<ChunkPoolAllocator> allocator) noexcept
-            : service_name_(service_name)
+                 UniqueHandle<SharedMemoryManager> shm,
+                 UniqueHandle<ChunkPoolAllocator> allocator) noexcept
+            : shm_path_(shmPath)
             , config_(config)
             , shm_(std::move(shm))
             , allocator_(std::move(allocator))
+            , event_hooks_(nullptr)
         {
+            // Initialize last_send_ to epoch (far past) to ensure first send is not skipped
+            for ( UInt32 i = 0; i < kMaxSubscribers; ++i ) {
+                last_send_[i] = SteadyClock::time_point{};
+            }
         }
-        
-        String service_name_;                              ///< Service name
-        PublisherConfig config_;                           ///< Configuration
-        std::unique_ptr<SharedMemoryManager> shm_;         ///< Shared memory manager
-        std::unique_ptr<ChunkPoolAllocator> allocator_;    ///< Chunk allocator
-        std::shared_ptr<IPCEventHooks> event_hooks_;       ///< Event hooks for monitoring
+
+    private:
+        String shm_path_;                                     ///< Shared memory path
+        PublisherConfig config_;                             ///< Configuration
+        UniqueHandle< SharedMemoryManager > shm_;            ///< Shared memory manager
+        UniqueHandle< ChunkPoolAllocator > allocator_;       ///< Chunk allocator
+        SharedHandle< IPCEventHooks > event_hooks_;          ///< Event hooks for monitoring
+        SteadyClock::time_point last_send_[kMaxSubscribers]; ///< Last send timestamps per subscriber
     };
     
 }  // namespace ipc

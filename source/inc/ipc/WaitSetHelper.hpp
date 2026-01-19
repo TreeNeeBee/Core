@@ -69,7 +69,7 @@ namespace ipc
          * - Suitable for very short timeouts (< 10ms)
          * - High CPU usage during polling
          */
-        static bool PollForFlags(std::atomic<UInt32>* flags,
+        static Bool PollForFlags(std::atomic<UInt32>* flags,
                                 UInt32 mask,
                                 Duration timeout) noexcept;
         
@@ -86,7 +86,7 @@ namespace ipc
          */
         static void SetFlagsAndWake(std::atomic<UInt32>* flags,
                                    UInt32 mask,
-                                   bool wake = true) noexcept;
+                                   Bool wake = true) noexcept;
         
         /**
          * @brief Clear specific flags
@@ -102,7 +102,7 @@ namespace ipc
          * @param mask Bit mask to check
          * @return true if any flag in mask is set
          */
-        static bool CheckFlags(const std::atomic<UInt32>* flags,
+        static Bool CheckFlags(const std::atomic<UInt32>* flags,
                               UInt32 mask) noexcept;
         
     private:

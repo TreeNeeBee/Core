@@ -11,6 +11,7 @@
 #define LAP_CORE_IPC_SHARED_MEMORY_MANAGER_HPP
 
 #include "IPCTypes.hpp"
+#include "IPCConfig.hpp"
 #include "ControlBlock.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
@@ -33,8 +34,7 @@ namespace ipc
         UInt32 max_chunks = kDefaultMaxChunks;              ///< Maximum chunks
         UInt64 chunk_size = kDefaultChunkSize;              ///< Chunk size
         UInt32 max_subscriber_queues = kMaxSubscribers;     ///< Max queues
-        UInt32 queue_capacity = kDefaultQueueCapacity;      ///< Queue capacity
-        bool auto_cleanup = false;                          ///< Auto cleanup on destruction
+        UInt32 queue_capacity = kQueueCapacity;      ///< Queue capacity
     };
     
     /**
@@ -56,7 +56,6 @@ namespace ipc
             : shm_fd_(-1)
             , base_addr_(nullptr)
             , size_(0)
-            , is_creator_(false)
         {
         }
         
@@ -76,7 +75,7 @@ namespace ipc
         
         /**
          * @brief Create or open shared memory segment
-         * @param service_name Service name (e.g., "sensor_data")
+         * @param shmPath Shared memory path (e.g., "/lightap_ipc_sensor_data")
          * @param config Configuration
          * @return Result with success or error
          * 
@@ -85,7 +84,7 @@ namespace ipc
          * - Subsequent callers: Opens existing shared memory
          * - Path format: /lightap_ipc_<service_name>
          */
-        Result<void> Create(const String& service_name, 
+        Result<void> Create(const String& shmPath, 
                            const SharedMemoryConfig& config) noexcept;
         
         /**
@@ -108,26 +107,14 @@ namespace ipc
          * @return Size in bytes
          */
         UInt64 GetSize() const noexcept { return size_; }
-        
-        /**
-         * @brief Check if this instance created the shared memory
-         * @return true if creator
-         */
-        bool IsCreator() const noexcept { return is_creator_; }
-        
-        /**
-         * @brief Get service name
-         * @return Service name
-         */
-        const String& GetServiceName() const noexcept { return service_name_; }
-        
+
         /**
          * @brief Get shared memory path
          * @return Shared memory path
          */
-        String GetShmPath() const noexcept
+        inline String GetShmPath() const noexcept
         {
-            return "/lightap_ipc_" + service_name_;
+            return shm_path_;
         }
         
         /**
@@ -146,12 +133,12 @@ namespace ipc
             if (!base_addr_) return nullptr;
             
             auto* ctrl = GetControlBlock();
-            if (queue_index >= ctrl->max_subscriber_queues) return nullptr;
+            if (queue_index >= ctrl->header.max_subscribers) return nullptr;
             
             // Use fixed partition layout: Queue region starts at 128KB offset
             UInt8* addr = reinterpret_cast<UInt8*>(base_addr_);
             addr += kQueueRegionOffset;  // Skip to queue region (128KB)
-            addr += kSingleQueueSize * queue_index;  // Each queue is 8KB
+            addr += kSubscriberQueueSize * queue_index;  // Each queue is 8KB
             
             return reinterpret_cast<SubscriberQueue*>(addr);
         }
@@ -179,8 +166,7 @@ namespace ipc
         int shm_fd_;                ///< Shared memory file descriptor
         void* base_addr_;           ///< Base address of mapped memory
         UInt64 size_;               ///< Total size of shared memory
-        bool is_creator_;           ///< True if this instance created the shm
-        String service_name_;       ///< Service name
+        String shm_path_;           ///< Shared memory path
         SharedMemoryConfig config_; ///< Configuration
     };
     

@@ -18,74 +18,62 @@ namespace core
 {
 namespace ipc
 {
-    Result<void> WaitSetHelper::WaitForFlags(std::atomic<UInt32>* flags,
+    Result< void > WaitSetHelper::WaitForFlags( std::atomic< UInt32 >* flags,
                                             UInt32 mask,
-                                            Duration timeout) noexcept
+                                            Duration timeout ) noexcept
     {
-        if (!flags)
-        {
-            return Result<void>(MakeErrorCode(CoreErrc::kInvalidArgument));
+        if ( DEF_LAP_IF_UNLIKELY( !flags ) ) {
+            return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
         }
         
         auto start_time = std::chrono::steady_clock::now();
         UInt64 timeout_ns = timeout.count();
-        bool has_timeout = (timeout_ns > 0);
+        Bool has_timeout = ( timeout_ns > 0 );
         
-        while (true)
-        {
+        while ( true ) {
             // Fast path: Check if flags are already set
-            UInt32 current_flags = flags->load(std::memory_order_acquire);
-            if ((current_flags & mask) != 0)
-            {
+            UInt32 current_flags = flags->load( std::memory_order_acquire );
+            if ( ( current_flags & mask ) != 0 ) {
                 return {};  // Success
             }
             
             // Calculate remaining timeout
             UInt64 remaining_ns = timeout_ns;
-            if (has_timeout)
-            {
+            if ( DEF_LAP_IF_LIKELY( has_timeout ) ) {
                 auto elapsed = std::chrono::steady_clock::now() - start_time;
-                auto elapsed_ns = std::chrono::duration_cast<Duration>(elapsed).count();
+                auto elapsed_ns = std::chrono::duration_cast< Duration >( elapsed ).count();
                 
-                if (static_cast<UInt64>(elapsed_ns) >= timeout_ns)
-                {
-                    return Result<void>(MakeErrorCode(CoreErrc::kWouldBlock));  // Timeout
+                if ( static_cast< UInt64 >( elapsed_ns ) >= timeout_ns ) {
+                    return Result< void >( MakeErrorCode( CoreErrc::kWouldBlock ) );  // Timeout
                 }
                 
-                remaining_ns = timeout_ns - static_cast<UInt64>(elapsed_ns);
+                remaining_ns = timeout_ns - static_cast< UInt64 >( elapsed_ns );
             }
             
-            // Slow path: Call futex_wait
-            int ret = FutexWait(flags, current_flags, has_timeout ? remaining_ns : 0);
-            
-            if (ret == 0)
-            {
+            // Slow path: Call futex_wait        
+            if ( FutexWait( flags, current_flags, has_timeout ? remaining_ns : 0 ) == 0 ) {
                 // Woken up - recheck condition (handle spurious wakeups)
                 continue;
             }
             
             // Check errno
-            if (errno == ETIMEDOUT)
-            {
-                return Result<void>(MakeErrorCode(CoreErrc::kWouldBlock));
-            }
-            else if (errno == EAGAIN || errno == EINTR)
-            {
+            if ( errno == ETIMEDOUT ) {
+                return Result< void >( MakeErrorCode( CoreErrc::kWouldBlock ) );
+            } else if ( errno == EAGAIN || errno == EINTR ) {
                 // Value changed or interrupted - retry
                 continue;
             }
             
             // Other errors - treat as timeout
-            return Result<void>(MakeErrorCode(CoreErrc::kWouldBlock));
+            return Result< void >( MakeErrorCode( CoreErrc::kWouldBlock ) );
         }
     }
     
-    bool WaitSetHelper::PollForFlags(std::atomic<UInt32>* flags,
+    Bool WaitSetHelper::PollForFlags(std::atomic<UInt32>* flags,
                                     UInt32 mask,
                                     Duration timeout) noexcept
     {
-        if (!flags)
-        {
+        if ( DEF_LAP_IF_UNLIKELY( !flags ) ) {
             return false;
         }
         
@@ -93,23 +81,19 @@ namespace ipc
         UInt64 timeout_ns = timeout.count();
         
         // Busy-wait loop
-        while (true)
-        {
+        while ( true ) {
             // Check flags
-            UInt32 current_flags = flags->load(std::memory_order_acquire);
-            if ((current_flags & mask) != 0)
-            {
+            UInt32 current_flags = flags->load( std::memory_order_acquire );
+            if ( ( current_flags & mask ) != 0 ) {
                 return true;  // Success
             }
             
             // Check timeout
-            if (timeout_ns > 0)
-            {
+            if ( DEF_LAP_IF_LIKELY( timeout_ns > 0 ) ) {
                 auto elapsed = std::chrono::steady_clock::now() - start_time;
-                auto elapsed_ns = std::chrono::duration_cast<Duration>(elapsed).count();
+                auto elapsed_ns = std::chrono::duration_cast< Duration >( elapsed ).count();
                 
-                if (static_cast<UInt64>(elapsed_ns) >= timeout_ns)
-                {
+                if ( static_cast< UInt64 >( elapsed_ns ) >= timeout_ns ) {
                     return false;  // Timeout
                 }
             }
@@ -126,44 +110,40 @@ namespace ipc
     
     void WaitSetHelper::SetFlagsAndWake(std::atomic<UInt32>* flags,
                                        UInt32 mask,
-                                       bool wake) noexcept
+                                       Bool wake) noexcept
     {
-        if (!flags)
-        {
+        if ( DEF_LAP_IF_UNLIKELY( !flags ) ) {
             return;
         }
         
         // Set flags atomically
-        flags->fetch_or(mask, std::memory_order_release);
+        flags->fetch_or( mask, std::memory_order_release );
         
         // Optionally wake waiters
-        if (wake)
-        {
-            FutexWake(flags);
+        if ( wake ) {
+            FutexWake( flags );
         }
     }
     
     void WaitSetHelper::ClearFlags(std::atomic<UInt32>* flags,
                                   UInt32 mask) noexcept
     {
-        if (!flags)
-        {
+        if ( !flags ) {
             return;
         }
         
-        flags->fetch_and(~mask, std::memory_order_release);
+        flags->fetch_and( ~mask, std::memory_order_release );
     }
     
-    bool WaitSetHelper::CheckFlags(const std::atomic<UInt32>* flags,
+    Bool WaitSetHelper::CheckFlags(const std::atomic<UInt32>* flags,
                                   UInt32 mask) noexcept
     {
-        if (!flags)
-        {
+        if ( DEF_LAP_IF_UNLIKELY( !flags ) ) {
             return false;
         }
         
-        UInt32 current = flags->load(std::memory_order_acquire);
-        return (current & mask) != 0;
+        UInt32 current = flags->load( std::memory_order_acquire );
+        return ( current & mask ) != 0;
     }
     
     int WaitSetHelper::FutexWait(std::atomic<UInt32>* uaddr,
@@ -173,8 +153,7 @@ namespace ipc
         struct timespec ts;
         struct timespec* timeout_ptr = nullptr;
         
-        if (timeout_ns > 0)
-        {
+        if ( timeout_ns > 0 ) {
             ts.tv_sec = timeout_ns / 1000000000ULL;
             ts.tv_nsec = timeout_ns % 1000000000ULL;
             timeout_ptr = &ts;

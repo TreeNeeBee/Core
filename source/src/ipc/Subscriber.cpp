@@ -8,7 +8,8 @@
 
 #include "ipc/Subscriber.hpp"
 #include "ipc/Message.hpp"
-#include "ipc/SubscriberRegistryOps.hpp"
+#include "ipc/SubscriberRegistry.hpp"
+#include "ipc/WaitSetHelper.hpp"
 #include "CCoreErrorDomain.hpp"
 #include "CMacroDefine.hpp"
 #include <thread>
@@ -21,8 +22,7 @@ namespace core
 {
 namespace ipc
 {
-    template <typename T>
-    Result<Subscriber<T>> Subscriber<T>::Create(const String& service_name,
+    Result< Subscriber > Subscriber::Create(const String& shmPath,
                                                 const SubscriberConfig& config) noexcept
     {
         // Create shared memory manager
@@ -30,329 +30,255 @@ namespace ipc
         
         SharedMemoryConfig shm_config{};
         shm_config.max_chunks = config.max_chunks;
+        shm_config.chunk_size = config.chunk_size;
 
-        // Determine chunk size (payload size, not including ChunkHeader)
-        UInt64 msg_size;
-        if ( config.chunk_size == 0 ) {
-            if constexpr (std::is_base_of<Message, T>::value) {
-                // T is Message or derived from Message - use GetSize()
-                T temp_msg{};
-                msg_size = temp_msg.GetSize();
-            } else {
-                // T is a plain type - use sizeof
-                msg_size = sizeof(T);
-            }
-        } else {
-            msg_size = config.chunk_size;
+        auto result = shm->Create( shmPath, shm_config );
+        if ( !result ) {
+            return Result< Subscriber >( result.Error() );
         }
-        shm_config.chunk_size = msg_size;  // Payload size only
-        
-        INNER_CORE_LOG("[DEBUG] Subscriber::Create - Opening shared memory: %s\n", service_name.c_str());
-        auto result = shm->Create(service_name, shm_config);
-        if (!result)
-        {
-            INNER_CORE_LOG("[DEBUG] Failed to create/open shared memory\n");
-            return Result<Subscriber<T>>(result.Error());
-        }
-        INNER_CORE_LOG("[DEBUG] Shared memory opened, IsCreator=%d\n", shm->IsCreator());
         
         // Create chunk pool allocator
-        auto allocator = std::make_unique<ChunkPoolAllocator>(
+        auto allocator = std::make_unique< ChunkPoolAllocator >(
             shm->GetBaseAddress(),
             shm->GetControlBlock()
         );
         
-        // Initialize if we are the creator
-        if (shm->IsCreator())
-        {
-            auto init_result = allocator->Initialize();
-            if (!init_result)
-            {
-                return Result<Subscriber<T>>(init_result.Error());
-            }
+        // Initialize (idempotent - will skip if already initialized)
+        auto init_result = allocator->Initialize();
+        if ( !init_result ) {
+            return Result< Subscriber >( init_result.Error() );
         }
         
         // Allocate unique queue index from shared memory control block
-        UInt32 queue_index = AllocateQueueIndex(shm->GetControlBlock());
-        INNER_CORE_LOG("[DEBUG] Allocated queue_index=%u\n", queue_index);
-        if (queue_index == kInvalidChunkIndex)
-        {
-            INNER_CORE_LOG("[DEBUG] Failed to allocate queue index\n");
-            return Result<Subscriber<T>>(MakeErrorCode(CoreErrc::kResourceExhausted));
-        }
+        // Loop to handle race conditions
+        auto* ctrl = shm->GetControlBlock();
+        UInt32 queue_index = kInvalidChunkIndex;
         
-        // Get the allocated queue from shared memory
-        auto* queue = shm->GetSubscriberQueue(queue_index);
-        if (!queue)
-        {
-            INNER_CORE_LOG("[DEBUG] GetSubscriberQueue returned nullptr for index %u\n", queue_index);
-            return Result<Subscriber<T>>(MakeErrorCode(CoreErrc::kIPCShmNotFound));
-        }
-        INNER_CORE_LOG("[DEBUG] Got queue pointer, checking active status...\n");
-        
-        // Activate the queue
-        bool expected = false;
-        INNER_CORE_LOG("[DEBUG] Queue[%u] current active state: %d\n", 
-                       queue_index, queue->active.load(std::memory_order_acquire));
-        
-        if (!queue->active.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-        {
-            INNER_CORE_LOG("[DEBUG] Failed to activate queue (CAS failed, expected=false, actual=%d)\n", expected);
-            return Result<Subscriber<T>>(MakeErrorCode(CoreErrc::kResourceExhausted));
-        }
-        INNER_CORE_LOG("[DEBUG] Queue activated successfully\n");
-        
-        // Generate unique subscriber ID (simple hash of service name + queue_index)
-        std::hash<String> hasher;
-        UInt32 subscriber_id = static_cast<UInt32>(hasher(service_name) ^ queue_index);
-        queue->subscriber_id = subscriber_id;
-        
+        while ( true ) {
+            // Allocate unique queue index from shared memory control block
+            auto subscriber_id_result = SubscriberRegistry::AllocateQueueIndex( ctrl );
+            if ( DEF_LAP_IF_UNLIKELY( !subscriber_id_result ) ) {
+                if ( subscriber_id_result.Error() == CoreErrc::kIPCRetry ) {
+                    // Retry allocation
+                    std::this_thread::yield();
+                    continue;
+                } else {
+                    return Result< Subscriber >( MakeErrorCode( CoreErrc::kResourceExhausted ) );
+                }
+            } else {
+                queue_index = subscriber_id_result.Value();
+                
+                // Get the allocated queue from shared memory
+                SubscriberQueue* queue = shm->GetSubscriberQueue( queue_index );
+                if ( !queue ) {
+                    return Result< Subscriber >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
+                }
+                queue->STmin.store( config.STmin, std::memory_order_release );
+
+                break;
+            }
+        }   
         // Create subscriber
-        Subscriber<T> subscriber(service_name, config, std::move(shm), 
-                                std::move(allocator), queue_index, subscriber_id);
+        Subscriber subscriber( shmPath, config, std::move( shm ), 
+                                std::move(allocator), queue_index );
         
-        INNER_CORE_LOG("[DEBUG] Registering subscriber with queue_index=%u\n", queue_index);
-        // Register with shared memory registry
-        if (!RegisterSubscriber(subscriber.shm_->GetControlBlock(), queue_index))
-        {
-            INNER_CORE_LOG("[DEBUG] Failed to register subscriber in registry\n");
-            return Result<Subscriber<T>>(MakeErrorCode(CoreErrc::kResourceExhausted));
-        }
-        INNER_CORE_LOG("[DEBUG] Subscriber registered successfully\n");
-        
-        // Increment subscriber count
-        subscriber.shm_->GetControlBlock()->subscriber_count.fetch_add(1, std::memory_order_relaxed);
-        INNER_CORE_LOG("[DEBUG] Subscriber creation complete\n");
-        
-        return Result<Subscriber<T>>(std::move(subscriber));
+        return Result< Subscriber >( std::move( subscriber ) );
     }
     
-    template <typename T>
-    Subscriber<T>::~Subscriber() noexcept
+    Subscriber::~Subscriber() noexcept
     {
         // Automatically disconnect on destruction
         (void)Disconnect();
     }
-    
-    template <typename T>
-    Result<void> Subscriber<T>::Disconnect() noexcept
-    {
-        if (is_disconnected_ || !shm_)
-        {
-            is_disconnected_ = true;
-            return {};  // Already disconnected or not initialized
-        }
-        
-        // ====== Step 1: Unregister from SubscriberRegistry ======
-        bool unregister_success = UnregisterSubscriber(
-            shm_->GetControlBlock(), 
-            queue_index_
-        );
-        
-        if (!unregister_success)
-        {
-            // Already unregistered, continue cleanup
-        }
-        
-        // ====== Step 2: Consume remaining messages in queue ======
-        // This ensures ref_count is properly decremented
-        UInt32 consumed_count = 0;
-        auto* queue = shm_->GetSubscriberQueue(queue_index_);
-        
-        if (queue)
-        {
-            while (!IsQueueEmpty())
-            {
-                auto sample_result = Receive(QueueEmptyPolicy::kError);
-                if (sample_result.HasValue())
-                {
-                    // Sample destructor will decrement ref_count automatically
-                    consumed_count++;
-                }
-                else
-                {
-                    break;  // Queue empty or error
-                }
-            }
-            
-            // ====== Step 3: Deactivate queue slot ======
-            queue->active.store(false, std::memory_order_release);
-        }
-        
-        // Decrement subscriber count
-        shm_->GetControlBlock()->subscriber_count.fetch_sub(1, std::memory_order_relaxed);
-        
-        is_disconnected_ = true;
-        return {};
-    }
-    
-    template <typename T>
-    Result<Sample<T>> Subscriber<T>::Receive(QueueEmptyPolicy policy) noexcept
+
+    Result< Sample > Subscriber::Receive( SubscribePolicy policy ) noexcept
     {
         // Get queue from shared memory
-        auto* queue = shm_->GetSubscriberQueue(queue_index_);
-        if (!queue || !queue->active.load(std::memory_order_acquire))
-        {
-            INNER_CORE_LOG("[DEBUG] Subscriber::Receive - Queue %u not active or nullptr\n", queue_index_);
-            return Result<Sample<T>>(MakeErrorCode(CoreErrc::kIPCShmNotFound));
+        auto* queue = shm_->GetSubscriberQueue(subscriber_id_);
+        if ( !queue ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
         }
         
         // Try to dequeue chunk index (SPSC consumer side)
         UInt32 head = queue->head.load(std::memory_order_relaxed);
         UInt32 tail = queue->tail.load(std::memory_order_acquire);
         
-        INNER_CORE_LOG("[DEBUG] Subscriber::Receive - Queue %u: head=%u, tail=%u\n", 
-                       queue_index_, head, tail);
-        
         if ( head == tail ) {
             // Queue empty - handle based on policy
-            if ( DEF_LAP_IF_LIKELY( policy == QueueEmptyPolicy::kBlock ) ) {
-                // Block waiting for data
-                Duration timeout = Duration(100000000);  // 100ms default
+            if ( DEF_LAP_IF_LIKELY( policy == SubscribePolicy::kBlock ) ) {
+                // Block waiting for data using WaitSet
+                Duration timeout = Duration( config_.timeout );  // 100ms default
                 
-                auto start = std::chrono::steady_clock::now();
-                while (true)
-                {
-                    head = queue->head.load(std::memory_order_relaxed);
-                    tail = queue->tail.load(std::memory_order_acquire);
-                    
-                    if (head != tail) { break; }
-                    
-                    auto elapsed = std::chrono::steady_clock::now() - start;
-                    if (std::chrono::duration_cast<Duration>(elapsed).count() >= timeout.count()) {
-                        return Result<Sample<T>>(MakeErrorCode(CoreErrc::kIPCQueueEmpty));
-                    }
-                    
-                    // Sleep briefly to avoid busy-waiting
-                    std::this_thread::sleep_for( std::chrono::microseconds(100) );
-                }
-            } else if (policy == QueueEmptyPolicy::kWait) {
-                // Busy-wait polling for data
-                Duration timeout = Duration(10000000);  // 10ms default
+                // Use futex-based wait for efficient blocking
+                auto wait_result = WaitSetHelper::WaitForFlags(
+                    &queue->queue_waitset,
+                    EventFlag::kHasData,
+                    timeout
+                );
                 
-                auto start = std::chrono::steady_clock::now();
-                while (true)
-                {
-                    head = queue->head.load(std::memory_order_relaxed);
-                    tail = queue->tail.load(std::memory_order_acquire);
-                    
-                    if (head != tail) { break; }
-                    
-                    auto elapsed = std::chrono::steady_clock::now() - start;
-                    if (std::chrono::duration_cast<Duration>(elapsed).count() >= timeout.count())
-                    {
-                        return Result<Sample<T>>(MakeErrorCode(CoreErrc::kIPCQueueEmpty));
-                    }
-                    
-                    ::std::this_thread::yield();  // Yield to reduce CPU usage
+                if ( !wait_result ) {
+                    // Timeout or error
+                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
                 }
-            } else if ( policy == QueueEmptyPolicy::kSkip ) {
-                return Result<Sample<T>>(MakeErrorCode(CoreErrc::kWouldBlock));
-            } else if ( policy == QueueEmptyPolicy::kError ) {
-                return Result<Sample<T>>(MakeErrorCode(CoreErrc::kIPCQueueEmpty));
+                
+                // Recheck queue after wake
+                head = queue->head.load( std::memory_order_relaxed );
+                tail = queue->tail.load( std::memory_order_acquire );
+                
+                if ( head == tail ) {
+                    // Spurious wakeup, return error
+                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
+                }
+            } else if ( policy == SubscribePolicy::kWait ) {
+                // Busy-wait polling for data using WaitSet
+                Duration timeout = Duration( config_.timeout );  // 10ms default
+                
+                // Use WaitSet poll for efficient busy-waiting
+                Bool has_data = WaitSetHelper::PollForFlags(
+                    &queue->queue_waitset,
+                    EventFlag::kHasData,
+                    timeout
+                );
+                
+                if ( !has_data ) {
+                    // Timeout
+                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
+                }
+                
+                // Recheck queue after poll success
+                head = queue->head.load( std::memory_order_relaxed );
+                tail = queue->tail.load( std::memory_order_acquire );
+                
+                if ( head == tail ) {
+                    // Data was consumed by another thread
+                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
+                }
+            } else if ( policy == SubscribePolicy::kSkip ) {
+                return Result< Sample >( MakeErrorCode( CoreErrc::kWouldBlock ) );
+            } else if ( policy == SubscribePolicy::kError ) {
+                return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
             } else {
                 // Unknown policy
-                return Result<Sample<T>>(MakeErrorCode(CoreErrc::kInvalidArgument));
+                return Result< Sample >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
             }
         }
         
         // Dequeue chunk_index
         UInt32* buffer = queue->GetBuffer();
-        UInt32 chunk_index = buffer[head];
-        
-        INNER_CORE_LOG("[DEBUG] Subscriber::Receive - Dequeued chunk_index=%u from buffer[%u]\n", 
-                       chunk_index, head);
+        UInt32 chunk_index = buffer[ head ];
         
         // Update head (release semantics for producer visibility)
-        UInt32 next_head = (head + 1) & (queue->capacity - 1);
-        queue->head.store(next_head, std::memory_order_release);
-        
-        INNER_CORE_LOG("[DEBUG] Subscriber::Receive - Updated head to %u\n", next_head);
-        
-        // Get chunk header
-        auto* header = allocator_->GetChunkHeader(chunk_index);
-        if (!header)
-        {
-            INNER_CORE_LOG("[DEBUG] Subscriber::Receive - GetChunkHeader returned nullptr for chunk %u\n", chunk_index);
-            return Result<Sample<T>>(MakeErrorCode(CoreErrc::kIPCInvalidChunkIndex));
-        }
-        
-        // In broadcast mode (SPMC), multiple subscribers receive the same chunk
-        // The state can be kSent (first receiver) or kReceived (subsequent receivers)
-        // We just ensure it's in a valid state for receiving
-        ChunkState current_state = static_cast<ChunkState>(header->state.load(std::memory_order_acquire));
-        
-        if (current_state != ChunkState::kSent && current_state != ChunkState::kReceived)
-        {
-            INNER_CORE_LOG("[DEBUG] Subscriber::Receive - Invalid state %u for chunk %u\n", 
-                           static_cast<UInt32>(current_state), chunk_index);
-            return Result<Sample<T>>(MakeErrorCode(CoreErrc::kIPCInvalidState));
-        }
-        
-        // Set state to kReceived (idempotent - may already be kReceived from another subscriber)
-        header->state.store(static_cast<UInt32>(ChunkState::kReceived), std::memory_order_release);
-        
-        INNER_CORE_LOG("[DEBUG] Subscriber::Receive - Successfully received chunk %u\n", chunk_index);
-        
+        UInt32 next_head = ( head + 1 ) & ( queue->capacity - 1 );
+        queue->head.store( next_head, std::memory_order_release );
+
         // Create Sample wrapper
-        Sample<T> sample(allocator_.get(), chunk_index);
+        Sample sample( allocator_.get(), chunk_index );
+        if ( !sample.IsValid() ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+        }
+
+        if ( sample.GetState() != ChunkState::kSent &&
+             sample.GetState() != ChunkState::kReceived ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+        }
+
+        sample.TransitionState( ChunkState::kReceived );
+
+        // // Call message received callback
+        // sample.onMessageReceived();
         
-        // Trigger hook: Message received
-        if (event_hooks_)
-        {
-            event_hooks_->OnMessageReceived(
-                service_name_.c_str(),
-                chunk_index
-            );
+        return Result< Sample >( std::move( sample ) );
+    }
+
+    Result< Size > Subscriber::Receive( Byte* buffer, Size size,
+                         SubscribePolicy policy ) noexcept
+    {
+        auto sample_result = Receive( policy );
+        if ( !sample_result ) {
+            return Result< Size >::FromError( sample_result.Error() );
         }
         
-        return Result<Sample<T>>(std::move(sample));
-    }
-    
-    template <typename T>
-    Result<Sample<T>> Subscriber<T>::ReceiveWithTimeout(Duration /* timeout */) noexcept
-    {
-        // TODO: Implement timeout using WaitSet mechanism
-        // For now, just try non-blocking receive
-        return Receive(QueueEmptyPolicy::kSkip);
-    }
-    
-    template <typename T>
-    bool Subscriber<T>::IsQueueEmpty() const noexcept
-    {
-        auto* queue = shm_->GetSubscriberQueue(queue_index_);
-        if (!queue) return true;
+        auto sample = std::move( sample_result ).Value();
         
-        UInt32 head = queue->head.load(std::memory_order_acquire);
-        UInt32 tail = queue->tail.load(std::memory_order_acquire);
+        Size copySize = size < sample.RawDataSize() ? size : sample.RawDataSize();
+        
+        std::memcpy( buffer, sample.RawData(), copySize );
+        
+        return Result< Size >::FromValue( copySize );
+    }
+        
+    Bool Subscriber::IsQueueEmpty() const noexcept
+    {
+        auto* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
+        
+        UInt32 head = queue->head.load( std::memory_order_acquire );
+        UInt32 tail = queue->tail.load( std::memory_order_acquire );
         return head == tail;
     }
     
-    template <typename T>
-    UInt32 Subscriber<T>::GetQueueSize() const noexcept
+    UInt32 Subscriber::GetQueueSize() const noexcept
     {
-        auto* queue = shm_->GetSubscriberQueue(queue_index_);
-        if (!queue) return 0;
+        auto* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
         
-        UInt32 head = queue->head.load(std::memory_order_acquire);
-        UInt32 tail = queue->tail.load(std::memory_order_acquire);
+        UInt32 head = queue->head.load( std::memory_order_acquire );
+        UInt32 tail = queue->tail.load( std::memory_order_acquire );
         
-        if (tail >= head)
-        {
+        if ( tail >= head ) {
             return tail - head;
-        }
-        else
-        {
+        } else {
             return queue->capacity - head + tail;
         }
     }
-    
-    // Explicit template instantiation for common types
-    template class Subscriber<UInt8>;
-    template class Subscriber<UInt32>;
-    template class Subscriber<UInt64>;
-    template class Subscriber<Message>;
-    
+
+    void Subscriber::UpdateSTMin( UInt8 stmin ) noexcept
+    {
+        config_.STmin = stmin;
+
+        SubscriberQueue* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        if ( queue ) {
+            queue->STmin.store( stmin, std::memory_order_release );
+        }
+    }
+
+    Result<void> Subscriber::Connect() noexcept
+    {
+        if ( !shm_ || !shm_->GetControlBlock()->Validate() ) {
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
+        }
+
+        SubscriberRegistry::RegisterSubscriber( shm_->GetControlBlock(), subscriber_id_ );
+
+        return {};
+    }
+
+    Result<void> Subscriber::Disconnect() noexcept
+    {
+        if ( !shm_ || !shm_->GetControlBlock()->Validate() ) {
+            return {};  // Already disconnected or not initialized
+        }
+        
+        // ====== Step 1: Unregister from SubscriberRegistry ======
+        SubscriberRegistry::UnregisterSubscriber( shm_->GetControlBlock(), subscriber_id_ );
+        
+        // ====== Step 2: Consume remaining messages in queue ======
+        // This ensures ref_count is properly decremented
+        auto* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        
+        if ( queue ) {
+            while ( !IsQueueEmpty() ) {
+                auto sample_result = Receive( SubscribePolicy::kError );
+                if ( sample_result.HasValue() ) {
+                    // Sample destructor will decrement ref_count automatically
+                } else {
+                    break;  // Queue empty or error
+                }
+            }
+        }
+        return {};
+    }
+
 }  // namespace ipc
 }  // namespace core
 }  // namespace lap

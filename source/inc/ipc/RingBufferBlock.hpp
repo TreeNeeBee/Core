@@ -34,8 +34,8 @@ namespace ipc
     template <typename T, UInt32 Capacity = kDefaultQueueCapacity>
     class RingBufferBlock
     {
-        static_assert((Capacity & (Capacity - 1)) == 0, 
-                     "Capacity must be a power of 2");
+        static_assert( ( Capacity & ( Capacity - 1 ) ) == 0, 
+                     "Capacity must be a power of 2" );
         
     public:
         /**
@@ -46,8 +46,7 @@ namespace ipc
             , tail_(0)
         {
             // Zero-initialize buffer
-            for (UInt32 i = 0; i < Capacity; ++i)
-            {
+            for ( UInt32 i = 0; i < Capacity; ++i ) {
                 buffer_[i] = T{};
             }
         }
@@ -57,7 +56,7 @@ namespace ipc
          * @param value Value to enqueue
          * @return true if enqueued, false if full
          */
-        bool Enqueue(T value) noexcept
+        Bool Enqueue(T value) noexcept
         {
             UInt32 tail = tail_.load(std::memory_order_relaxed);
             UInt32 next_tail = (tail + 1) & (Capacity - 1);
@@ -107,7 +106,7 @@ namespace ipc
          * @brief Check if queue is full
          * @return true if full
          */
-        bool IsFull() const noexcept
+        Bool IsFull() const noexcept
         {
             UInt32 tail = tail_.load(std::memory_order_relaxed);
             UInt32 next_tail = (tail + 1) & (Capacity - 1);
@@ -120,7 +119,7 @@ namespace ipc
          * @brief Check if queue is empty
          * @return true if empty
          */
-        bool IsEmpty() const noexcept
+        Bool IsEmpty() const noexcept
         {
             UInt32 head = head_.load(std::memory_order_relaxed);
             UInt32 tail = tail_.load(std::memory_order_acquire);

@@ -14,6 +14,14 @@
 #include <atomic>
 #include <chrono>
 
+// IPC mode configuration - define ONE of the following:
+// LIGHTAP_IPC_MODE_SHRINK  - Ultra-compact mode
+// LIGHTAP_IPC_MODE_NORMAL  - Balanced mode (default)
+// LIGHTAP_IPC_MODE_EXTEND  - Extended mode
+#if !defined(LIGHTAP_IPC_MODE_SHRINK) && !defined(LIGHTAP_IPC_MODE_NORMAL) && !defined(LIGHTAP_IPC_MODE_EXTEND)
+    #define LIGHTAP_IPC_MODE_NORMAL 1
+#endif
+
 namespace lap
 {
 namespace core
@@ -28,36 +36,21 @@ namespace ipc
     constexpr UInt32 kIPCMagicNumber = 0xCE025250;
     
     /// IPC version number
-    constexpr UInt32 kIPCVersion = 0x00010000;  // v1.0.0
+    constexpr UInt32 kIPCVersion = 0x10000;  // v1.0.0
     
-    /// Shared memory alignment (2MB for huge pages)
+#ifdef LIGHTAP_IPC_MODE_SHRINK
+    /// Target shared memory size for SHRINK mode (~4KB)
+    constexpr UInt64 kShmAlignment = 4 * 1024;
+#else
+    /// Target shared memory size for NORMAL/EXTEND mode (~2M)
     constexpr UInt64 kShmAlignment = 2 * 1024 * 1024;
+#endif
     
     /// Cache line size for alignment
     constexpr UInt64 kCacheLineSize = 64;
     
     /// Page size
     constexpr UInt64 kPageSize = 4096;
-    
-    /// Memory region sizes (fixed partitions - optimized layout)
-    constexpr UInt64 kControlBlockRegionSize = 0x20000;    ///< 128KB for ControlBlock
-    constexpr UInt64 kQueueRegionSize = 0xC8000;           ///< 800KB for 100 queues (100 × 8KB)
-    constexpr UInt64 kReservedRegionSize = 0x18000;        ///< 96KB reserved for future expansion
-    constexpr UInt64 kSingleQueueSize = 8192;              ///< 8KB per queue (page aligned)
-    constexpr UInt64 kQueueRegionOffset = kControlBlockRegionSize;  ///< Queue region starts at 128KB
-    constexpr UInt64 kChunkPoolOffset = 0x100000;          ///< ChunkPool at 1MB (after ControlBlock + Queues + Reserved)
-    
-    /// Maximum subscribers per service
-    constexpr UInt32 kMaxSubscribers = 100;
-    
-    /// Default queue capacity per subscriber
-    constexpr UInt32 kDefaultQueueCapacity = 256;
-    
-    /// Default chunk pool size
-    constexpr UInt32 kDefaultMaxChunks = 128;
-    
-    /// Default chunk size (4KB)
-    constexpr UInt64 kDefaultChunkSize = 4096;
     
     /// Invalid chunk index
     constexpr UInt32 kInvalidChunkIndex = 0xFFFFFFFF;
@@ -89,7 +82,7 @@ namespace ipc
                                            ▼
                                       (回到 kFree)
     */
-    enum class ChunkState : UInt32
+    enum class ChunkState : UInt8
     {
         kFree      = 0,  ///< Available in free list
         kLoaned    = 1,  ///< Loaned to Publisher
@@ -102,24 +95,24 @@ namespace ipc
     // ========================================================================
     
     /// Policy when ChunkPool is exhausted
-    enum class LoanFailurePolicy
+    enum class LoanPolicy
     {
-        kError,      ///< Return error immediately
-        kWait,       ///< Busy-wait polling
-        kBlock       ///< Block on futex (default)
+        kBlock,     ///< Block on futex (default)
+        kWait,      ///< Busy-wait polling 
+        kError      ///< Return error immediately
     };
     
     /// Policy when subscriber queue is full
-    enum class QueueFullPolicy
+    enum class PublishPolicy
     {
-        kOverwrite,  ///< Overwrite oldest message (Ring Buffer mode)
-        kWait,       ///< Busy-wait polling
-        kBlock,      ///< Block on futex
-        kDrop        ///< Drop message (default)
+        kOverwrite, ///< Overwrite oldest message (default)
+        kBlock,     ///< Block on futex
+        kWait,      ///< Busy-wait polling
+        kDrop       ///< Drop message
     };
     
     /// Policy when subscriber queue is empty
-    enum class QueueEmptyPolicy
+    enum class SubscribePolicy
     {
         kBlock,      ///< Block on futex (default)
         kWait,       ///< Busy-wait polling
@@ -133,6 +126,7 @@ namespace ipc
     
     namespace EventFlag
     {
+        constexpr UInt32 kNone          = 0x00;  ///< No event
         constexpr UInt32 kHasData       = 0x01;  ///< Queue has data
         constexpr UInt32 kHasSpace      = 0x02;  ///< Queue has space
         constexpr UInt32 kHasFreeChunk  = 0x04;  ///< ChunkPool has free chunks

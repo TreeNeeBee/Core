@@ -14,7 +14,7 @@
 #include "Sample.hpp"
 #include "SharedMemoryManager.hpp"
 #include "ChunkPoolAllocator.hpp"
-#include "SubscriberRegistryOps.hpp"
+#include "SubscriberRegistry.hpp"
 #include "IPCEventHooks.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
@@ -34,10 +34,12 @@ namespace ipc
      */
     struct SubscriberConfig
     {
+        UInt8  STmin = 0;                                           ///< Minimum interval between messages (ms)
         UInt32 max_chunks = kDefaultMaxChunks;                      ///< Maximum chunks in pool
-        UInt64 chunk_size = 0;                                      ///< Chunk size (payload), 0 means default
-        UInt32 queue_capacity = kDefaultQueueCapacity;              ///< Queue capacity
-        QueueEmptyPolicy empty_policy = QueueEmptyPolicy::kBlock;   ///< Default policy
+        UInt32 chunk_size = 0;                                      ///< Chunk size (payload), 0 means default
+        UInt32 queue_capacity = kQueueCapacity;                     ///< Queue capacity
+        UInt64 timeout = 100000000;                                 ///< Receive timeout (ns), 0 means no wait
+        SubscribePolicy empty_policy = SubscribePolicy::kBlock;     ///< Default policy
     };
     
     /**
@@ -53,17 +55,16 @@ namespace ipc
      * 
      * @note T must be Message or a class derived from Message
      */
-    template <typename T>
     class Subscriber
     {
     public:
         /**
          * @brief Create subscriber
-         * @param service_name Service name
+         * @param shm Service name
          * @param config Configuration
          * @return Result with subscriber or error
          */
-        static Result<Subscriber<T>> Create(const String& service_name,
+        static Result< Subscriber > Create(const String& shmPath,
                                            const SubscriberConfig& config = {}) noexcept;
         
         /**
@@ -71,25 +72,13 @@ namespace ipc
          */
         ~Subscriber() noexcept;
         
-        // Delete copy
+        // Delete copy - external users must use Create()
         Subscriber(const Subscriber&) = delete;
         Subscriber& operator=(const Subscriber&) = delete;
         
-        // Allow move
+        // Allow move - required by Result<Subscriber>
         Subscriber(Subscriber&&) noexcept = default;
         Subscriber& operator=(Subscriber&&) noexcept = default;
-        
-        /**
-         * @brief Disconnect from service and cleanup
-         * @return Result with success or error
-         * 
-         * @details
-         * - Unregister from shared memory registry
-         * - Consume remaining messages in queue
-         * - Deactivate queue slot
-         * - Idempotent (safe to call multiple times)
-         */
-        Result<void> Disconnect() noexcept;
         
         /**
          * @brief Receive next message
@@ -101,38 +90,52 @@ namespace ipc
          * - Creates Sample wrapper
          * - Behavior on empty queue depends on policy
          */
-        Result<Sample<T>> Receive(QueueEmptyPolicy policy) noexcept;
+        Result< Sample > Receive( SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
+
+        Result< Size > Receive( Byte* buffer, Size size,
+                         SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
         
         /**
-         * @brief Receive with default policy
-         * @return Result with Sample or error
+         * @brief Receive message using lambda/function to read payload
+         * @tparam Fn Callable type with signature Size(Byte*, Size)
+         * @param read_fn Function to read data from chunk
+         * @param policy Subscribe policy
+         * @return Result with bytes read or error
+         * 
+         * @details
+         * - Template implementation must be in header for proper instantiation
+         * - Receives a sample, calls read_fn to process it
+         * - read_fn should return number of bytes read
          */
-        Result<Sample<T>> Receive() noexcept
+        template<class Fn>
+        Result< Size > Receive( Fn&& read_fn,
+                         SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept
         {
-            return Receive(config_.empty_policy);
+            static_assert(std::is_invocable_r_v<Size, Fn, Byte*, Size>,
+                      "Fn must be callable like Size(Byte*, Size)");
+            auto sample_result = Receive( policy );
+            if ( !sample_result ) {
+                return Result< Size >::FromError( sample_result.Error() );
+            }
+            auto sample = std::move( sample_result ).Value();
+
+            return Result< Size >::FromValue( read_fn( sample.RawData(), sample.RawDataSize() ) );
         }
-        
-        /**
-         * @brief Receive with timeout
-         * @param timeout Timeout duration
-         * @return Result with Sample or error
-         */
-        Result<Sample<T>> ReceiveWithTimeout(Duration timeout) noexcept;
-        
+
         /**
          * @brief Get service name
          * @return Service name
          */
-        const String& GetServiceName() const noexcept
+        inline const String& GetShmPath() const noexcept
         {
-            return service_name_;
+            return shm_path_;
         }
         
         /**
          * @brief Check if queue is empty
          * @return true if empty
          */
-        bool IsQueueEmpty() const noexcept;
+        Bool IsQueueEmpty() const noexcept;
         
         /**
          * @brief Get queue size (approximate)
@@ -144,7 +147,7 @@ namespace ipc
          * @brief Set event hooks for monitoring
          * @param hooks Event hooks implementation
          */
-        void SetEventHooks(std::shared_ptr<IPCEventHooks> hooks) noexcept
+        inline void SetEventHooks( SharedHandle<IPCEventHooks> hooks ) noexcept
         {
             event_hooks_ = std::move(hooks);
         }
@@ -153,39 +156,51 @@ namespace ipc
          * @brief Get event hooks
          * @return Event hooks pointer (may be null)
          */
-        IPCEventHooks* GetEventHooks() const noexcept
+        inline IPCEventHooks* GetEventHooks() const noexcept
         {
             return event_hooks_.get();
         }
-        
-    private:
+
+        void UpdateSTMin(UInt8 stmin) noexcept;
+
+        Result< void > Connect() noexcept;
         /**
-         * @brief Private constructor
+         * @brief Disconnect from service and cleanup
+         * @return Result with success or error
+         * 
+         * @details
+         * - Unregister from shared memory registry
+         * - Consume remaining messages in queue
+         * - Deactivate queue slot
+         * - Idempotent (safe to call multiple times)
          */
-        Subscriber(const String& service_name,
+        Result< void > Disconnect() noexcept;
+    
+    protected:
+        /**
+         * @brief protected constructor
+         */
+        Subscriber( const String& shmPath,
                   const SubscriberConfig& config,
-                  std::unique_ptr<SharedMemoryManager> shm,
-                  std::unique_ptr<ChunkPoolAllocator> allocator,
-                  UInt32 queue_index,
+                  UniqueHandle<SharedMemoryManager> shm,
+                  UniqueHandle<ChunkPoolAllocator> allocator,
                   UInt32 subscriber_id) noexcept
-            : service_name_(service_name)
+            : shm_path_(shmPath)
             , config_(config)
             , shm_(std::move(shm))
             , allocator_(std::move(allocator))
-            , queue_index_(queue_index)
             , subscriber_id_(subscriber_id)
-            , is_disconnected_(false)
         {
+            ;
         }
-        
-        String service_name_;                                   ///< Service name
+
+    public:    
+        String shm_path_;                                       ///< Shared memory path
         SubscriberConfig config_;                               ///< Configuration
-        std::unique_ptr<SharedMemoryManager> shm_;              ///< Shared memory manager
-        std::unique_ptr<ChunkPoolAllocator> allocator_;         ///< Chunk allocator
-        UInt32 queue_index_;                                    ///< Queue index in shared memory
+        UniqueHandle<SharedMemoryManager> shm_;                 ///< Shared memory manager
+        UniqueHandle<ChunkPoolAllocator> allocator_;            ///< Chunk allocator
         UInt32 subscriber_id_;                                  ///< Unique subscriber ID
-        std::shared_ptr<IPCEventHooks> event_hooks_;            ///< Event hooks for monitoring
-        bool is_disconnected_;                                  ///< Disconnected flag
+        SharedHandle<IPCEventHooks> event_hooks_;               ///< Event hooks for monitoring
     };
     
 }  // namespace ipc

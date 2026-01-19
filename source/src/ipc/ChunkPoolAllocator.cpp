@@ -10,7 +10,7 @@
 #include "CCoreErrorDomain.hpp"
 #include "CMacroDefine.hpp"
 #include <cstring>
-#include <iostream>
+#include <cassert>
 
 namespace lap
 {
@@ -20,173 +20,152 @@ namespace ipc
 {
     Result<void> ChunkPoolAllocator::Initialize() noexcept
     {
-        if (!control_)
-        {
-            return Result<void>(MakeErrorCode(CoreErrc::kInvalidArgument));
+        if ( !control_ ) {
+            return Result<void>::FromError(
+                MakeErrorCode(CoreErrc::kInvalidArgument)
+            );
         }
-        
-        // ChunkPool starts at 1MB offset (after ControlBlock + Queue + Reserved regions)
-        // chunk_pool_start_ is set in constructor, verify it's at correct offset
-        INNER_CORE_LOG("[DEBUG] ChunkPoolAllocator::Initialize\n");
-        INNER_CORE_LOG("  - Pool starts at offset: 0x%lX (1MB)\n", 
-                       static_cast<unsigned long>(kChunkPoolOffset));
-        INNER_CORE_LOG("  - Chunk size: %lu bytes\n", static_cast<unsigned long>(control_->chunk_size));
-        INNER_CORE_LOG("  - Max chunks: %lu\n", static_cast<unsigned long>(control_->max_chunks));
-        
-        // Initialize each chunk and build free list
-        for (UInt32 i = 0; i < control_->max_chunks; ++i)
-        {
-            auto* header = GetChunkAt(i);
-            header->Initialize(i, control_->chunk_size);
+
+        // Check if already initialized (idempotent)
+        if ( ( control_->pool_state.free_list_head.load(std::memory_order_acquire) == kInvalidChunkIndex ) && 
+                ( control_->pool_state.remain_count.load(std::memory_order_acquire) != 0 ) ) {
+            // Calculate and cache aligned chunk stride (once during initialization)
+            // Chunk stride must be aligned to kCacheLineSize to avoid false sharing
+            // and ensure proper alignment for ChunkHeader (which has alignas(kCacheLineSize))
+            chunk_stride_ = DEF_LAP_ALIGN_FORMAT( sizeof( ChunkHeader ) + control_->header.chunk_size, kCacheLineSize );
             
-            // Link to next chunk in free list
-            if (i + 1 < control_->max_chunks)
-            {
-                header->next_free_index.store(i + 1, std::memory_order_relaxed);
+            // ChunkPool starts at 1MB offset (after ControlBlock + Queue + Reserved regions)
+            // chunk_pool_start_ is set in constructor, verify it's at correct offset
+            INNER_CORE_LOG("[DEBUG] ChunkPoolAllocator::Initialize\n");
+            INNER_CORE_LOG("  - Pool starts at offset: 0x%lX\n", 
+                        static_cast<unsigned long>(kChunkPoolOffset));
+            INNER_CORE_LOG("  - Chunk size: %lu bytes\n", static_cast<unsigned long>(control_->header.chunk_size));
+            INNER_CORE_LOG("  - Chunk stride: %lu bytes (aligned)\n", static_cast<unsigned long>(chunk_stride_));
+            INNER_CORE_LOG("  - Max chunks: %lu\n", static_cast<unsigned long>(control_->header.max_chunks));
+            
+            // Initialize each chunk and build free list
+            for ( UInt32 i = 0; i < control_->header.max_chunks; ++i ) {
+                auto* header = GetChunkAt( i );
+                header->Initialize(i, control_->header.chunk_size);
+                
+                // Link to next chunk in free list
+                if ( DEF_LAP_IF_LIKELY ( ( i + 1 ) < control_->header.max_chunks) ) {
+                    header->next_free_index.store( i + 1, std::memory_order_relaxed );
+                } else {
+                    header->next_free_index.store(kInvalidChunkIndex, std::memory_order_relaxed);
+                }
             }
-            else
-            {
-                header->next_free_index.store(kInvalidChunkIndex, std::memory_order_relaxed);
-            }
+            
+            // Set free list head to first chunk
+            control_->pool_state.free_list_head.store( 0, std::memory_order_release );
+            control_->pool_state.remain_count.store( control_->header.max_chunks, std::memory_order_release );
+        } else {
+            // Already initialized by another process, recalculate stride
+            chunk_stride_ = DEF_LAP_ALIGN_FORMAT( sizeof( ChunkHeader ) + control_->header.chunk_size, kCacheLineSize );
         }
-        
-        // Set free list head to first chunk
-        control_->free_list_head.store(0, std::memory_order_release);
-        control_->allocated_count.store(0, std::memory_order_release);
-        
-        // Mark as initialized
-        control_->MarkInitialized();
-        
+
         return {};
     }
     
-    Optional<UInt32> ChunkPoolAllocator::Allocate() noexcept
+    UInt32 ChunkPoolAllocator::Allocate() noexcept
     {
         // Lock-free allocation using CAS loop
-        while (true)
-        {
-            UInt32 head = control_->free_list_head.load(std::memory_order_acquire);
+        while ( true ) {
+            UInt32 head = control_->pool_state.free_list_head.load(std::memory_order_acquire);
             
             // Pool exhausted
-            if (head == kInvalidChunkIndex)
-            {
-                static std::atomic<int> log_count{0};
-                if (log_count.fetch_add(1) < 3) {
-                    INNER_CORE_LOG("[DEBUG] ChunkPool EXHAUSTED: allocated=%u, max=%u, total_allocs=%lu\n",
-                                   control_->allocated_count.load(),
-                                   control_->max_chunks,
-                                   control_->total_allocations.load());
+            if ( head == kInvalidChunkIndex ) {
+                // static std::atomic<int> log_count{0};
+                // if ( log_count.fetch_add(1) < 3 ) {
+                //     INNER_CORE_LOG("[DEBUG] ChunkPool EXHAUSTED: remain=%u, max=%u\n",
+                //                    control_->pool_state.remain_count.load(),
+                //                    control_->header.max_chunks);
+                // }
+                return kInvalidChunkIndex;
+            } else {
+                auto* header = GetChunkAt(head);
+                UInt32 next = header->next_free_index.load(std::memory_order_acquire);
+                
+                // Try to update head to next
+                if ( control_->pool_state.free_list_head.compare_exchange_weak(
+                        head, next,
+                        std::memory_order_acq_rel,
+                        std::memory_order_acquire) ) {
+                    // Successfully removed from free list
+                    
+                    // Transition state to Loaned
+                    DEF_LAP_ASSERT( header->state.load(std::memory_order_acquire) == ChunkState::kFree, 
+                                    "Allocated chunk must be in Free state" );
+                    header->state.store( static_cast< UInt8 >(ChunkState::kLoaned), std::memory_order_release );
+                    
+                    // Increment allocated count
+                    control_->pool_state.remain_count.fetch_sub( 1, std::memory_order_relaxed );
+                    
+                    // Clear next_free_index
+                    header->next_free_index.store( kInvalidChunkIndex, std::memory_order_release );
+                    
+                    return head;
                 }
-                return {};
             }
-            
-            auto* header = GetChunkAt(head);
-            UInt32 next = header->next_free_index.load(std::memory_order_acquire);
-            
-            // Try to update head to next
-            if (control_->free_list_head.compare_exchange_weak(
-                    head, next,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire))
-            {
-                // Successfully removed from free list
-                
-                // Transition state to Loaned
-                header->state.store(static_cast<UInt32>(ChunkState::kLoaned), 
-                                   std::memory_order_release);
-                
-                // Increment allocated count
-                control_->allocated_count.fetch_add(1, std::memory_order_relaxed);
-                control_->total_allocations.fetch_add(1, std::memory_order_relaxed);
-                
-                // Clear next_free_index
-                header->next_free_index.store(kInvalidChunkIndex, std::memory_order_release);
-                
-                return head;
-            }
-            
-            // CAS failed, retry
         }
     }
     
     void ChunkPoolAllocator::Deallocate(UInt32 chunk_index) noexcept
     {
-        if (chunk_index >= control_->max_chunks)
-        {
-            return;  // Invalid index
-        }
-        
+        assert ( chunk_index < control_->header.max_chunks );
+
         auto* header = GetChunkAt(chunk_index);
         
         // Transition state to Free
-        header->state.store(static_cast<UInt32>(ChunkState::kFree), 
-                           std::memory_order_release);
-        
+        header-> state.store( static_cast< UInt8 >( ChunkState::kFree ), std::memory_order_release );
+
         // Reset reference count
         header->ref_count.store(0, std::memory_order_release);
         
         // Lock-free insertion to free list
-        while (true)
-        {
-            UInt32 head = control_->free_list_head.load(std::memory_order_acquire);
+        while ( true ) {
+            UInt32 head = control_->pool_state.free_list_head.load(std::memory_order_acquire);
             
             // Set next to current head
             header->next_free_index.store(head, std::memory_order_release);
-            
+  
             // Try to update head to this chunk
-            if (control_->free_list_head.compare_exchange_weak(
+            if ( control_->pool_state.free_list_head.compare_exchange_weak(
                     head, chunk_index,
                     std::memory_order_acq_rel,
-                    std::memory_order_acquire))
-            {
+                    std::memory_order_acquire) ) {
                 // Successfully inserted into free list
                 
                 // Decrement allocated count
-                control_->allocated_count.fetch_sub(1, std::memory_order_relaxed);
-                control_->total_deallocations.fetch_add(1, std::memory_order_relaxed);
+                control_->pool_state.remain_count.fetch_add(1, std::memory_order_relaxed);
                 
-                // Signal waiters that a chunk is available
-                (void)control_->loan_waitset.fetch_or(
-                    EventFlag::kHasFreeChunk,
-                    std::memory_order_release
-                );
-                
-                // If flag was not set before, we need to wake waiters
-                // (WaitSet implementation will handle futex wake)
-                
-                return;
+                break;
             }
-            
-            // CAS failed, retry
         }
     }
     
     ChunkHeader* ChunkPoolAllocator::GetChunkHeader(UInt32 chunk_index) const noexcept
     {
-        if (chunk_index >= control_->max_chunks)
-        {
-            return nullptr;
-        }
-        
-        return GetChunkAt(chunk_index);
+        assert( chunk_index < control_->header.max_chunks );
+
+        return GetChunkAt( chunk_index );
     }
     
     void* ChunkPoolAllocator::GetChunkPayload(UInt32 chunk_index) const noexcept
     {
         auto* header = GetChunkHeader(chunk_index);
-        if (!header)
-        {
+        if ( DEF_LAP_IF_LIKELY( header ) ) {
+            return header->GetPayload();
+        } else {
             return nullptr;
         }
-        
-        return header->GetPayload();
     }
     
     ChunkHeader* ChunkPoolAllocator::GetChunkAt(UInt32 index) const noexcept
     {
-        UInt64 chunk_stride = sizeof(ChunkHeader) + control_->chunk_size;
+        // Use pre-calculated aligned chunk stride (calculated once in Initialize)
         UInt8* addr = reinterpret_cast<UInt8*>(chunk_pool_start_);
-        addr += index * chunk_stride;
+        addr += index * chunk_stride_;
         
         return reinterpret_cast<ChunkHeader*>(addr);
     }

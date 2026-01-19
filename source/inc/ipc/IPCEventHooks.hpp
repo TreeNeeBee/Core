@@ -49,65 +49,55 @@ namespace ipc
         
         /**
          * @brief Called when Publisher::Loan() fails
-         * @param topic Service/topic name
          * @param policy Loan failure policy used
          * @param allocated_count Current allocated chunk count
          * @param max_chunks Maximum chunks in pool
          */
-        virtual void OnLoanFailed(const char* /* topic */,
-                                 LoanFailurePolicy /* policy */,
+        virtual void OnLoanFailed( LoanPolicy /* policy */,
                                  UInt32 /* allocated_count */,
                                  UInt32 /* max_chunks */) noexcept
+        {
+            // Default: no-op
+        }
+
+         /**
+         * @brief Called when loan count exceeds threshold
+         * @param topic Service/topic name
+         * @param current_count Current loaned chunks
+         * @param threshold Warning threshold
+         */
+        virtual void OnLoanCountWarning( UInt32 /* current_count */,
+                                       UInt32 /* threshold */) noexcept
         {
             // Default: no-op
         }
         
         /**
          * @brief Called when ChunkPool is exhausted
-         * @param topic Service/topic name
          * @param total_chunks Total number of chunks
          */
-        virtual void OnChunkPoolExhausted(const char* /* topic */,
-                                         UInt32 /* total_chunks */) noexcept
+        virtual void OnChunkPoolExhausted( UInt32 /* total_chunks */ ) noexcept
         {
             // Default: no-op
         }
         
         /**
          * @brief Called when queue full prevents message delivery
-         * @param topic Service/topic name
          * @param subscriber_id Subscriber ID
          * @param policy Queue full policy
          */
-        virtual void OnQueueFull(const char* /* topic */,
-                                UInt32 /* subscriber_id */,
-                                QueueFullPolicy /* policy */) noexcept
+        virtual void OnQueueFull(UInt32 /* subscriber_id */,
+                                PublishPolicy /* policy */) noexcept
         {
             // Default: no-op
         }
         
         /**
          * @brief Called when message is successfully sent
-         * @param topic Service/topic name
          * @param chunk_index Chunk index
          * @param subscriber_count Number of subscribers
          */
-        virtual void OnMessageSent(const char* /* topic */,
-                                  UInt32 /* chunk_index */,
-                                  UInt32 /* subscriber_count */) noexcept
-        {
-            // Default: no-op
-        }
-        
-        /**
-         * @brief Called when loan count exceeds threshold
-         * @param topic Service/topic name
-         * @param current_count Current loaned chunks
-         * @param threshold Warning threshold
-         */
-        virtual void OnLoanCountWarning(const char* /* topic */,
-                                       UInt32 /* current_count */,
-                                       UInt32 /* threshold */) noexcept
+        virtual void OnMessageSent(void* /*chunk payload*/) noexcept
         {
             // Default: no-op
         }
@@ -115,27 +105,14 @@ namespace ipc
         // ====================================================================
         // Subscriber Events
         // ====================================================================
-        
-        /**
-         * @brief Called when Subscriber::Receive() times out
-         * @param topic Service/topic name
-         * @param timeout Timeout duration (nanoseconds)
-         */
-        virtual void OnReceiveTimeout(const char* /* topic */,
-                                     UInt64 /* timeout_ns */) noexcept
-        {
-            // Default: no-op
-        }
-        
         /**
          * @brief Called when queue overrun occurs (messages dropped)
          * @param topic Service/topic name
          * @param subscriber_id Subscriber ID
          * @param dropped_count Number of messages dropped
          */
-        virtual void OnQueueOverrun(const char* /* topic */,
-                                   UInt32 /* subscriber_id */,
-                                   UInt32 /* dropped_count */) noexcept
+        virtual void OnQueueOverrun( UInt32 /* subscriber_id */,
+                                   void* /*chunk payload*/) noexcept
         {
             // Default: no-op
         }
@@ -145,8 +122,8 @@ namespace ipc
          * @param topic Service/topic name
          * @param chunk_index Chunk index
          */
-        virtual void OnMessageReceived(const char* /* topic */,
-                                      UInt32 /* chunk_index */) noexcept
+        virtual void OnMessageReceived( UInt32 /* subscriber_id */,
+                                      void* /*chunk payload*/ ) noexcept
         {
             // Default: no-op
         }
@@ -186,38 +163,6 @@ namespace ipc
         virtual void OnSharedMemoryError(const char* /* path */,
                                         int /* error_code */,
                                         const char* /* error_msg */) noexcept
-        {
-            // Default: no-op
-        }
-        
-        // ====================================================================
-        // ChunkPool Events
-        // ====================================================================
-        
-        /**
-         * @brief Called when ChunkPool is initialized
-         * @param topic Service/topic name
-         * @param max_chunks Maximum chunks
-         * @param chunk_size Size per chunk
-         */
-        virtual void OnChunkPoolInitialized(const char* /* topic */,
-                                           UInt32 /* max_chunks */,
-                                           UInt64 /* chunk_size */) noexcept
-        {
-            // Default: no-op
-        }
-        
-        /**
-         * @brief Called periodically with pool statistics
-         * @param topic Service/topic name
-         * @param allocated Currently allocated
-         * @param max_chunks Maximum chunks
-         * @param utilization Utilization percentage (0-100)
-         */
-        virtual void OnChunkPoolStats(const char* /* topic */,
-                                     UInt32 /* allocated */,
-                                     UInt32 /* max_chunks */,
-                                     float /* utilization */) noexcept
         {
             // Default: no-op
         }

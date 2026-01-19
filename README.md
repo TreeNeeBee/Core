@@ -4,7 +4,7 @@
 [![AUTOSAR](https://img.shields.io/badge/AUTOSAR-AP%20R24--11-orange.svg)](https://www.autosar.org/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](../../)
 [![Tests](https://img.shields.io/badge/tests-250%2B-brightgreen.svg)](test/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-green.svg)](LICENSE)
 
 **LightAP Core** is an AUTOSAR Adaptive Platform R24-11 compliant module providing memory management, configuration management, error handling, and synchronization primitives.
 
@@ -575,7 +575,9 @@ We welcome contributions! Please:
 
 ## 📄 License
 
-MIT License - See [LICENSE](LICENSE) file
+CC BY-NC 4.0 (Creative Commons Attribution-NonCommercial 4.0 International) - See [LICENSE](LICENSE) file
+
+For commercial use or production deployment, please contact the copyright holder to obtain a separate commercial license.
 
 ### Third-Party Licenses
 

@@ -4,7 +4,7 @@
 [![AUTOSAR](https://img.shields.io/badge/AUTOSAR-AP%20R24--11-orange.svg)](https://www.autosar.org/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](../../)
 [![Tests](https://img.shields.io/badge/tests-408%2F408-brightgreen.svg)](test/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-green.svg)](LICENSE)
 
 **LightAP Core** 是符合 AUTOSAR Adaptive Platform R24-11 标准的基础模块，提供内存管理、配置管理、错误处理和同步原语等核心功能。
 
@@ -446,7 +446,7 @@ Core/
 ├── BuildTemplate/              # 构建模板（Git 子模块）
 ├── CMakeLists.txt              # CMake 配置
 ├── README.md                   # 本文件
-└── LICENSE                     # MIT 许可证
+└── LICENSE                     # CC BY-NC 4.0 许可证
 ```
 
 ---
@@ -558,7 +558,9 @@ Core/
 
 ## 📄 许可证
 
-本项目基于 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+本项目基于 CC BY-NC 4.0 (知识共享署名-非商业性使用 4.0 国际许可协议) - 详见 [LICENSE](LICENSE) 文件。
+
+如需商业使用或生产部署，请联系版权所有者以获取单独的商业许可。
 
 ### 第三方依赖
 - **nlohmann/json**: MIT License

@@ -13,6 +13,7 @@
 #include "IPCTypes.hpp"
 #include "ChunkHeader.hpp"
 #include "ControlBlock.hpp"
+#include "SharedMemoryManager.hpp"
 #include "CResult.hpp"
 #include "COptional.hpp"
 

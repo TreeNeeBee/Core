@@ -516,7 +516,7 @@ Core/
     "mode": "NORMAL",
     "chunk_size": 2097152,
     "chunk_count": 128,
-    "queue_capacity": 128
+    "channel_capacity": 128
   },
   "logging": {
     "level": "info",

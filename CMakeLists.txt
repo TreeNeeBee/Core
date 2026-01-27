@@ -170,33 +170,6 @@ if(TARGET lap_core)
 endif()
 
 # ==============================================================================
-# Build IPC Mode-Specific Libraries for Testing
-# ==============================================================================
-if(TARGET lap_core)
-    message(STATUS "[Core] Creating IPC mode-specific libraries...")
-    
-    # SHRINK mode library
-    lap_add_ipc_mode_library(
-        BASE_TARGET lap_core
-        MODE SHRINK
-        OUTPUT_NAME lap_core_shrink
-        LINK_LIBRARIES ${MODULE_EXTERNAL_LIB}
-        COMPILE_DEFINITIONS __INNER_LOG_ENABLE LAP_STRICT_LAYOUT=1
-        COMPILE_OPTIONS $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-address-of-packed-member>
-    )
-    
-    # EXTEND mode library
-    lap_add_ipc_mode_library(
-        BASE_TARGET lap_core
-        MODE EXTEND
-        OUTPUT_NAME lap_core_extend
-        LINK_LIBRARIES ${MODULE_EXTERNAL_LIB}
-        COMPILE_DEFINITIONS __INNER_LOG_ENABLE LAP_STRICT_LAYOUT=1
-        COMPILE_OPTIONS $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-address-of-packed-member>
-    )
-endif()
-
-# ==============================================================================
 # Unit Tests
 # ==============================================================================
 option(ENABLE_BUILD_UNITTEST "Build unit tests" ON)
@@ -204,25 +177,10 @@ option(ENABLE_BUILD_UNITTEST "Build unit tests" ON)
 if(ENABLE_BUILD_UNITTEST AND TARGET lap_core)
     message(STATUS "[Core] Building unit tests...")
     
-    # IPC Mode-Specific Tests
-    lap_add_ipc_test(
-        NAME test_ipc_shrink
-        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_shrink.cpp
-        LINK_LIBRARIES lap_core_shrink Threads::Threads rt
-        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
-    )
-    
     lap_add_ipc_test(
         NAME test_ipc_normal
         SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_normal.cpp
         LINK_LIBRARIES lap_core Threads::Threads rt
-        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
-    )
-    
-    lap_add_ipc_test(
-        NAME test_ipc_extend
-        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_extend.cpp
-        LINK_LIBRARIES lap_core_extend Threads::Threads rt
         INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
     )
     
@@ -242,27 +200,10 @@ option(ENABLE_BUILD_EXAMPLES "Build examples" ON)
 if(ENABLE_BUILD_EXAMPLES AND TARGET lap_core)
     message(STATUS "[Core] Building examples...")
     
-    # IPC Examples requiring specific modes (individual handling)
-    lap_add_example_executable(
-        NAME stress_test_shrink
-        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/stress_test_shrink.cpp
-        LINK_LIBRARIES lap_core_shrink Threads::Threads rt
-        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
-        ENABLE_LOGGING
-    )
-    
-    lap_add_example_executable(
-        NAME stress_test_extend
-        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/stress_test_extend.cpp
-        LINK_LIBRARIES lap_core_extend Threads::Threads rt
-        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
-        ENABLE_LOGGING
-    )
-    
     lap_add_example_executable(
         NAME ipc_chain_example
         SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/ipc_chain_example.cpp
-        LINK_LIBRARIES lap_core_shrink Threads::Threads rt
+        LINK_LIBRARIES lap_core Threads::Threads rt
         INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
         ENABLE_LOGGING
     )
@@ -301,7 +242,7 @@ endif()
 # ==============================================================================
 if(CORE_STANDALONE_BUILD)
     # Install library with export support
-    install(TARGETS lap_core lap_core_shrink lap_core_extend
+    install(TARGETS lap_core
         EXPORT CoreTargets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
@@ -367,14 +308,19 @@ endif()
 # ==============================================================================
 # Summary
 # ==============================================================================
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
+    set(BUILD_MODE_DISPLAY "Debug (default)")
+else()
+    set(BUILD_MODE_DISPLAY "${CMAKE_BUILD_TYPE}")
+endif()
+
 message(STATUS "==============================================================================")
 message(STATUS "Core Module Configuration Summary")
 message(STATUS "==============================================================================")
-message(STATUS "  Build mode:       ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Build mode:       ${BUILD_MODE_DISPLAY}")
 message(STATUS "  C++ standard:     C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Standalone:       ${CORE_STANDALONE_BUILD}")
-message(STATUS "  Library:          lap_core (${LIGHTAP_IPC_MODE} mode)")
-message(STATUS "  Mode libraries:   lap_core_shrink, lap_core_extend")
+message(STATUS "  Library:          lap_core")
 message(STATUS "  Unit tests:       ${ENABLE_BUILD_UNITTEST}")
 message(STATUS "  Examples:         ${ENABLE_BUILD_EXAMPLES}")
 message(STATUS "  Benchmarks:       ${ENABLE_BUILD_BENCHMARKS}")

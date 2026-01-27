@@ -164,7 +164,6 @@
 
 #include "ipc/Publisher.hpp"
 #include "ipc/Subscriber.hpp"
-#include "ipc/IPCConfig.hpp"
 #include "CInitialization.hpp"
 #include <iostream>
 #include <thread>
@@ -245,35 +244,37 @@ void RunInitialPublisher() {
     
     std::cout << "[Proc0] Publisher创建成功: " << GetShmPath(0) << std::endl;
     
-    // 发送100条消息，无延迟连续发送，让STMin控制订阅者接收速度
+    // 等待订阅者就绪
+    std::cout << "[Proc0] 等待订阅者就绪..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // 持续发送消息30秒，间隔0.1ms
     UInt32 send_fail_count = 0;
-    for (UInt32 i = 0; i < 100; ++i) {
+    UInt32 sequence = 0;
+    auto start_time = std::chrono::steady_clock::now();
+    
+    while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
         ChainMessage msg;
-        msg.sequence_id = i;
+        msg.sequence_id = sequence++;
         msg.region_id = 0;
         msg.timestamp_us = GetTimestampUs();
         std::snprintf(msg.payload, sizeof(msg.payload), 
-                     "Message#%u from Region0", i);
+                     "Message#%u from Region0", msg.sequence_id);
         
         auto result = publisher.Send(reinterpret_cast<Byte*>(&msg), sizeof(msg));
         if (!result.HasValue()) {
             send_fail_count++;
             if (send_fail_count <= 5) {  // 只打印前5次失败
-                std::cout << "[Proc0 WARN] 发送失败 seq=" << i << ", 累计失败=" << send_fail_count << std::endl;
+                std::cout << "[Proc0 WARN] 发送失败 seq=" << msg.sequence_id << ", 累计失败=" << send_fail_count << std::endl;
             }
         }
-        // if (result.HasValue()) {
-        //     std::cout << "[Proc0] 发送消息 #" << i 
-        //              << " -> Region0" << std::endl;
-        // }
         
-        // 无延迟连续发送，STMin将控制订阅者的接收速度
-        std::this_thread::sleep_for(std::chrono::microseconds(100)); // 仅0.1ms防止CPU占满
+        // 0.1ms间隔发送
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
     
-    std::cout << "[Proc0] 发送完成，总失败次数=" << send_fail_count << "/100" << std::endl;
-    std::cout << "[Proc0] 等待链式传递..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    UInt32 total_sent = sequence;
+    std::cout << "[Proc0] 发送完成: " << total_sent << " 条消息, 失败=" << send_fail_count << std::endl;
 }
 
 //=============================================================================
@@ -415,22 +416,6 @@ void RunMonitorNode(int region_id) {
             latencies.push_back(latency_us);
             if (interval_us > 0) {
                 intervals.push_back(interval_us);
-            }
-            
-            // 详细调试日志 - 显示上游发布者的STMin
-            UInt32 upstream_stmin = (region_id == 0) ? 0 : kForwarderSTMin[region_id - 1];
-            if (region_id == 0 && msg_count <= 10) {  // Monitor-0打印前10条以调查间隔问题
-                std::cout << "[Monitor-" << region_id << " DEBUG] seq=" << msg.sequence_id
-                         << ", recv_time=" << recv_timestamp
-                         << ", last_time=" << last_receive_time
-                         << ", interval=" << (interval_us / 1000.0) << "ms"
-                         << ", Upstream-STMin=" << upstream_stmin << "ms" << std::endl;
-            } else if (region_id != 0 && msg_count <= 5) {
-                std::cout << "[Monitor-" << region_id << " DEBUG] seq=" << msg.sequence_id
-                         << ", recv_time=" << recv_timestamp
-                         << ", last_time=" << last_receive_time
-                         << ", interval=" << interval_us << "us"
-                         << ", Upstream-STMin=" << upstream_stmin << "ms" << std::endl;
             }
             
             last_receive_time = recv_timestamp;

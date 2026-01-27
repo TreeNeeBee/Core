@@ -79,11 +79,6 @@ namespace ipc
             chunk_index = index;
             payload_size_ = payload_size;
 
-            #if defined( LIGHTAP_IPC_MODE_SHRINK )
-                // SHRINK mode: validate size, make sure header + payload fits in cache line
-                DEF_LAP_STATIC_ASSERT_CACHELINE_MATCH( sizeof( ChunkHeader ) + payload_size_, kCacheLineSize );
-            #endif
-
             state.store( static_cast< UInt8 >( ChunkState::kFree ), std::memory_order_release );
             ref_count.store( 0, std::memory_order_release) ;
             next_free_index.store( kInvalidChunkIndex, std::memory_order_release );        
@@ -121,8 +116,8 @@ namespace ipc
         }
     };
     
-    static_assert( sizeof( ChunkHeader ) == 16, 
-                  "ChunkHeader must be exactly 16 bytes");
+    static_assert( sizeof( ChunkHeader ) <= 16, 
+                  "ChunkHeader must be less than 16 bytes");
     
 }  // namespace ipc
 }  // namespace core

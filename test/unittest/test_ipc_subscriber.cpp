@@ -7,7 +7,6 @@
 #include <gtest/gtest.h>
 #include "ipc/Subscriber.hpp"
 #include "ipc/Publisher.hpp"
-#include "ipc/IPCConfig.hpp"
 #include "CInitialization.hpp"
 #include <cstring>
 #include <thread>
@@ -186,13 +185,8 @@ TEST_F(SubscriberTest, ReceiveWithLambda)
 
 TEST_F(SubscriberTest, ModeSpecificLimits)
 {
-    #if defined(LIGHTAP_IPC_MODE_SHRINK)
-        const UInt64 chunk_size = 16;
-    #elif defined(LIGHTAP_IPC_MODE_NORMAL)
-        const UInt64 chunk_size = 1024;
-    #else // EXTEND
-        const UInt64 chunk_size = 2048;
-    #endif
+    // 使用标准配置测试
+    const UInt64 chunk_size = 1024;
     
     SubscriberConfig config;
     config.chunk_size = chunk_size;
@@ -358,13 +352,8 @@ TEST_F(SubscriberTest, MultipleSubscribers)
     // Create multiple subscribers
     std::vector<Subscriber> subscribers;
     
-    #if defined(LIGHTAP_IPC_MODE_SHRINK)
-        const int sub_count = 2;
-    #elif defined(LIGHTAP_IPC_MODE_NORMAL)
-        const int sub_count = 5;
-    #else // EXTEND
-        const int sub_count = 10;
-    #endif
+    // 使用标准配置测试
+    const int sub_count = 5;
     
     for (int i = 0; i < sub_count; ++i) {
         SubscriberConfig sub_config;

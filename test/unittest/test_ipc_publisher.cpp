@@ -6,7 +6,6 @@
 
 #include <gtest/gtest.h>
 #include "ipc/Publisher.hpp"
-#include "ipc/IPCConfig.hpp"
 #include "CInitialization.hpp"
 #include <cstring>
 
@@ -137,16 +136,9 @@ TEST_F(PublisherTest, ModeSpecificConfiguration)
 {
     PublisherConfig config;
     
-    #if defined(LIGHTAP_IPC_MODE_SHRINK)
-        config.chunk_size = 16;
-        config.max_chunks = 64;
-    #elif defined(LIGHTAP_IPC_MODE_NORMAL)
-        config.chunk_size = 1024;
-        config.max_chunks = 128;
-    #else // EXTEND
-        config.chunk_size = 2048;
-        config.max_chunks = 256;
-    #endif
+    // 使用标准配置测试
+    config.chunk_size = 1024;
+    config.max_chunks = 128;
     
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());

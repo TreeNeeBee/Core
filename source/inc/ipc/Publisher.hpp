@@ -14,7 +14,7 @@
 #include "Sample.hpp"
 #include "SharedMemoryManager.hpp"
 #include "ChunkPoolAllocator.hpp"
-#include "SubscriberRegistry.hpp"
+#include "ChannelRegistry.hpp"
 #include "IPCEventHooks.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
@@ -32,7 +32,7 @@ namespace ipc
      */
     struct PublisherConfig
     {
-        UInt32 max_chunks       = kDefaultMaxChunks;            ///< Maximum chunks in pool
+        UInt32 max_chunks       = kDefaultChunks;            ///< Maximum chunks in pool
         UInt32 chunk_size       = 0;                            ///< Chunk size (payload)
         UInt64 loan_timeout     = 100000000;                    ///< Loan timeout (ns), 0 means no wait
         UInt64 publish_timeout  = 100000000;                    ///< Publish timeout (ns), 0 means no wait
@@ -204,7 +204,7 @@ namespace ipc
             , event_hooks_(nullptr)
         {
             // Initialize last_send_ to epoch (far past) to ensure first send is not skipped
-            for ( UInt32 i = 0; i < kMaxSubscribers; ++i ) {
+            for ( UInt32 i = 0; i < kMaxChannels; ++i ) {
                 last_send_[i] = SteadyClock::time_point{};
             }
         }
@@ -215,7 +215,7 @@ namespace ipc
         UniqueHandle< SharedMemoryManager > shm_;            ///< Shared memory manager
         UniqueHandle< ChunkPoolAllocator > allocator_;       ///< Chunk allocator
         SharedHandle< IPCEventHooks > event_hooks_;          ///< Event hooks for monitoring
-        SteadyClock::time_point last_send_[kMaxSubscribers]; ///< Last send timestamps per subscriber
+        SteadyClock::time_point last_send_[kMaxChannels]; ///< Last send timestamps per subscriber
     };
     
 }  // namespace ipc

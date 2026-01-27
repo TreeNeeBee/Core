@@ -143,7 +143,7 @@ auto publisher = Publisher<SensorData>::Create(
 auto subscriber = Subscriber<SensorData>::Create(
     "/dev/shm/lightap_ipc_sensor_data",
     SubscriberConfig{
-        .queue_capacity = 256  // 每个 Subscriber 队列容量，默认 256
+        .channel_capacity = 256  // 每个 Subscriber 队列容量，默认 256
     }
 ).Value();
 
@@ -217,17 +217,17 @@ cmake -DLIGHTAP_IPC_MODE_EXTEND=ON ..
 #ifdef LIGHTAP_IPC_MODE_SHRINK
     constexpr UInt64 kShmAlignment = 4 * 1024;        // 4KB对齐
     constexpr UInt32 kDefaultMaxSubscribers = 8;
-    constexpr UInt32 kDefaultMaxChunks = 4;
+    constexpr UInt32 kDefaultChunks = 4;
     constexpr UInt32 kDefaultQueueCapacity = 16;
 #elif defined(LIGHTAP_IPC_MODE_EXTEND)
     constexpr UInt64 kShmAlignment = 2 * 1024 * 1024; // 2MB对齐
     constexpr UInt32 kDefaultMaxSubscribers = 128;
-    constexpr UInt32 kDefaultMaxChunks = 64;
+    constexpr UInt32 kDefaultChunks = 64;
     constexpr UInt32 kDefaultQueueCapacity = 1024;
 #else  // NORMAL mode (default)
     constexpr UInt64 kShmAlignment = 2 * 1024 * 1024; // 2MB对齐
     constexpr UInt32 kDefaultMaxSubscribers = 32;
-    constexpr UInt32 kDefaultMaxChunks = 16;
+    constexpr UInt32 kDefaultChunks = 16;
     constexpr UInt32 kDefaultQueueCapacity = 256;
 #endif
 ```
@@ -270,7 +270,7 @@ auto publisher = Publisher::Create("/cam0_stream", pub_config).Value();
 
 // 方式2: Subscriber先启动（也会创建共享内存）
 SubscriberConfig sub_config;
-sub_config.queue_capacity = 256;     // NORMAL模式默认值
+sub_config.channel_capacity = 256;     // NORMAL模式默认值
 
 auto subscriber = Subscriber::Create("/cam0_stream", sub_config).Value();
 
@@ -319,7 +319,7 @@ UInt64 CalculateTotalSize(const PublisherConfig& config) {
 
 计算:
 - ControlBlock:       128KB
-- SubscriberQueue[32]: 256KB (32×8KB)
+- ChannelQueue[32]: 256KB (32×8KB)
 - Reserved:           128KB
 - ChunkHeaders[16]:   2KB (16×128B)
 - Payloads[16]:       84.8MB (16×5.3MB)
@@ -333,7 +333,7 @@ UInt64 CalculateTotalSize(const PublisherConfig& config) {
 
 计算:
 - ControlBlock:       128KB
-- SubscriberQueue[32]: 256KB
+- ChannelQueue[32]: 256KB
 - Reserved:           128KB
 - ChunkHeaders[256]:  32KB (256×128B)
 - Payloads[256]:      1MB (256×4KB)
@@ -374,7 +374,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 // 示例1：配置 512 个 Chunk，每个 4KB
 // ┌───────────────────────────────────────────────────────────┐
 // │ ControlBlock:          128KB (固定，实际用 ~2KB)          │
-// │ SubscriberQueue[100]:  800KB (固定，100 × 8KB)           │
+// │ ChannelQueue[100]:  800KB (固定，100 × 8KB)           │
 // │ Reserved Space:        96KB (预留空间，凑足1MB)          │
 // │ ChunkPool:             2.06MB (动态)                     │
 // │   ├─ ChunkHeader[512]: 64KB (512 × 128B)                │
@@ -387,7 +387,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 // 示例2：配置 1024 个 Chunk，每个 8KB
 // ┌───────────────────────────────────────────────────────────┐
 // │ ControlBlock:          128KB (固定)                      │
-// │ SubscriberQueue[100]:  800KB (固定)                      │
+// │ ChannelQueue[100]:  800KB (固定)                      │
 // │ Reserved Space:        96KB (预留空间)                   │
 // │ ChunkPool:             8.12MB (动态)                     │
 // │   ├─ ChunkHeader[1024]: 128KB (1024 × 128B)             │
@@ -399,7 +399,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 //
 // 内存布局偏移量（平衡优化布局）：
 //   ControlBlock:         offset = 0x000000 (0 bytes)
-//   SubscriberQueue[100]: offset = 0x020000 (128KB)
+//   ChannelQueue[100]: offset = 0x020000 (128KB)
 //   Reserved Space:       offset = 0x0E8000 (128KB + 800KB)
 //   ChunkPool:            offset = 0x100000 (1MB)
 //
@@ -439,15 +439,15 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 
 **⚠️ 重要设计变更（2026-01-07）**:
 
-**SubscriberRegistry 位置调整**：从独立结构体迁移到 ControlBlock 内部，确保跨进程可见性。
+**ChannelRegistry 位置调整**：从独立结构体迁移到 ControlBlock 内部，确保跨进程可见性。
 
 **功能完整性验证**：
 
 | 功能 | 修改前 | 修改后 | 状态 |
 |------|--------|--------|------|
 | **存储位置** | 独立结构体 | ControlBlock 嵌入 | ✅ 共享内存 |
-| **Publisher读取** | `registry.GetSnapshot()` | `GetSubscriberSnapshot(ctrl)` | ✅ 无锁读取 |
-| **Subscriber注册** | `registry.Register()` | `RegisterSubscriber(ctrl, idx)` | ✅ CAS操作 |
+| **Publisher读取** | `registry.GetSnapshot()` | `GetChannelSnapshot(ctrl)` | ✅ 无锁读取 |
+| **Subscriber注册** | `registry.Register()` | `RegisterChannel(ctrl, idx)` | ✅ CAS操作 |
 | **Subscriber注销** | `registry.Unregister()` | `UnregisterSubscriber(ctrl, idx)` | ✅ CAS操作 |
 | **双缓冲快照** | `snapshots[2]` | `ctrl->snapshots[2]` | ✅ 已保留 |
 | **版本控制** | `version` 字段 | `ctrl->snapshots[i].version` | ✅ 已保留 |
@@ -460,7 +460,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 |---------|--------------|-------------|---------|
 | **ChunkPool** | 固定大小池，索引寻址 | ✅ 完全一致 | 共享内存预分配，chunk_index 跨进程传递 |
 | **Subscriber Queue** | 每个Sub独立队列 | ✅ 一致 | 动态分配（new），默认容量 256 |
-| **SubscriberRegistry** | 共享内存中 | ✅ 完全一致 | **已修正**：现在在 ControlBlock 中 |
+| **ChannelRegistry** | 共享内存中 | ✅ 完全一致 | **已修正**：现在在 ControlBlock 中 |
 | **队列满策略** | kOverwrite（默认） | ✅ 完全一致 | Ring Buffer 模式，支持 kWait/kBlock |
 | **地址传递** | Offset-based | ✅ 完全一致 | chunk_index 跨进程传递 |
 | **Free-List** | 索引链表 | ✅ 完全一致 | next_free_index (UInt32) |
@@ -475,7 +475,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 | 区域 | 偏移量 | 大小 | 实际使用 | 预留空间 | 用途 |
 |------|--------|------|---------|---------|------|
 | **ControlBlock** | 0x000000 | 128KB 固定 | ~2KB | ~126KB | 元数据、配置、统计、Registry |
-| **SubscriberQueue[100]** | 0x020000 | 800KB 固定 | ~4.5KB/队列 | ~3.5KB/队列 | SPSC消息队列 (100队列) |
+| **ChannelQueue[100]** | 0x020000 | 800KB 固定 | ~4.5KB/队列 | ~3.5KB/队列 | SPSC消息队列 (100队列) |
 | **Reserved Space** | 0x0E8000 | 96KB 固定 | 0 | 96KB | 全局预留（凑足1MB） |
 | **ChunkPool** | 0x100000 | 动态计算 | 100% | 0 | Chunk头部 + Payload |
 | **总计（典型）** | - | ~3.06MB | ~2.51MB | ~576KB | 512×4KB配置 |
@@ -491,7 +491,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 | `total_messages_sent` | `atomic<UInt64>` | 累计发送消息数量 | 吞吐量统计 |
 | `total_loan_failures` | `atomic<UInt64>` | 累计Loan失败次数 | 异常监控 |
 
-**SubscriberQueue 统计字段（性能监控）：**
+**ChannelQueue 统计字段（性能监控）：**
 
 | 字段名 | 类型 | 语义 | 用途 |
 |--------|------|------|------|
@@ -517,7 +517,7 @@ UInt64 CalculateTotalSize(const ServiceConfig& config) {
 ```cpp
 // 总共享内存大小
 UInt64 total_size = 128KB (ControlBlock)
-                  + 800KB (SubscriberQueue[100])
+                  + 800KB (ChannelQueue[100])
                   + 96KB (Reserved Space)
                   + (128B + chunk_size) * max_chunks;
 
@@ -569,7 +569,7 @@ struct SharedMemorySegment {
         // --- 服务配置元数据 ---
         alignas(64) UInt32  max_chunks;                   // 最大块数量
         UInt32              max_subscriber_queues;        // 最大 Subscriber 队列数（默认 100）
-        UInt32              queue_capacity;               // 每个队列容量（默认 256，最大 1024）
+        UInt32              channel_capacity;               // 每个队列容量（默认 256，最大 1024）
         UInt32              _padding2;                    // 对齐填充
         UInt64              chunk_size;                   // 块大小（含Header）
         UInt64              chunk_alignment;              // 对齐要求
@@ -595,7 +595,7 @@ struct SharedMemorySegment {
         std::atomic<UInt64> total_loan_failures;              // 累计 Loan 失败次数（监控）
         UInt32              _padding5[6];                      // 缓存行对齐填充
         
-        // --- SubscriberRegistry（无锁快照机制）---
+        // --- ChannelRegistry（无锁快照机制）---
         // 快照结构：存储当前活跃的 Subscriber 队列索引列表
         struct Snapshot {
             UInt32 count;                          // 当前 Subscriber 数量
@@ -610,7 +610,7 @@ struct SharedMemorySegment {
         };
         
         // 双缓冲快照（避免读写冲突）
-        alignas(64) std::atomic<UInt32> active_snapshot_index; // 活跃快照索引（0 或 1）
+        alignas(64) std::atomic<UInt32> active_index; // 活跃快照索引（0 或 1）
         std::atomic<UInt32> write_index;                       // 写入缓冲区索引（0 或 1）
         UInt32              _padding6[14];                      // 缓存行对齐填充
         
@@ -623,13 +623,13 @@ struct SharedMemorySegment {
     };
     ControlBlock control;
     
-    //=== 区域2: SubscriberQueue 数组（固定 800KB）===//
+    //=== 区域2: ChannelQueue 数组（固定 800KB）===//
     // 偏移量：0x020000 - 0x0E7FFF（819,200 字节）
     // 每个队列：8KB（100 队列 × 8KB = 800KB）
-    // 每个 SubscriberQueue 是一个 SPSC（单生产者单消费者）队列
+    // 每个 ChannelQueue 是一个 SPSC（单生产者单消费者）队列
     // - 单生产者：所有 Publisher 协作向同一队列写入（需要同步）
     // - 单消费者：对应的 Subscriber 独占读取
-    struct alignas(4096) SubscriberQueue {  // 4KB 页对齐
+    struct alignas(4096) ChannelQueue {  // 4KB 页对齐
         // --- 基础状态（缓存行对齐）---
         alignas(64) std::atomic<bool>   active;            // 是否活跃
         UInt8                            _padding1[3];      // bool 对齐填充
@@ -668,7 +668,7 @@ struct SharedMemorySegment {
         // 预留：8KB - 4.5KB = ~3.5KB
         UInt8 reserved[8192 - 4608];  // 预留空间，确保单个队列为 8KB
     };
-    SubscriberQueue subscriber_queues[100];  // 100 队列 × 8KB = 800KB
+    ChannelQueue subscriber_queues[100];  // 100 队列 × 8KB = 800KB
     
     //=== 预留空间区域（96KB）===//
     // 偏移量：0x0E8000 - 0x0FFFFF（98,304 字节）
@@ -710,23 +710,23 @@ struct SharedMemorySegment {
     // UInt8 payloads[max_chunks][chunk_size];
 };
 
-//=== SubscriberRegistry 访问接口 ===//
-// 注意：SubscriberRegistry 已集成到 ControlBlock 中（见上方 ControlBlock 定义）
+//=== ChannelRegistry 访问接口 ===//
+// 注意：ChannelRegistry 已集成到 ControlBlock 中（见上方 ControlBlock 定义）
 // 这样确保 Publisher 和 Subscriber 进程都能访问同一个 Registry
 //
 // 使用方式：
 // - Publisher: 通过 ControlBlock 读取快照 → 遍历 Subscriber 队列
 // - Subscriber: 通过 ControlBlock 注册/注销自己的队列索引
 //
-// 以下是 SubscriberRegistry 的操作接口（由 ControlBlock 提供）：
+// 以下是 ChannelRegistry 的操作接口（由 ControlBlock 提供）：
 
 /**
  * @brief 无锁获取 Subscriber 快照（Publisher 调用）
  * @note 使用 memory_order_acquire 确保看到最新的注册结果
  */
-inline ControlBlock::Snapshot GetSubscriberSnapshot(ControlBlock* ctrl) noexcept {
+inline ControlBlock::Snapshot GetChannelSnapshot(ControlBlock* ctrl) noexcept {
     // 读取活跃快照索引
-    UInt32 active_idx = ctrl->active_snapshot_index.load(std::memory_order_acquire);
+    UInt32 active_idx = ctrl->active_index.load(std::memory_order_acquire);
     
     // 拷贝快照数据（栈上拷贝，非常快）
     ControlBlock::Snapshot result = ctrl->snapshots[active_idx];
@@ -744,7 +744,7 @@ inline ControlBlock::Snapshot GetSubscriberSnapshot(ControlBlock* ctrl) noexcept
  * @return true 注册成功，false 已满或已存在
  * @note Subscriber 在连接时调用，使用 CAS 确保线程安全
  */
-inline bool RegisterSubscriber(ControlBlock* ctrl, UInt32 queue_index) noexcept {
+inline bool RegisterChannel(ControlBlock* ctrl, UInt32 queue_index) noexcept {
     // 获取当前写缓冲区索引
     UInt32 current_write = ctrl->write_index.load(std::memory_order_acquire);
     ControlBlock::Snapshot* write_snap = &ctrl->snapshots[current_write];
@@ -771,7 +771,7 @@ inline bool RegisterSubscriber(ControlBlock* ctrl, UInt32 queue_index) noexcept 
     
     // 切换活跃快照索引（CAS 操作）
     UInt32 new_active = current_write;
-    ctrl->active_snapshot_index.store(new_active, std::memory_order_release);
+    ctrl->active_index.store(new_active, std::memory_order_release);
     
     // 切换写缓冲区索引
     UInt32 new_write = 1 - current_write;
@@ -820,7 +820,7 @@ inline bool UnregisterSubscriber(ControlBlock* ctrl, UInt32 queue_index) noexcep
     std::atomic_thread_fence(std::memory_order_release);
     
     // 切换活跃快照
-    ctrl->active_snapshot_index.store(current_write, std::memory_order_release);
+    ctrl->active_index.store(current_write, std::memory_order_release);
     
     // 切换写缓冲区
     UInt32 new_write = 1 - current_write;
@@ -835,8 +835,8 @@ inline bool UnregisterSubscriber(ControlBlock* ctrl, UInt32 queue_index) noexcep
 
 //=== Snapshot 初始化辅助函数 ===//
 inline void InitializeControlBlockRegistry(ControlBlock* ctrl) noexcept {
-    // 初始化 SubscriberRegistry 相关字段
-    ctrl->active_snapshot_index.store(0, std::memory_order_release);
+    // 初始化 ChannelRegistry 相关字段
+    ctrl->active_index.store(0, std::memory_order_release);
     ctrl->write_index.store(0, std::memory_order_release);
     
     // 初始化两个快照
@@ -878,7 +878,7 @@ struct PublisherState {
     Duration          loan_timeout;            // Loan 等待超时（kWait/kBlock 策略使用）
     
     // 连接的 Subscriber 列表（无锁快照机制，参考 iceoryx2）
-    SubscriberRegistry subscriber_registry;    // 替代 vector + mutex
+    ChannelRegistry subscriber_registry;    // 替代 vector + mutex
 };
 ```
 
@@ -1075,15 +1075,15 @@ private:
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │ 头部元数据 (64B 对齐)：                               │  │
 │  │ - magic_number, version, state                        │  │
-│  │ - max_chunks, max_subscriber_queues, queue_capacity   │  │
+│  │ - max_chunks, max_subscriber_queues, channel_capacity   │  │
 │  │ - chunk_size, chunk_alignment                         │  │
 │  ├───────────────────────────────────────────────────────┤  │
 │  │ ChunkPool 管理 (64B 对齐)：                            │  │
 │  │ - free_list_head, allocated_count                     │  │
 │  │ - loan_waitset (HAS_FREE_CHUNK 事件标志)              │  │
 │  ├───────────────────────────────────────────────────────┤  │
-│  │ SubscriberRegistry (64B 对齐)：                       │  │
-│  │ - active_snapshot_index, write_index                  │  │
+│  │ ChannelRegistry (64B 对齐)：                       │  │
+│  │ - active_index, write_index                  │  │
 │  │ - snapshots[2]:                                       │  │
 │  │   ├─ Snapshot[0]: count, version, queue_indices[100] │  │
 │  │   └─ Snapshot[1]: count, version, queue_indices[100] │  │
@@ -1097,7 +1097,7 @@ private:
 │  │ 预留空间：~126KB (用于未来扩展)                       │  │
 │  └───────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
-│  区域2: SubscriberQueue[100] (固定 800KB = 0xC8000 字节)   │
+│  区域2: ChannelQueue[100] (固定 800KB = 0xC8000 字节)   │
 │  偏移量: 0x020000 - 0x0E7FFF                                │
 │  每个队列: 8KB (4KB 页对齐)                                 │
 │  ┌───────────────────────────────────────────────────────┐  │
@@ -1159,13 +1159,13 @@ private:
 
 内存布局计算示例（典型配置）：
 ┌──────────────────────────────────────────────────────────┐
-│ 配置: max_chunks=512, chunk_size=4KB, max_subscribers=100│
+│ 配置: max_chunks=512, chunk_size=4KB, max_channels=100│
 ├──────────────────────────────────────────────────────────┤
 │ 区域1 - ControlBlock:         128KB (0x20000 bytes)      │
 │   ├─ 实际使用:                ~2KB                       │
 │   └─ 预留空间:                ~126KB                     │
 ├──────────────────────────────────────────────────────────┤
-│ 区域2 - SubscriberQueue[100]: 800KB (0xC8000 bytes)     │
+│ 区域2 - ChannelQueue[100]: 800KB (0xC8000 bytes)     │
 │   ├─ 单队列大小:              8KB (0x2000 bytes)         │
 │   ├─ 实际使用/队列:           ~4.5KB                     │
 │   └─ 预留空间/队列:           ~3.5KB                     │
@@ -1188,37 +1188,37 @@ private:
 ┌─────────────────────────────────────────────────────────────┐
 │  Publisher 进程：                                            │
 │  ├─ ControlBlock* control_block_ (指向 0x000000)            │
-│  ├─ SubscriberQueue* subscriber_queues_ (指向 0x020000)     │
+│  ├─ ChannelQueue* subscriber_queues_ (指向 0x020000)     │
 │  ├─ ChunkHeader* chunks_ (指向 0x100000)                    │
-│  ├─ 通过 GetSubscriberSnapshot(control_block_) 读取快照     │
+│  ├─ 通过 GetChannelSnapshot(control_block_) 读取快照     │
 │  └─ SharedMemoryManager* (管理共享内存映射)                │
 ├─────────────────────────────────────────────────────────────┤
 │  Subscriber 进程：                                           │
 │  ├─ ControlBlock* control_block_ (指向 0x000000)            │
-│  ├─ SubscriberQueue* my_queue_ (指向 0x020000 + idx*8KB)   │
+│  ├─ ChannelQueue* my_queue_ (指向 0x020000 + idx*8KB)   │
 │  ├─ queue_index_ (本地记录自己在共享内存中的队列索引)        │
-│  ├─ 通过 RegisterSubscriber(control_block_, idx) 注册       │
+│  ├─ 通过 RegisterChannel(control_block_, idx) 注册       │
 │  └─ SharedMemoryManager* (管理共享内存映射)                │
 └─────────────────────────────────────────────────────────────┘
 
 关键优化特性：
 1. **固定大小分区设计（平衡优化版）**：
    - ControlBlock: 固定 128KB (实际用2KB，预留126KB)
-   - SubscriberQueue: 固定 800KB (100队列 × 8KB)
+   - ChannelQueue: 固定 800KB (100队列 × 8KB)
    - Reserved Space: 固定 96KB (未来扩展，凑足1MB)
    - ChunkPool: 从 1MB 偏移开始，大小动态计算
    - 优势: 简化地址计算，避免内存碎片，队列容量充足
 
 2. **对齐优化**：
    - ControlBlock: 4KB 页对齐 (支持大页)
-   - SubscriberQueue: 4KB 页对齐 (每个队列独立页)
+   - ChannelQueue: 4KB 页对齐 (每个队列独立页)
    - ChunkHeader: 128B 对齐 (双缓存行)
    - 所有关键字段: 64B 缓存行对齐
    - 优势: 避免伪共享，提升缓存命中率
 
 3. **预留空间设计（平衡优化）**：
    - ControlBlock: ~126KB 预留 (扩展元数据、更多Registry)
-   - SubscriberQueue: 每队列 ~3.5KB 预留 (扩展统计、新特性)
+   - ChannelQueue: 每队列 ~3.5KB 预留 (扩展统计、新特性)
    - Reserved Space: 96KB 全局预留 (未来新增队列或其他功能)
    - Queue buffer: 1024容量预留，默认用256 (动态扩容)
    - 优势: 无需改变内存布局即可扩展功能
@@ -1794,7 +1794,7 @@ pub.Send([](void* chunk_ptr, size_t chunk_size) -> size_t {
 
 // 5. 创建Subscriber
 SubscriberConfig sub_config;
-sub_config.queue_capacity = 256;  // NORMAL模式默认值
+sub_config.channel_capacity = 256;  // NORMAL模式默认值
 
 auto sub = Subscriber::Create("/sensor_data", sub_config).Value();
 
@@ -2260,7 +2260,7 @@ if (result.HasValue()) {
 
 // === Subscriber 端使用 ===
 SubscriberConfig sub_config;
-sub_config.queue_capacity = 256;
+sub_config.channel_capacity = 256;
 
 auto subscriber = Subscriber<UInt8>::Create("my_service", sub_config).Value();
 
@@ -3244,7 +3244,7 @@ RingBufferBlock<RequestHandle, 64> request_queue;  // Request-Response
    // 共享内存段中预分配固定数量的 Subscriber Queue
    struct SharedMemorySegment {
        // ...
-       SubscriberQueue subscriber_queues[MAX_SUBSCRIBER_QUEUES];  // 例如 256
+       ChannelQueue subscriber_queues[MAX_SUBSCRIBER_QUEUES];  // 例如 256
    };
    
    // Subscriber 连接时分配一个空闲队列槽位
@@ -3660,14 +3660,14 @@ enum class EnqueueResult {
 
 **WaitSet 事件机制初始化（iceoryx2 风格）：**
 
-SubscriberQueue 在共享内存中包含 event_flags 原子标志，用于 lock-free 等待/唤醒机制：
+ChannelQueue 在共享内存中包含 event_flags 原子标志，用于 lock-free 等待/唤醒机制：
 
 ```cpp
 /**
- * @brief 初始化 SubscriberQueue 的 WaitSet 机制
+ * @brief 初始化 ChannelQueue 的 WaitSet 机制
  * @note 必须在共享内存创建后、使用前调用
  */
-static void InitSubscriberQueue(SubscriberQueue* queue) noexcept {
+static void InitSubscriberQueue(ChannelQueue* queue) noexcept {
     // 初始化事件标志（初始状态：有空间，无数据）
     queue->event_flags.store(EventFlag::HAS_SPACE, std::memory_order_release);
     
@@ -3679,10 +3679,10 @@ static void InitSubscriberQueue(SubscriberQueue* queue) noexcept {
 }
 
 /**
- * @brief 销毁 SubscriberQueue
+ * @brief 销毁 ChannelQueue
  * @note WaitSet 机制不需要显式清理（原子变量自动清理）
  */
-static void DestroySubscriberQueue(SubscriberQueue* queue) noexcept {
+static void DestroySubscriberQueue(ChannelQueue* queue) noexcept {
     // WaitSet 机制无需清理，仅标记为非活跃
     queue->active.store(false, std::memory_order_release);
 }
@@ -3703,12 +3703,12 @@ static void InitControlBlock(ControlBlock* ctrl) noexcept {
 }
 ```
 
-**带策略的入队实现（Publisher 写入 SubscriberQueue）：**
+**带策略的入队实现（Publisher 写入 ChannelQueue）：**
 
 ```cpp
 /**
  * @brief 带策略的入队实现（参考 iceoryx2）
- * @param queue         目标 SubscriberQueue（共享内存）
+ * @param queue         目标 ChannelQueue（共享内存）
  * @param chunk_index   要入队的 chunk 索引
  * @param shm_mgr       SharedMemoryManager 指针
  * @param allocator     ChunkPoolAllocator 指针
@@ -3717,7 +3717,7 @@ static void InitControlBlock(ControlBlock* ctrl) noexcept {
  * @return EnqueueResult 入队结果
  */
 EnqueueResult EnqueueWithPolicy(
-        SubscriberQueue* queue,
+        ChannelQueue* queue,
         UInt32 chunk_index, 
         SharedMemoryManager* shm_mgr,
         ChunkPoolAllocator* allocator,
@@ -4294,8 +4294,8 @@ namespace ara::core::ipc {
  * @brief WaitSet 事件标志位（存储在共享内存 event_flags）
  */
 enum EventFlag : UInt32 {
-    HAS_DATA        = 0x01,  // bit 0: 队列有数据（SubscriberQueue）
-    HAS_SPACE       = 0x02,  // bit 1: 队列有空间（SubscriberQueue）
+    HAS_DATA        = 0x01,  // bit 0: 队列有数据（ChannelQueue）
+    HAS_SPACE       = 0x02,  // bit 1: 队列有空间（ChannelQueue）
     HAS_FREE_CHUNK  = 0x04,  // bit 2: ChunkPool 有可用块（ControlBlock）
     // bit 3-31: 保留扩展
 };
@@ -4497,7 +4497,7 @@ public:
  * @brief kBlock 策略：使用 WaitSet 高效等待队列有空间
  */
 EnqueueResult EnqueueWithPolicy_kBlock(
-        SubscriberQueue* queue,
+        ChannelQueue* queue,
         UInt32 chunk_index,
         const Duration& timeout) noexcept {
     
@@ -4846,7 +4846,7 @@ for (auto event_id : events) {
     │   │   ├─► version = 1
     │   │   ├─► state = kInitializing
     │   │   ├─► max_publishers = 8
-    │   │   ├─► max_subscribers = 32
+    │   │   ├─► max_channels = 32
     │   │   ├─► max_chunks = 512
     │   │   ├─► chunk_size = 1024
     │   │   ├─► chunk_alignment = 64
@@ -4903,7 +4903,7 @@ for (auto event_id : events) {
     │         "payload_type": "PayloadType",
     │         "payload_size": 1024,
     │         "max_publishers": 8,
-    │         "max_subscribers": 32,
+    │         "max_channels": 32,
     │         "max_chunks": 512,
     │         "shm_path": "/lightap_service_xxx",
     │         "created_at": "2026-01-06T10:00:00Z"
@@ -5081,7 +5081,7 @@ for (auto event_id : events) {
     │   │   │
     │   │   └─► 若所有队列槽位已满，返回 Err(CoreErrc::kIPCMaxSubscribersReached)
     │   │
-    │   ├─► 初始化 SubscriberQueue（共享内存中）
+    │   ├─► 初始化 ChannelQueue（共享内存中）
     │   │   ├─► subscriber_queues[queue_index].subscriber_id = GenerateSubId()
     │   │   ├─► subscriber_queues[queue_index].active = true
     │   │   ├─► subscriber_queues[queue_index].msg_queue.head_offset = kInvalidOffset
@@ -5254,7 +5254,7 @@ for (auto event_id : events) {
 │              Subscriber 完整退出流程（三步骤）                   │
 └─────────────────────────────────────────────────────────────────┘
 
-[步骤1] 从 SubscriberRegistry 注销（停止接收新消息）
+[步骤1] 从 ChannelRegistry 注销（停止接收新消息）
     │
     ├─► subscriber.Disconnect() 调用
     │   │
@@ -5272,7 +5272,7 @@ for (auto event_id : events) {
     │   │   │   └─► write_snap->version++（版本号递增）
     │   │   │
     │   │   ├─► 切换活跃快照（CAS 操作）
-    │   │   │   └─► active_snapshot_index.store(current_write, release)
+    │   │   │   └─► active_index.store(current_write, release)
     │   │   │
     │   │   └─► 更新 Subscriber 计数
     │   │       └─► subscriber_count.fetch_sub(1, release)
@@ -5339,7 +5339,7 @@ public:
             return Ok();  // 已经断开
         }
         
-        // ====== 步骤1: 从 SubscriberRegistry 注销 ======
+        // ====== 步骤1: 从 ChannelRegistry 注销 ======
         bool unregister_success = UnregisterSubscriber(
             control_block_, 
             queue_index_
@@ -6081,7 +6081,7 @@ void Publisher::Send() {
 
 ```cpp
 // ✅ iceoryx2 实现：无锁快照机制
-struct SubscriberRegistry {
+struct ChannelRegistry {
     // 双缓冲快照：读写分离
     Snapshot snapshots[2];
     std::atomic<Snapshot*> active_snapshot;  // 读侧：无锁
@@ -6106,7 +6106,7 @@ struct SubscriberRegistry {
 
 **性能对比：**
 
-| 操作 | mutex + vector | SubscriberRegistry | 提升 |
+| 操作 | mutex + vector | ChannelRegistry | 提升 |
 |------|----------------|-------------------|------|
 | **Publisher::Send() 获取列表** | ~125ns (lock + copy) | ~50ns (无锁快照) | **2.5x** |
 | **Subscriber 注册** | ~150ns (lock + push_back) | ~200ns (CAS + 双缓冲) | 0.75x (可接受) |
@@ -6207,7 +6207,7 @@ OS: Linux 6.1.0
 IPC模式: NORMAL
 - max_chunks = 16
 - chunk_size = 1920×720×4 = 5,529,600 bytes (~5.3MB)
-- queue_capacity = 64 (per Publisher)
+- channel_capacity = 64 (per Publisher)
 
 场景: 3个Camera Publisher + 1个Fusion Subscriber(3线程)
 STMin限流: 10ms (理论上限100 FPS)
@@ -6807,12 +6807,12 @@ public:
         
         // 📌 从共享内存 ControlBlock 读取 Subscriber 快照
         // ControlBlock 在共享内存中，所有进程都能访问
-        auto snapshot = GetSubscriberSnapshot(control_block_);
+        auto snapshot = GetChannelSnapshot(control_block_);
         
         // 广播到所有已注册的 Subscriber 队列
         for (UInt32 i = 0; i < snapshot.count; ++i) {
             UInt32 queue_idx = snapshot.queue_indices[i];
-            SubscriberQueue* queue = &subscriber_queues_[queue_idx];
+            ChannelQueue* queue = &subscriber_queues_[queue_idx];
             
             // 增加引用计数（每个 Subscriber 一份）
             chunk->ref_count.fetch_add(1, std::memory_order_release);
@@ -8112,8 +8112,8 @@ struct TestConfig {
     UInt32 max_chunks = 128;
     UInt64 chunk_size = 4096;
     UInt32 max_publishers = 8;
-    UInt32 max_subscribers = 16;
-    UInt32 queue_capacity = 32;
+    UInt32 max_channels = 16;
+    UInt32 channel_capacity = 32;
 };
 
 // 测试数据结构
@@ -8133,7 +8133,7 @@ int main_publisher(int argc, char** argv) {
     auto publisher = Publisher<TestPayload>::Create(
         kTestShmPath,
         PublisherConfig{
-            .max_subscribers = 16,
+            .max_channels = 16,
             .max_chunks = 128,
             .chunk_size = sizeof(TestPayload)
         }
@@ -8157,7 +8157,7 @@ int main_subscriber(int argc, char** argv) {
     auto subscriber = Subscriber<TestPayload>::Create(
         kTestShmPath,
         SubscriberConfig{
-            .queue_capacity = 32
+            .channel_capacity = 32
         }
     ).Value();
     
@@ -8271,7 +8271,7 @@ TEST(IPC_SPMC, MultipleSubscribers) {
     publisher.SendMessages(100);
     
     if (config.queue_policy == PublishPolicy::kOverwrite) {
-        EXPECT_EQ(subscribers[2].GetQueueSize(), config.queue_capacity);
+        EXPECT_EQ(subscribers[2].GetQueueSize(), config.channel_capacity);
     }
 }
 ```
@@ -8653,7 +8653,7 @@ cppcheck --addon=autosar --error-exitcode=1 source/
    ```cpp
    // 共享内存中预分配固定数量的队列槽位
    struct SharedMemorySegment {
-       SubscriberQueue subscriber_queues[256];  // 最多 256 个 Subscriber
+       ChannelQueue subscriber_queues[256];  // 最多 256 个 Subscriber
    };
    
    // Subscriber 创建时分配一个队列槽位

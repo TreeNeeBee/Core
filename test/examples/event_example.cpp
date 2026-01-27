@@ -33,14 +33,14 @@ int main() {
     config.event_name = "sensor_data_stream";
     config.payload_size = sizeof(SensorData);  // Fixed payload size
     config.max_chunks = 32;                    // Chunk pool capacity
-    config.max_subscribers = 4;                // Max concurrent subscribers
+    config.max_channels = 4;                // Max concurrent subscribers
     config.subscriber_queue_capacity = 16;     // Queue size per subscriber
     config.use_shm_for_queues = false;         // Use malloc for queue nodes
     
     std::cout << "Creating Event: " << config.event_name << "\n";
     std::cout << "  Payload size: " << config.payload_size << " bytes\n";
     std::cout << "  Max chunks: " << config.max_chunks << "\n";
-    std::cout << "  Max subscribers: " << config.max_subscribers << "\n\n";
+    std::cout << "  Max subscribers: " << config.max_channels << "\n\n";
     
     Event event(config);
     

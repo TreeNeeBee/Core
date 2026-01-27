@@ -77,7 +77,6 @@ namespace core
 
     #define DEF_LAP_STATIC_ASSERT( x, msg )         static_assert( x, msg )
 
-
     #define DEF_LAP_STATIC_ASSERT_CACHELINE( x ) \
         DEF_LAP_STATIC_ASSERT( sizeof( x ) % 64 == 0, "Size of " #x " must be multiple of cache line size (64 bytes)" )
 

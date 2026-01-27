@@ -8,7 +8,7 @@
 
 #include "ipc/Subscriber.hpp"
 #include "ipc/Message.hpp"
-#include "ipc/SubscriberRegistry.hpp"
+#include "ipc/ChannelRegistry.hpp"
 #include "ipc/WaitSetHelper.hpp"
 #include "CCoreErrorDomain.hpp"
 #include "CMacroDefine.hpp"
@@ -56,7 +56,7 @@ namespace ipc
         
         while ( true ) {
             // Allocate unique queue index from shared memory control block
-            auto subscriber_id_result = SubscriberRegistry::AllocateQueueIndex( ctrl );
+            auto subscriber_id_result = ChannelRegistry::RegisterChannel( ctrl );
             if ( DEF_LAP_IF_UNLIKELY( !subscriber_id_result ) ) {
                 if ( subscriber_id_result.Error() == CoreErrc::kIPCRetry ) {
                     // Retry allocation
@@ -69,7 +69,7 @@ namespace ipc
                 queue_index = subscriber_id_result.Value();
                 
                 // Get the allocated queue from shared memory
-                SubscriberQueue* queue = shm->GetSubscriberQueue( queue_index );
+                ChannelQueue* queue = shm->GetChannelQueue( queue_index );
                 if ( !queue ) {
                     return Result< Subscriber >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
                 }
@@ -94,14 +94,14 @@ namespace ipc
     Result< Sample > Subscriber::Receive( SubscribePolicy policy ) noexcept
     {
         // Get queue from shared memory
-        auto* queue = shm_->GetSubscriberQueue(subscriber_id_);
+        auto* queue = shm_->GetChannelQueue(subscriber_id_);
         if ( !queue ) {
             return Result< Sample >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
         }
         
         // Try to dequeue chunk index (SPSC consumer side)
-        UInt32 head = queue->head.load(std::memory_order_relaxed);
-        UInt32 tail = queue->tail.load(std::memory_order_acquire);
+        UInt16 head = queue->head.load(std::memory_order_relaxed);
+        UInt16 tail = queue->tail.load(std::memory_order_acquire);
         
         if ( head == tail ) {
             // Queue empty - handle based on policy
@@ -164,11 +164,13 @@ namespace ipc
         }
         
         // Dequeue chunk_index
-        UInt32* buffer = queue->GetBuffer();
-        UInt32 chunk_index = buffer[ head ];
+        auto buffer = queue->GetBuffer();
+        UInt16 chunk_index = buffer[head].chunk_index;
+        
+        // Chunk index read from queue
         
         // Update head (release semantics for producer visibility)
-        UInt32 next_head = ( head + 1 ) & ( queue->capacity - 1 );
+        UInt16 next_head = static_cast<UInt16>((head + 1) & (queue->capacity - 1));
         queue->head.store( next_head, std::memory_order_release );
 
         // Create Sample wrapper
@@ -209,7 +211,7 @@ namespace ipc
         
     Bool Subscriber::IsQueueEmpty() const noexcept
     {
-        auto* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        auto* queue = shm_->GetChannelQueue( subscriber_id_ );
         DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
         
         UInt32 head = queue->head.load( std::memory_order_acquire );
@@ -219,7 +221,7 @@ namespace ipc
     
     UInt32 Subscriber::GetQueueSize() const noexcept
     {
-        auto* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        auto* queue = shm_->GetChannelQueue( subscriber_id_ );
         DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
         
         UInt32 head = queue->head.load( std::memory_order_acquire );
@@ -236,7 +238,7 @@ namespace ipc
     {
         config_.STmin = stmin;
 
-        SubscriberQueue* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        ChannelQueue* queue = shm_->GetChannelQueue( subscriber_id_ );
         if ( queue ) {
             queue->STmin.store( stmin, std::memory_order_release );
         }
@@ -248,7 +250,7 @@ namespace ipc
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
         }
 
-        SubscriberRegistry::RegisterSubscriber( shm_->GetControlBlock(), subscriber_id_ );
+        ChannelRegistry::ActiveChannel( shm_.get(), subscriber_id_ );
 
         return {};
     }
@@ -258,13 +260,16 @@ namespace ipc
         if ( !shm_ || !shm_->GetControlBlock()->Validate() ) {
             return {};  // Already disconnected or not initialized
         }
+
+        // ====== Step 1: Deactivate channel ======
+        ChannelRegistry::DeactiveChannel( shm_.get(), subscriber_id_ );
         
-        // ====== Step 1: Unregister from SubscriberRegistry ======
-        SubscriberRegistry::UnregisterSubscriber( shm_->GetControlBlock(), subscriber_id_ );
+        // ====== Step 2: Unregister from ChannelRegistry ======
+        ChannelRegistry::UnregisterChannel( shm_->GetControlBlock(), subscriber_id_ );
         
-        // ====== Step 2: Consume remaining messages in queue ======
+        // ====== Step 3: Consume remaining messages in queue ======
         // This ensures ref_count is properly decremented
-        auto* queue = shm_->GetSubscriberQueue( subscriber_id_ );
+        auto* queue = shm_->GetChannelQueue( subscriber_id_ );
         
         if ( queue ) {
             while ( !IsQueueEmpty() ) {

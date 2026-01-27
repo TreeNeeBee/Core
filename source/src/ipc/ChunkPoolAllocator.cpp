@@ -37,8 +37,7 @@ namespace ipc
             // ChunkPool starts at 1MB offset (after ControlBlock + Queue + Reserved regions)
             // chunk_pool_start_ is set in constructor, verify it's at correct offset
             INNER_CORE_LOG("[DEBUG] ChunkPoolAllocator::Initialize\n");
-            INNER_CORE_LOG("  - Pool starts at offset: 0x%lX\n", 
-                        static_cast<unsigned long>(kChunkPoolOffset));
+            INNER_CORE_LOG("  - Pool starts at offset: 0x%lX\n", static_cast<unsigned long>(kChunkPoolOffset));
             INNER_CORE_LOG("  - Chunk size: %lu bytes\n", static_cast<unsigned long>(control_->header.chunk_size));
             INNER_CORE_LOG("  - Chunk stride: %lu bytes (aligned)\n", static_cast<unsigned long>(chunk_stride_));
             INNER_CORE_LOG("  - Max chunks: %lu\n", static_cast<unsigned long>(control_->header.max_chunks));

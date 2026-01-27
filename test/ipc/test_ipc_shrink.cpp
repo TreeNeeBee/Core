@@ -1,7 +1,7 @@
 /**
  * @file        test_ipc_shrink.cpp
- * @brief       Multi-process IPC test for SHRINK mode
- * @details     Validates SHRINK mode with minimal footprint:
+ * @brief       Multi-process IPC test for minimal configuration
+ * @details     Validates minimal footprint configuration:
  *              - 4KB shared memory total
  *              - 1 Publisher, 2 Subscribers
  *              - Direct Sample write/read (no Message inheritance)
@@ -10,7 +10,6 @@
 
 #include "ipc/Publisher.hpp"
 #include "ipc/Subscriber.hpp"
-#include "ipc/IPCConfig.hpp"
 #include "CInitialization.hpp"
 #include <iostream>
 #include <cstring>
@@ -18,10 +17,6 @@
 #include <sys/wait.h>
 #include <thread>
 #include <chrono>
-
-#ifndef LIGHTAP_IPC_MODE_SHRINK
-#error "SHRINK mode not defined! Check compilation flags."
-#endif
 
 using namespace lap::core;
 using namespace lap::core::ipc;
@@ -191,13 +186,8 @@ int main()
     std::cout << "    - Messages: " << MESSAGE_COUNT << std::endl;
     std::cout << "    - Data Size: " << sizeof(TestData) << " bytes" << std::endl;
     std::cout << "  Compiled Mode:" << std::endl;
-#ifdef LIGHTAP_IPC_MODE_SHRINK
-    std::cout << "    - SHRINK mode: ENABLED" << std::endl;
-    std::cout << "    - kMaxSubscribers: " << ipc::kMaxSubscribers << std::endl;
-    std::cout << "    - kQueueCapacity: " << ipc::kQueueCapacity << std::endl;
-#else
-    std::cout << "    - SHRINK mode: NOT DEFINED!" << std::endl;
-#endif
+    std::cout << "Test Configuration:" << std::endl;
+    std::cout << "    - Minimal footprint mode" << std::endl;
     std::cout << "========================================" << std::endl;
     
     // Initialize Core
@@ -259,11 +249,11 @@ int main()
     
     std::cout << "\n========================================" << std::endl;
     if (failures == 0) {
-        std::cout << "  ✓ SHRINK Mode Test PASSED" << std::endl;
+        std::cout << "  ✓ Minimal Config Test PASSED" << std::endl;
         std::cout << "========================================" << std::endl;
         return 0;
     } else {
-        std::cout << "  ✗ SHRINK Mode Test FAILED" << std::endl;
+        std::cout << "  ✗ Minimal Config Test FAILED" << std::endl;
         std::cout << "    Failures: " << failures << std::endl;
         std::cout << "========================================" << std::endl;
         return 1;

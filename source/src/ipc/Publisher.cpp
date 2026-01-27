@@ -9,7 +9,7 @@
 #include "ipc/Publisher.hpp"
 #include "ipc/WaitSetHelper.hpp"
 #include "ipc/Message.hpp"
-#include "ipc/SubscriberRegistry.hpp"
+#include "ipc/ChannelRegistry.hpp"
 #include "CCoreErrorDomain.hpp"
 #include "CMacroDefine.hpp"
 #include <cstring>
@@ -132,23 +132,24 @@ namespace ipc
         sample.IncrementRef();  // For publisher's own reference
 
         // Get snapshot of subscribers from shared memory registry
-        auto snapshot = SubscriberRegistry::GetSubscriberSnapshot( shm_->GetControlBlock() );
-        
-        if ( snapshot.count == 0 ) {
+        auto snapshot = ChannelRegistry::GetChannelSnapshot( shm_->GetControlBlock() );
+        auto snapshot_count = ChannelRegistry::GetChannelSnapshotCount( shm_->GetControlBlock() );
+
+        if ( snapshot_count == 0 ) {
             //sample.DecrementRef();  // No subscribers, release chunk
             return {};
         }
        
         // Set initial reference count to number of subscribers
-        sample.FetchAdd( snapshot.count );
+        sample.FetchAdd( snapshot_count );
         
         auto now = SteadyClock::now();
-        for ( UInt32 i = 0; i < snapshot.count; ++i ) {
-            UInt32 queue_index = snapshot.queue_indices[i]; 
+        for ( UInt32 i = 0; i < snapshot_count; ++i ) {
+            UInt32 queue_index = snapshot[i];
             
             // Get subscriber queue from shared memory
-            auto* queue = shm_->GetSubscriberQueue( queue_index );
-            if ( !queue ) {
+            auto* queue = shm_->GetChannelQueue( queue_index );
+            if ( !queue || !queue->IsActive() ) {
                 // Queue not available, decrement ref count
                 sample.DecrementRef();
                 continue;
@@ -162,16 +163,16 @@ namespace ipc
             }
 
             // SPSC enqueue (Publisher is producer)
-            UInt32 tail = queue->tail.load(std::memory_order_relaxed);
-            UInt32 next_tail = (tail + 1) & (queue->capacity - 1);
+            UInt16 tail = queue->tail.load(std::memory_order_relaxed);
+            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (queue->capacity - 1));
             
             // Check if queue is full
-            UInt32 head = queue->head.load(std::memory_order_acquire);
+            UInt16 head = queue->head.load(std::memory_order_acquire);
             if ( next_tail == head ) {
                 // Queue full - handle based on policy            
                 if ( config_.policy == PublishPolicy::kOverwrite ) {
                     // Overwrite oldest message (move head forward)
-                    UInt32 new_head = ( head + 1 ) & ( queue->capacity - 1 );
+                    UInt16 new_head = static_cast<UInt16>((head + 1) & (queue->capacity - 1));
                     queue->head.store( new_head, std::memory_order_release );
                     // Now we have space, continue to enqueue
                 } else if ( config_.policy == PublishPolicy::kBlock ) {
@@ -192,7 +193,7 @@ namespace ipc
                     // Recheck head/tail after wake
                     head = queue->head.load( std::memory_order_acquire );
                     tail = queue->tail.load( std::memory_order_relaxed );
-                    next_tail = ( tail + 1 ) & ( queue->capacity - 1 );
+                    next_tail = static_cast<UInt16>((tail + 1) & (queue->capacity - 1));
                     
                     if ( next_tail == head ) {
                         // Still full, drop message
@@ -217,7 +218,7 @@ namespace ipc
                     // Recheck head/tail after poll
                     head = queue->head.load( std::memory_order_acquire );
                     tail = queue->tail.load( std::memory_order_relaxed );
-                    next_tail = ( tail + 1 ) & ( queue->capacity - 1 );
+                    next_tail = static_cast<UInt16>((tail + 1) & (queue->capacity - 1));
                     
                     if ( next_tail == head ) {
                         // Still full, drop message
@@ -234,8 +235,12 @@ namespace ipc
                     }
                     
                     continue;
+                } else if ( config_.policy == PublishPolicy::kError ) {
+                    // error policy
+                    sample.DecrementRef();
+                    continue;
                 } else {
-                    // Unknown policy
+                    // Unknown policy, drop message
                     sample.DecrementRef();
                     continue;
                 }
@@ -245,8 +250,8 @@ namespace ipc
             last_send_[queue_index] = now;
             
             // Write chunk_index to buffer
-            UInt32* buffer = queue->GetBuffer();
-            buffer[tail] = chunk_index;
+            auto buffer = queue->GetBuffer();
+            buffer[tail].chunk_index = static_cast<UInt16>(chunk_index);
             
             // Update tail (release semantics for consumer visibility)
             queue->tail.store( next_tail, std::memory_order_release );

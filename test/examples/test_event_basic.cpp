@@ -23,7 +23,7 @@ protected:
         config_.event_name = "test_event";
         config_.payload_size = 256;
         config_.max_chunks = 16;
-        config_.max_subscribers = 4;
+        config_.max_channels = 4;
         config_.subscriber_queue_capacity = 8;
         config_.use_shm_for_queues = false;
     }

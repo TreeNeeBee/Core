@@ -1,79 +1,105 @@
 /**
- * @brief 测试ControlBlock在不同模式下的大小
+ * @brief 测试ControlBlock和ChannelQueue在不同channel数量下的内存布局
  */
 #include <iostream>
 #include <iomanip>
+#include <vector>
 #include "ipc/ControlBlock.hpp"
 
 using namespace lap::core::ipc;
+using namespace lap::core;
+
+// 测试不同channel数量的配置
+struct TestConfig {
+    const char* name;
+    UInt8 num_channels;
+    UInt16 queue_capacity;
+};
+
+void PrintSeparator() {
+    std::cout << "========================================" << std::endl;
+}
+
+void TestConfiguration(const TestConfig& config) {
+    PrintSeparator();
+    std::cout << "配置: " << config.name << std::endl;
+    std::cout << "  Channels: " << (int)config.num_channels << std::endl;
+    std::cout << "  Queue Capacity: " << config.queue_capacity << std::endl;
+    PrintSeparator();
+
+// ControlBlock基础大小
+    std::cout << "\n1. ControlBlock 基础结构:" << std::endl;
+    std::cout << "  - header:      " << std::setw(3) << sizeof(ControlBlock::header) << " bytes" << std::endl;
+    std::cout << "  - pool_state:  " << std::setw(3) << sizeof(ControlBlock::pool_state) << " bytes" << std::endl;
+    std::cout << "  - registry:    " << std::setw(3) << sizeof(ControlBlock::registry) << " bytes" << std::endl;
+    std::cout << "  [Total]:       " << std::setw(3) << sizeof(ControlBlock) << " bytes" << std::endl;
+    
+    // Snapshot内存
+    Size snapshot_size = config.num_channels * 2;  // 双缓冲
+    std::cout << "\n2. Snapshot 内存 (双缓冲):" << std::endl;
+    std::cout << "  - 每个snapshot: " << std::setw(3) << config.num_channels << " bytes" << std::endl;
+    std::cout << "  - 总计:        " << std::setw(3) << snapshot_size << " bytes" << std::endl;
+    
+    // ChannelQueue结构
+    std::cout << "\n3. ChannelQueue 结构:" << std::endl;
+    std::cout << "  - STmin:         " << sizeof(ChannelQueue::STmin) << " bytes" << std::endl;
+    std::cout << "  - active:        " << sizeof(ChannelQueue::active) << " bytes" << std::endl;
+    std::cout << "  - in/out:        " << (sizeof(ChannelQueue::in) + sizeof(ChannelQueue::out)) << " bytes" << std::endl;
+    std::cout << "  - capacity:      " << sizeof(ChannelQueue::capacity) << " bytes" << std::endl;
+    std::cout << "  - head/tail:     " << (sizeof(ChannelQueue::head) + sizeof(ChannelQueue::tail)) << " bytes" << std::endl;
+    std::cout << "  - queue_waitset: " << sizeof(ChannelQueue::queue_waitset) << " bytes" << std::endl;
+    std::cout << "  [Total]:         " << sizeof(ChannelQueue) << " bytes (aligned to " << kCacheLineSize << ")" << std::endl;
+    
+    // 每个Queue的buffer大小
+    Size buffer_per_queue = config.queue_capacity * sizeof(ChannelQueueValue);
+    std::cout << "\n4. 每个Channel的Buffer:" << std::endl;
+    std::cout << "  - ChannelQueueValue: " << sizeof(ChannelQueueValue) << " bytes" << std::endl;
+    std::cout << "  - Capacity:          " << config.queue_capacity << " entries" << std::endl;
+    std::cout << "  - Buffer size:       " << buffer_per_queue << " bytes" << std::endl;
+    
+    // 单个Channel总大小
+    Size single_channel_size = sizeof(ChannelQueue) + buffer_per_queue;
+    std::cout << "\n5. 单个Channel总大小:" << std::endl;
+    std::cout << "  - ChannelQueue:  " << sizeof(ChannelQueue) << " bytes" << std::endl;
+    std::cout << "  - Buffer:        " << buffer_per_queue << " bytes" << std::endl;
+    std::cout << "  [Total]:         " << single_channel_size << " bytes" << std::endl;
+    
+    // 所有Channel内存
+    Size all_channels_size = single_channel_size * config.num_channels;
+    std::cout << "\n6. 所有Channels内存 (x" << (int)config.num_channels << "):" << std::endl;
+    std::cout << "  - Total:         " << all_channels_size << " bytes (" 
+              << (all_channels_size / 1024.0) << " KB)" << std::endl;
+    
+    // 总内存
+    Size total_memory = sizeof(ControlBlock) + snapshot_size + all_channels_size;
+    std::cout << "\n7. 共享内存总大小:" << std::endl;
+    std::cout << "  - ControlBlock:  " << sizeof(ControlBlock) << " bytes" << std::endl;
+    std::cout << "  - Snapshots:     " << snapshot_size << " bytes" << std::endl;
+    std::cout << "  - Channels:      " << all_channels_size << " bytes" << std::endl;
+    PrintSeparator();
+    std::cout << "  [TOTAL]:         " << total_memory << " bytes (" 
+              << (total_memory / 1024.0) << " KB)" << std::endl;
+    PrintSeparator();
+    std::cout << std::endl;
+}
 
 int main() {
-    std::cout << "========================================" << std::endl;
-    std::cout << "ControlBlock 结构大小分析" << std::endl;
-    std::cout << "========================================" << std::endl;
-    
-    std::cout << "\n编译模式: ";
-#if defined(LIGHTAP_IPC_MODE_SHRINK)
-    std::cout << "SHRINK" << std::endl;
-    std::cout << "kMaxSubscribers: " << (int)kMaxSubscribers << std::endl;
-    std::cout << "kQueueCapacity: " << kQueueCapacity << std::endl;
-#elif defined(LIGHTAP_IPC_MODE_NORMAL)
-    std::cout << "NORMAL" << std::endl;
-    std::cout << "kMaxSubscribers: " << (int)kMaxSubscribers << std::endl;
-    std::cout << "kQueueCapacity: " << kQueueCapacity << std::endl;
-#else
-    std::cout << "EXTEND" << std::endl;
-    std::cout << "kMaxSubscribers: " << (int)kMaxSubscribers << std::endl;
-    std::cout << "kQueueCapacity: " << kQueueCapacity << std::endl;
-#endif
-
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "字段大小分析:" << std::endl;
-    std::cout << "========================================" << std::endl;
-    
-    ControlBlock ctrl;
-    
-    std::cout << "header 结构:" << std::endl;
-    std::cout << "  - magic (atomic<UInt32>):      " << sizeof(ctrl.header.magic) << " bytes" << std::endl;
-    std::cout << "  - max_chunks (UInt32):         " << sizeof(ctrl.header.max_chunks) << " bytes" << std::endl;
-    std::cout << "  - chunk_size (UInt32):         " << sizeof(ctrl.header.chunk_size) << " bytes" << std::endl;
-    std::cout << "  - version (atomic<UInt32>):    " << sizeof(ctrl.header.version) << " bytes" << std::endl;
-    std::cout << "  - ref_count (atomic<UInt8>):   " << sizeof(ctrl.header.ref_count) << " bytes" << std::endl;
-    std::cout << "  - max_subscribers (UInt8):     " << sizeof(ctrl.header.max_subscribers) << " bytes" << std::endl;
-    std::cout << "  - queue_capacity (UInt16):     " << sizeof(ctrl.header.queue_capacity) << " bytes" << std::endl;
-    std::cout << "  [Total header]:                " << sizeof(ctrl.header) << " bytes (包含padding)" << std::endl;
-    
-    std::cout << "\npool_state 结构:" << std::endl;
-    std::cout << "  - free_list_head:              " << sizeof(ctrl.pool_state.free_list_head) << " bytes" << std::endl;
-    std::cout << "  - remain_count:                " << sizeof(ctrl.pool_state.remain_count) << " bytes" << std::endl;
-    std::cout << "  [Total pool_state]:            " << sizeof(ctrl.pool_state) << " bytes" << std::endl;
-    
-    std::cout << "\nregistry 结构:" << std::endl;
-    std::cout << "  - registry_control:            " << sizeof(ctrl.registry.registry_control) << " bytes" << std::endl;
-    std::cout << "  - snapshots[0]:                " << sizeof(ctrl.registry.snapshots[0]) << " bytes" << std::endl;
-    std::cout << "  - snapshots[1]:                " << sizeof(ctrl.registry.snapshots[1]) << " bytes" << std::endl;
-    std::cout << "  [Total registry]:              " << sizeof(ctrl.registry) << " bytes" << std::endl;
-    
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "ControlBlock 总大小: " << sizeof(ControlBlock) << " bytes" << std::endl;
+    PrintSeparator();
+    std::cout << "Channel内存布局测试 - 不同配置对比" << std::endl;
+    PrintSeparator();
     std::cout << "Cache Line Size: " << kCacheLineSize << " bytes" << std::endl;
-    std::cout << "========================================" << std::endl;
+    std::cout << std::endl;
     
-    std::cout << "\n内存布局 (按offset):" << std::endl;
-    std::cout << "  header offset:       " << offsetof(ControlBlock, header) << std::endl;
-    std::cout << "  pool_state offset:   " << offsetof(ControlBlock, pool_state) << std::endl;
-    std::cout << "  registry offset:     " << offsetof(ControlBlock, registry) << std::endl;
+    // 三种典型配置
+    std::vector<TestConfig> configs = {
+        {"小型系统 (2 channels)",   2,  64},
+        {"中型系统 (16 channels)", 16, 256},
+        {"大型系统 (30 channels)", 30, 256}
+    };
     
-    std::cout << "\n========================================" << std::endl;
-#if defined(LIGHTAP_IPC_MODE_SHRINK)
-    if (sizeof(ControlBlock) <= 64) {
-        std::cout << "✓ SHRINK模式: ControlBlock满足 <=64 bytes 要求" << std::endl;
-    } else {
-        std::cout << "✗ SHRINK模式: ControlBlock超出64 bytes限制!" << std::endl;
-        std::cout << "  超出: " << (sizeof(ControlBlock) - 64) << " bytes" << std::endl;
+    for (const auto& config : configs) {
+        TestConfiguration(config);
     }
-#endif
-    std::cout << "========================================" << std::endl;
     
     return 0;
 }

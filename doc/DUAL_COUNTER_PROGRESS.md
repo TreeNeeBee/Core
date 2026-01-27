@@ -48,7 +48,7 @@ segment_state_->setPayloadSize(config_.max_chunk_size);
 for (uint32_t i = 0; i < config_.max_publishers; ++i) {
     publishers_[i].max_loaned_samples = config_.publisher_max_loaned_samples;
 }
-for (uint32_t i = 0; i < config_.max_subscribers; ++i) {
+for (uint32_t i = 0; i < config_.max_channels; ++i) {
     subscribers_[i].max_borrowed_samples = config_.subscriber_max_borrowed_samples;
 }
 ```

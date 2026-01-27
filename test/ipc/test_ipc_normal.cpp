@@ -104,7 +104,7 @@ void subscriber_process(int subscriber_id)
     SubscriberConfig config;
     config.max_chunks = 64;
     config.chunk_size = sizeof(TestMessage);
-    config.queue_capacity = 256;  // NORMAL mode capacity
+    config.channel_capacity = 256;  // NORMAL mode capacity
     config.empty_policy = SubscribePolicy::kError;
     
     auto sub_result = Subscriber::Create(TEST_SHM_PATH, config);

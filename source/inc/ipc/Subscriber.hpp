@@ -14,7 +14,7 @@
 #include "Sample.hpp"
 #include "SharedMemoryManager.hpp"
 #include "ChunkPoolAllocator.hpp"
-#include "SubscriberRegistry.hpp"
+#include "ChannelRegistry.hpp"
 #include "IPCEventHooks.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
@@ -34,11 +34,12 @@ namespace ipc
      */
     struct SubscriberConfig
     {
-        UInt8  STmin = 0;                                           ///< Minimum interval between messages (ms)
-        UInt32 max_chunks = kDefaultMaxChunks;                      ///< Maximum chunks in pool
-        UInt32 chunk_size = 0;                                      ///< Chunk size (payload), 0 means default
-        UInt32 queue_capacity = kQueueCapacity;                     ///< Queue capacity
-        UInt64 timeout = 100000000;                                 ///< Receive timeout (ns), 0 means no wait
+        UInt8   channel_id = 0xFF;                                  ///< Channel ID (for multi-channel support)
+        UInt16  STmin = 0;                                          ///< Minimum interval between messages (microseconds)
+        UInt32  max_chunks = kDefaultChunks;                     ///< Maximum chunks in pool
+        UInt32  chunk_size = 0;                                     ///< Chunk size (payload), 0 means default
+        UInt32  channel_capacity = kMaxChannelCapacity;                  ///< Queue capacity
+        UInt64  timeout = 100000000;                                ///< Receive timeout (ns), 0 means no wait
         SubscribePolicy empty_policy = SubscribePolicy::kBlock;     ///< Default policy
     };
     
@@ -64,8 +65,8 @@ namespace ipc
          * @param config Configuration
          * @return Result with subscriber or error
          */
-        static Result< Subscriber > Create(const String& shmPath,
-                                           const SubscriberConfig& config = {}) noexcept;
+        static Result< Subscriber > Create( const String& shmPath,
+                                           const SubscriberConfig& config = {} ) noexcept;
         
         /**
          * @brief Destructor - automatically disconnects

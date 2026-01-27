@@ -17,6 +17,35 @@ namespace core
 {
 namespace ipc
 {
+    Size SharedMemoryManager::CalculateTotalSize( const SharedMemoryConfig& config ) noexcept
+    {
+        // Fixed partition layout (optimized):
+        // Region 1: ControlBlock
+        // Region 1.5: Registry Snapshots
+        // Region 2: ChannelQueue[N]
+        // Region 3: ChunkPool
+        Size total_size = sizeof( ControlBlock ); // ControlBlock region
+        total_size += sizeof( UInt8 ) * kMaxChannels * 2; // Registry snapshot buffers (2 × max_channels)
+        total_size = DEF_LAP_ALIGN_FORMAT( total_size, kCacheLineSize ); // format to cache line size boundary
+
+        // ChannelQueue region
+        total_size += ( sizeof( ChannelQueue ) + DEF_LAP_ALIGN_FORMAT( sizeof( ChannelQueueValue ) * config.channel_capacity, kCacheLineSize ) ) * config.max_channels;             // ChannelQueue region
+        
+        // ChunkPool region
+        total_size += DEF_LAP_ALIGN_FORMAT( sizeof( ChunkHeader ) + config.chunk_size, kCacheLineSize ) * config.max_chunks;
+        
+        // // Round up to 4K/2MB boundary for better alignment
+        // if ( total_size < 0x200000 ) {
+        //     total_size = DEF_LAP_ALIGN_FORMAT( total_size, 0x1000 );  // 4KB
+        // } else {
+        //     total_size = DEF_LAP_ALIGN_FORMAT( total_size, 0x200000 ); // 2MB
+        // }
+
+        total_size = DEF_LAP_ALIGN_FORMAT( total_size, kShmAlignment_4K ); // 4KB alignment
+        
+        return total_size;
+    }
+
     Result<void> SharedMemoryManager::Create(const String& shmPath,
                                              const SharedMemoryConfig& config) noexcept
     {
@@ -49,6 +78,8 @@ namespace ipc
                 base_addr_ = nullptr;
                 return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
             }
+
+            DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( base_addr_ ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
             
             // Initialize structures
             auto result = InitializeSharedMemory( config );
@@ -86,6 +117,8 @@ namespace ipc
                 base_addr_ = nullptr;
                 return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
             }
+
+            DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( base_addr_ ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
             
             // Validate control block
             auto* ctrl = GetControlBlock();
@@ -103,61 +136,42 @@ namespace ipc
         }
     }
     
-    UInt64 SharedMemoryManager::CalculateTotalSize(const SharedMemoryConfig& config) const noexcept
-    {
-        // Fixed partition layout (optimized):
-        // Region 1: ControlBlock (128KB = 0x20000)
-        // Region 2: SubscriberQueue[100] (800KB = 0xC8000)
-        // Region 2.5: Reserved (96KB = 0x18000)
-        // Region 3: ChunkPool (starts at 1MB = 0x100000, dynamic size)
-        UInt64 total_size = kChunkPoolOffset;  // 1MB (includes ControlBlock + Queues + Reserved)
-        
-        // ChunkPool region
-        UInt64 chunkpool_size = DEF_LAP_ALIGN_FORMAT( sizeof( ChunkHeader ) + config.chunk_size, kCacheLineSize ) * config.max_chunks;
-        total_size += chunkpool_size;
-        
-        // Round up to 4K/2MB boundary for better alignment
-        total_size = DEF_LAP_ALIGN_FORMAT( total_size, kShmAlignment );
-        
-        return total_size;
-    }
-    
     Result<void> SharedMemoryManager::InitializeSharedMemory(const SharedMemoryConfig& config) noexcept
     {
         // Zero out entire shared memory
         std::memset(base_addr_, 0, size_);
 
         auto* ctrl = GetControlBlock();
-        ctrl->Initialize(config.max_chunks,
-                        config.max_subscriber_queues > 0 ? config.max_subscriber_queues : kMaxSubscribers,
+        ctrl->Initialize( config.max_chunks,
+                        config.max_channels > 0 ? config.max_channels : kMaxChannels,
                         config.chunk_size,
-                        config.queue_capacity > 0 ? config.queue_capacity : kQueueCapacity);
+                        config.channel_capacity > 0 ? config.channel_capacity : kMaxChannelCapacity );
         
-        // Initialize all SubscriberQueue slots in Region 2 (0x100000-0x1FFFFF)
+        // Initialize all ChannelQueue slots in Region 2 (0x100000-0x1FFFFF)
         // Each queue is 8KB, allowing up to 128 queues in 1MB
-        UInt32 max_queues = ctrl->header.max_subscribers;
-        UInt32 queue_capacity = ctrl->header.queue_capacity;
+        UInt32 max_channels = ctrl->header.max_channels;
+        UInt32 channel_capacity = ctrl->header.channel_capacity;
         
-        for ( UInt32 i = 0; i < max_queues; ++i ) {
-            auto* queue = GetSubscriberQueue(i);
-            if ( queue ) {
+        for ( UInt32 i = 0; i < max_channels; ++i ) {
+            auto* channel = GetChannelQueue( i );
+            if ( channel ) {
                 // Initialize queue structure (sets active=false)
-                queue->Initialize( queue_capacity );
+                channel->Initialize( channel_capacity );
                 
                 // Zero-initialize buffer (inline after queue struct)
-                UInt32* buffer = queue->GetBuffer();
-                for ( UInt32 j = 0; j < queue_capacity; ++j ) {
-                    buffer[j] = kInvalidChunkIndex;
+                auto buffer = channel->GetBuffer();
+                for ( UInt32 j = 0; j < channel_capacity; ++j ) {
+                    buffer[j].sequence = 0;
+                    buffer[j].chunk_index = kInvalidChunkIndex;
                 }
             }
         }
         
         INNER_CORE_LOG("[DEBUG] Shared memory initialization complete\n");
-        INNER_CORE_LOG("  - Mode: %s\n", GetIPCModeName());
-        INNER_CORE_LOG("  - Max subscribers: %u\n", static_cast<UInt32>(kMaxSubscribers));
-        INNER_CORE_LOG("  - Queue capacity: %u per subscriber\n", static_cast<UInt32>(kQueueCapacity));
+        INNER_CORE_LOG("  - Max subscribers: %u\n", static_cast<UInt32>(kMaxChannels));
+        INNER_CORE_LOG("  - Queue capacity: %u per subscriber\n", static_cast<UInt32>(kMaxChannelCapacity));
         INNER_CORE_LOG("  - ControlBlock size: %zu bytes\n", sizeof(ControlBlock));
-        INNER_CORE_LOG("  - Total queues initialized: %u\n", config.max_subscriber_queues);
+        INNER_CORE_LOG("  - Total queues initialized: %u\n", config.max_channels);
         
         // ChunkPool initialization will be done in ChunkPoolAllocator
         ctrl->header.ref_count.store( 1, std::memory_order_release );

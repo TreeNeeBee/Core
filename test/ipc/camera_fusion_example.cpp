@@ -124,7 +124,7 @@
  * 1. 共享内存 (per camera stream):
  *    - 每个摄像头独立共享内存: /cam0_stream, /cam1_stream, /cam2_stream
  *    - ControlBlock: 128 bytes (NORMAL模式)
- *    - SubscriberQueue[30]: ~256KB (30个队列 × 8KB)
+ *    - ChannelQueue[30]: ~256KB (30个队列 × 8KB)
  *    - ChunkPool: 3 chunks × 5.3MB = ~16MB
  *    - 总计单stream: ~16.3MB
  *    - 3个stream总计: ~49MB
@@ -162,7 +162,6 @@
 
 #include "ipc/Publisher.hpp"
 #include "ipc/Subscriber.hpp"
-#include "ipc/IPCConfig.hpp"
 #include "CInitialization.hpp"
 #include "CString.hpp"
 #include <cstdio>
@@ -678,7 +677,7 @@ private:
             auto recv_end = std::chrono::high_resolution_clock::now();
 
             // std::cerr << "[SubThread-" << camera_id << "] count: " << subscriber->allocator_->GetAllocatedCount() 
-                        // << ", queue: " << static_cast<UInt32>(subscriber->shm_->GetSubscriberQueue(camera_id)->STmin.load(std::memory_order_acquire)) << std::endl;
+                        // << ", queue: " << static_cast<UInt32>(subscriber->shm_->GetChannelQueue(camera_id)->STmin.load(std::memory_order_acquire)) << std::endl;
             if (sample_result.HasValue()) {
                 auto sample = std::move(sample_result).Value();
                 

@@ -30,6 +30,9 @@ namespace ipc
     /// IPC version number
     constexpr UInt16 kIPCVersion = 0x0101;  // v1.0.1
     
+    /// Invalid channel index
+    constexpr UInt8 kInvalidChannelID = 0xFF;
+
     /// Invalid chunk index
     constexpr UInt16 kInvalidChunkIndex = 0xFFFF;
 
@@ -44,9 +47,10 @@ namespace ipc
 
     enum class IPCType : UInt8
     {
-        kNONE       = 0,   ///< Undefined / placeholder
-        kSPMC       = 1,  ///< Sent to multiple Subscribers
-        kMPSC       = 2  ///< Received by multiple Publishers
+        kNone       = 0,    ///< Undefined / placeholder
+        kSPMC       = 1,    ///< Sent to multiple Subscribers
+        kMPSC       = 2,    ///< Received by multiple Publishers
+        kMPMC       = 3     ///< Multiple Publishers and Subscribers
     };
     
     // ========================================================================

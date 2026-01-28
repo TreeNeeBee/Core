@@ -43,17 +43,17 @@ namespace ipc
             UInt8 max_channels;          ///< Maximum channels
             UInt16 channel_capacity;     ///< Capacity per channel subscriber queue (64/256/1024)
         } header;
-        DEF_LAP_STATIC_ASSERT( sizeof( header ) <= 32, "Header must be exactly 20 bytes" );
+        DEF_LAP_STATIC_ASSERT( sizeof( header ) <= 32, "Header must be less than 32 bytes" );
         
         //=====================================================================
         // Cache Line 0: ChunkPool State (64B)
         //=====================================================================
         struct alignas( kSystemWordSize ) DEF_LAP_SYS_ALIGN
         {
-            Atomic<UInt32> free_list_head;    ///< Free list head index
-            Atomic<UInt32> remain_count;      ///< Current free chunks
+            Atomic<UInt16> free_list_head;    ///< Free list head index
+            Atomic<UInt16> remain_count;      ///< Current free chunks
         } pool_state;
-        DEF_LAP_STATIC_ASSERT( sizeof( pool_state ) <= 8, "Header must be exactly 8 bytes" );
+        DEF_LAP_STATIC_ASSERT( sizeof( pool_state ) <= 8, "pool_state must be less than 8 bytes" );
         
         //=====================================================================
         // Cache Line 0 ～ 1: Registry Control (64B)
@@ -70,29 +70,10 @@ namespace ipc
 
         struct alignas( kSystemWordSize ) DEF_LAP_SYS_ALIGN
         {
-            Atomic<UInt32>      ready_mask;          ///< Bitmask of active subscribers (32 bits)
-            Atomic<UInt8>       active_index;        ///< Active snapshot (0 or 1)
-            UInt8               active_count[2];     ///< Number of active subscribers in each snapshot
-            UInt8               reserved;            ///< Padding
-            UInt16              snapshot_offset[2];  ///< Offsets of snapshots in shared memory
-
-            inline UInt8* GetSnapshot( UInt8 index ) noexcept
-            {
-                DEF_LAP_ASSERT( index < 2, "Snapshot index out of range" );
-                return reinterpret_cast< UInt8* >( this + 1 ) + snapshot_offset[index];
-            }
-
-            inline const UInt8* GetSnapshot() const noexcept
-            {
-                DEF_LAP_ASSERT( active_index.load(std::memory_order_acquire) < 2, "Snapshot index out of range" );
-                return reinterpret_cast< const UInt8* >( this + 1 ) + snapshot_offset[active_index.load(std::memory_order_acquire)];
-            }   
-
-            inline const UInt8* GetSnapshot() noexcept
-            {
-                DEF_LAP_ASSERT( active_index.load(std::memory_order_acquire) < 2, "Snapshot index out of range" );
-                return reinterpret_cast< const UInt8* >( this + 1 ) + snapshot_offset[active_index.load(std::memory_order_acquire)];
-            }
+            Atomic<UInt64>      read_mask;          ///< Bitmask of active publishers (64 bits)
+            Atomic<UInt64>      write_mask;         ///< Bitmask of active subscribers (64 bits)
+            Atomic<UInt32>      read_seq;           ///< Sequence for read snapshot updates
+            Atomic<UInt32>      write_seq;          /// Sequence for write snapshot updates
         } registry;
 
         // attached snapshots follow in shared memory, size: kMaxChannels * 2 * sizeof(UInt8)
@@ -115,6 +96,7 @@ namespace ipc
         {
             // Initialize header
             header.magic.store(kIPCMagicNumber, std::memory_order_release);
+            header.type = IPCType::kSPMC;
             header.version.store(kIPCVersion, std::memory_order_release);
             header.max_chunks = max_chunks;
             header.max_channels = max_channels > kMaxChannels ? kMaxChannels : max_channels;
@@ -127,17 +109,10 @@ namespace ipc
             pool_state.remain_count.store( max_chunks, std::memory_order_release );
             
             // Initialize registry control
-            registry.ready_mask.store(0, std::memory_order_release);
-            registry.active_index.store(0, std::memory_order_release);   
-            // Initialize both snapshots
-            for ( UInt8 i = 0; i < 2; ++i ) {
-                registry.active_count[i] = 0;
-                registry.snapshot_offset[i] = i * header.max_channels * sizeof(UInt8);
-                UInt8* base = registry.GetSnapshot(i);
-                for ( UInt8 j = 0; j < header.max_channels; ++j ) {
-                    base[j] = 0xFF;     // Use UInt8 max as invalid
-                }
-            }
+            registry.read_mask.store(0, std::memory_order_release);
+            registry.read_seq.store(0, std::memory_order_release);
+            registry.write_mask.store(0, std::memory_order_release);
+            registry.write_seq.store(0, std::memory_order_release);
         }
         
         /**
@@ -149,19 +124,10 @@ namespace ipc
             return header.magic.load(std::memory_order_acquire) == kIPCMagicNumber &&
                    header.version.load(std::memory_order_acquire) == kIPCVersion;
         }
-        
-        /**
-         * @brief Get current active snapshot (for Publisher iteration)
-         * @return Snapshot copy
-         */
-        const UInt8* GetSnapshot() const noexcept
-        {
-            return registry.GetSnapshot();
-        }
 
-        UInt8 GetSnapshotCount() const noexcept
+        inline IPCType GetIPCType() const noexcept
         {
-            return registry.active_count[ registry.active_index.load(std::memory_order_acquire) ];
+            return header.type;
         }
     };
     
@@ -187,8 +153,8 @@ namespace ipc
         Atomic<Bool>    active;             ///< Is this queue active
         UInt8           reserved{0};        ///< Padding
         UInt16          capacity;           ///< Queue capacity (power of 2)
-        UInt8           in;                 ///< Producer index
-        UInt8           out;                ///< Consumer index
+        Atomic<UInt8>   in;                 ///< Producer index
+        Atomic<UInt8>   out;                ///< Consumer index
         Atomic<UInt16>  head;               ///< Consumer index
         Atomic<UInt16>  tail;               ///< Producer index
 
@@ -210,8 +176,8 @@ namespace ipc
             STmin.store( stmin, std::memory_order_release );
             active.store( false, std::memory_order_release );
             capacity = cap;
-            in = 0xFF;
-            out = 0xFF;
+            in.store(kInvalidChannelID, std::memory_order_release);
+            out.store(kInvalidChannelID, std::memory_order_release);
             head.store( 0, std::memory_order_release );
             tail.store( 0, std::memory_order_release );
 

@@ -17,6 +17,7 @@
 #include "WaitSetHelper.hpp"
 #include "CResult.hpp"
 #include "CCoreErrorDomain.hpp"
+#include "CTypedef.hpp"
 #include <atomic>
 
 namespace lap
@@ -51,6 +52,8 @@ namespace ipc
             , waitset_(nullptr)
             , buffer_(nullptr)
             , capacity_(0)
+            , active_(nullptr)
+            , stmin_(nullptr)
         {
         }
         
@@ -61,18 +64,25 @@ namespace ipc
          * @param waitset Event flags pointer (optional, can be nullptr)
          * @param buffer Ring buffer storage pointer
          * @param capacity Buffer capacity (must be power of 2)
+         * @param active Active state pointer (optional, can be nullptr)
+         * @param stmin STMin pointer (optional, can be nullptr)
          */
-        Channel(std::atomic<UInt16>* head,
-                std::atomic<UInt16>* tail,
-                std::atomic<UInt32>* waitset,
+        Channel(Atomic<UInt16>* head,
+                Atomic<UInt16>* tail,
+                Atomic<UInt32>* waitset,
                 T* buffer,
-                UInt16 capacity) noexcept
+                UInt16 capacity,
+                Atomic<Bool>* active = nullptr,
+                Atomic<UInt16>* stmin = nullptr) noexcept
             : head_(head)
             , tail_(tail)
             , waitset_(waitset)
             , buffer_(buffer)
             , capacity_(capacity)
+            , active_(active)
+            , stmin_(stmin)
         {
+            ;
         }
         
         /**
@@ -80,11 +90,54 @@ namespace ipc
          */
         virtual ~Channel() noexcept = default;
         
-        // Allow copy and move (shallow copy of references)
-        Channel(const Channel&) noexcept = default;
-        Channel& operator=(const Channel&) noexcept = default;
-        Channel(Channel&&) noexcept = default;
-        Channel& operator=(Channel&&) noexcept = default;
+        // Delete copy, allow move
+        Channel(const Channel&) = delete;
+        Channel& operator=(const Channel&) = delete;
+        
+        /**
+         * @brief Move constructor
+         */
+        Channel(Channel&& other) noexcept
+            : head_(other.head_)
+            , tail_(other.tail_)
+            , waitset_(other.waitset_)
+            , buffer_(other.buffer_)
+            , capacity_(other.capacity_)
+            , active_(other.active_)
+            , stmin_(other.stmin_)
+        {
+            other.Reset();
+        }
+        
+        /**
+         * @brief Move assignment operator
+         */
+        Channel& operator=(Channel&& other) noexcept
+        {
+            if (this != &other) {
+                head_ = other.head_;
+                tail_ = other.tail_;
+                waitset_ = other.waitset_;
+                buffer_ = other.buffer_;
+                capacity_ = other.capacity_;
+                active_ = other.active_;
+                stmin_ = other.stmin_;
+                
+                other.Reset();
+            }
+            return *this;
+        }
+
+        void Reset() noexcept
+        {
+            head_ = nullptr;
+            tail_ = nullptr;
+            waitset_ = nullptr;
+            buffer_ = nullptr;
+            capacity_ = 0;
+            active_ = nullptr;
+            stmin_ = nullptr;
+        }
         
         /**
          * @brief Check if channel is valid
@@ -180,12 +233,98 @@ namespace ipc
             }
         }
         
+        // =====================================================================
+        // Virtual Read/Write Interface
+        // =====================================================================
+        
+        /**
+         * @brief Write value to channel (pure virtual)
+         * @param value Value to write
+         * @return Result with void on success or error code
+         */
+        virtual Result<void> Write(const T& value) noexcept = 0;
+        
+        /**
+         * @brief Write value with policy (pure virtual)
+         * @param value Value to write
+         * @param policy Write policy
+         * @param timeout_ns Timeout in nanoseconds
+         * @return Result with void on success or error code
+         */
+        virtual Result<void> WriteWithPolicy(const T& value, PublishPolicy policy, UInt64 timeout_ns = 0) noexcept = 0;
+        
+        /**
+         * @brief Read value from channel (pure virtual)
+         * @return Result with value on success or error code
+         */
+        virtual Result<T> Read() noexcept = 0;
+        
+        /**
+         * @brief Read value with policy (pure virtual)
+         * @param policy Read policy
+         * @param timeout_ns Timeout in nanoseconds
+         * @return Result with value on success or error code
+         */
+        virtual Result<T> ReadWithPolicy(SubscribePolicy policy, UInt64 timeout_ns = 0) noexcept = 0;
+        
+        /**
+         * @brief Peek at next value without consuming (pure virtual)
+         * @return Optional value
+         */
+        virtual Optional<T> Peek() const noexcept = 0;
+        
+        /**
+         * @brief Check if channel is active
+         * @return true if channel is active
+         */
+        inline Bool IsActive() const noexcept
+        {
+            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+
+            return active_->load(std::memory_order_acquire);
+        }
+        
+        /**
+         * @brief Set channel active state
+         * @param active Active state to set
+         */
+        void SetActive(Bool active) noexcept
+        {
+            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+
+            active_->store(active, std::memory_order_release);
+        }
+        
+        /**
+         * @brief Get STMin value (minimum send interval in microseconds)
+         * @return STMin value, or 0 if pointer is null
+         */
+        inline UInt16 GetSTMin() const noexcept
+        {
+            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+
+            return stmin_->load(std::memory_order_acquire);
+        }
+        
+        /**
+         * @brief Set STMin value (minimum send interval in microseconds)
+         * @param stmin STMin value to set
+         */
+        void SetSTMin(UInt16 stmin) noexcept
+        {
+            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+
+            stmin_->store(stmin, std::memory_order_release);
+        }
+        
     protected:
-        std::atomic<UInt16>*  head_;      ///< Consumer index pointer
-        std::atomic<UInt16>*  tail_;      ///< Producer index pointer
-        std::atomic<UInt32>*  waitset_;   ///< Event flags pointer
-        T*                    buffer_;    ///< Ring buffer storage pointer
-        UInt16                capacity_;  ///< Buffer capacity (power of 2)
+        Atomic<UInt16>*     head_;      ///< Consumer index pointer
+        Atomic<UInt16>*     tail_;      ///< Producer index pointer
+        Atomic<UInt32>*     waitset_;   ///< Event flags pointer
+        T*                  buffer_;    ///< Ring buffer storage pointer
+        UInt16              capacity_;  ///< Buffer capacity (power of 2)
+        Atomic<Bool>*       active_;    ///< Channel active state pointer (in shared memory)
+        Atomic<UInt16>*     stmin_;     ///< STMin pointer (minimum send interval in microseconds, in shared memory)
     };
     
     /**
@@ -212,13 +351,17 @@ namespace ipc
          * @param waitset Event flags pointer (optional)
          * @param buffer Ring buffer storage pointer
          * @param capacity Buffer capacity (must be power of 2)
+         * @param active Active state pointer (optional)
+         * @param stmin STMin pointer (optional)
          */
-        WriteChannel(std::atomic<UInt16>* head,
-                     std::atomic<UInt16>* tail,
-                     std::atomic<UInt32>* waitset,
+        WriteChannel(Atomic<UInt16>* head,
+                     Atomic<UInt16>* tail,
+                     Atomic<UInt32>* waitset,
                      T* buffer,
-                     UInt16 capacity) noexcept
-            : Channel<T>(head, tail, waitset, buffer, capacity)
+                     UInt16 capacity,
+                     Atomic<Bool>* active = nullptr,
+                     Atomic<UInt16>* stmin = nullptr) noexcept
+            : Channel<T>(head, tail, waitset, buffer, capacity, active, stmin)
         {
         }
         
@@ -227,11 +370,28 @@ namespace ipc
          */
         ~WriteChannel() noexcept override = default;
         
-        // Allow copy and move
-        WriteChannel(const WriteChannel&) noexcept = default;
-        WriteChannel& operator=(const WriteChannel&) noexcept = default;
-        WriteChannel(WriteChannel&&) noexcept = default;
-        WriteChannel& operator=(WriteChannel&&) noexcept = default;
+        // Delete copy, allow move
+        WriteChannel(const WriteChannel&) = delete;
+        WriteChannel& operator=(const WriteChannel&) = delete;
+        
+        /**
+         * @brief Move constructor
+         */
+        WriteChannel(WriteChannel&& other) noexcept
+            : Channel<T>(std::move(other))
+        {
+        }
+        
+        /**
+         * @brief Move assignment operator
+         */
+        WriteChannel& operator=(WriteChannel&& other) noexcept
+        {
+            if (this != &other) {
+                Channel<T>::operator=(std::move(other));
+            }
+            return *this;
+        }
         
         /**
          * @brief Write value to channel (producer operation)
@@ -247,7 +407,7 @@ namespace ipc
          * - kChannelInvalid: Channel not properly initialized
          * - kChannelFull: Queue is full, cannot write
          */
-        Result<void> Write(const T& value) noexcept
+        Result<void> Write(const T& value) noexcept override
         {
             if (!this->IsValid()) {
                 return Result<void>(MakeErrorCode(CoreErrc::kChannelInvalid));
@@ -298,7 +458,7 @@ namespace ipc
          * - kChannelWaitsetUnavailable: Waitset required but not available
          * - kChannelSpuriousWakeup: Wakeup occurred but queue still full
          */
-        Result<void> WriteWithPolicy(const T& value, PublishPolicy policy, UInt64 timeout_ns = 0) noexcept
+        Result<void> WriteWithPolicy(const T& value, PublishPolicy policy, UInt64 timeout_ns = 0) noexcept override
         {
             if (!this->IsValid()) {
                 return Result<void>(MakeErrorCode(CoreErrc::kChannelInvalid));
@@ -402,6 +562,33 @@ namespace ipc
             
             return Result<void>();
         }
+        
+        /**
+         * @brief Read operation not supported in WriteChannel
+         * @return Error indicating write-only channel
+         */
+        Result<T> Read() noexcept
+        {
+            return Result<T>(MakeErrorCode(CoreErrc::kInvalidArgument));
+        }
+        
+        /**
+         * @brief Read with policy not supported in WriteChannel
+         * @return Error indicating write-only channel
+         */
+        Result<T> ReadWithPolicy(SubscribePolicy /*policy*/, UInt64 /*timeout_ns*/ = 0) noexcept
+        {
+            return Result<T>(MakeErrorCode(CoreErrc::kInvalidArgument));
+        }
+        
+        /**
+         * @brief Peek operation not supported in WriteChannel
+         * @return Empty optional
+         */
+        Optional<T> Peek() const noexcept override
+        {
+            return {};
+        }
     };
     
     /**
@@ -428,13 +615,17 @@ namespace ipc
          * @param waitset Event flags pointer (optional)
          * @param buffer Ring buffer storage pointer
          * @param capacity Buffer capacity (must be power of 2)
+         * @param active Active state pointer (optional)
+         * @param stmin STMin pointer (optional)
          */
-        ReadChannel(std::atomic<UInt16>* head,
-                    std::atomic<UInt16>* tail,
-                    std::atomic<UInt32>* waitset,
+        ReadChannel(Atomic<UInt16>* head,
+                    Atomic<UInt16>* tail,
+                    Atomic<UInt32>* waitset,
                     T* buffer,
-                    UInt16 capacity) noexcept
-            : Channel<T>(head, tail, waitset, buffer, capacity)
+                    UInt16 capacity,
+                    Atomic<Bool>* active = nullptr,
+                    Atomic<UInt16>* stmin = nullptr) noexcept
+            : Channel<T>(head, tail, waitset, buffer, capacity, active, stmin)
         {
         }
         
@@ -443,11 +634,28 @@ namespace ipc
          */
         ~ReadChannel() noexcept override = default;
         
-        // Allow copy and move
-        ReadChannel(const ReadChannel&) noexcept = default;
-        ReadChannel& operator=(const ReadChannel&) noexcept = default;
-        ReadChannel(ReadChannel&&) noexcept = default;
-        ReadChannel& operator=(ReadChannel&&) noexcept = default;
+        // Delete copy, allow move
+        ReadChannel(const ReadChannel&) = delete;
+        ReadChannel& operator=(const ReadChannel&) = delete;
+        
+        /**
+         * @brief Move constructor
+         */
+        ReadChannel(ReadChannel&& other) noexcept
+            : Channel<T>(std::move(other))
+        {
+        }
+        
+        /**
+         * @brief Move assignment operator
+         */
+        ReadChannel& operator=(ReadChannel&& other) noexcept
+        {
+            if (this != &other) {
+                Channel<T>::operator=(std::move(other));
+            }
+            return *this;
+        }
         
         /**
          * @brief Read value from channel (consumer operation)
@@ -490,8 +698,8 @@ namespace ipc
             
             // Set HasSpace flag for waitset
             if (this->waitset_ != nullptr) {
-                UInt32 flags = this->waitset_->load(std::memory_order_relaxed);
-                this->waitset_->store(flags | EventFlag::kHasSpace, std::memory_order_release);
+                UInt32 current_flags = this->waitset_->load(std::memory_order_relaxed);
+                this->waitset_->store(current_flags | EventFlag::kHasSpace, std::memory_order_release);
             }
             
             return Result<T>(std::move(value));
@@ -639,6 +847,162 @@ namespace ipc
             
             return this->buffer_[head];
         }
+        
+        /**
+         * @brief Write operation not supported in ReadChannel
+         * @return Error indicating read-only channel
+         */
+        Result<void> Write(const T& /*value*/) noexcept
+        {
+            return Result<void>(MakeErrorCode(CoreErrc::kInvalidArgument));
+        }
+        
+        /**
+         * @brief Write with policy not supported in ReadChannel
+         * @return Error indicating read-only channel
+         */
+        Result<void> WriteWithPolicy(const T& /*value*/, PublishPolicy /*policy*/, UInt64 /*timeout_ns*/ = 0) noexcept
+        {
+            return Result<void>(MakeErrorCode(CoreErrc::kInvalidArgument));
+        }
+    };
+    
+    // =========================================================================
+    // Channel Factory
+    // =========================================================================
+    
+    /**
+     * @brief Factory class for creating Channel instances
+     * @details Provides static factory methods to create WriteChannel and ReadChannel
+     *          Returns can be stored as base Channel<T> reference/pointer for polymorphism
+     * 
+     * Usage:
+     * @code
+     *   // Create write-only channel
+     *   auto write_ch = ChannelFactory<UInt16>::CreateWriteChannel(head, tail, waitset, buffer, capacity);
+     *   
+     *   // Create read-only channel  
+     *   auto read_ch = ChannelFactory<UInt16>::CreateReadChannel(head, tail, waitset, buffer, capacity);
+     *   
+     *   // Use through base class pointer
+     *   auto result = write_ch->Write(42);
+     *   
+     *   // Move ownership
+     *   UniqueHandle<Channel<UInt16>> ch = std::move(write_ch);
+     * @endcode
+     */
+    template<typename T>
+    class ChannelFactory final
+    {
+    public:
+        /**
+         * @brief Create a write-only channel
+         * @param head Consumer index pointer (in shared memory)
+         * @param tail Producer index pointer (in shared memory)
+         * @param waitset Event flags pointer (optional, can be nullptr)
+         * @param buffer Ring buffer storage pointer (in shared memory)
+         * @param capacity Buffer capacity (must be power of 2)
+         * @return UniqueHandle to Channel<T> (holding WriteChannel)
+         * 
+         * @details Creates a WriteChannel that:
+         * - Can write values via Write() and WriteWithPolicy()
+         * - Returns error on Read() operations
+         * - Does not own shared memory (only references it)
+         */
+        static UniqueHandle<Channel<T>> CreateWriteChannel(
+            Atomic<UInt16>* head,
+            Atomic<UInt16>* tail,
+            Atomic<UInt32>* waitset,
+            T* buffer,
+            UInt16 capacity,
+            Atomic<Bool>* active = nullptr,
+            Atomic<UInt16>* stmin = nullptr) noexcept
+        {
+            return MakeUnique<WriteChannel<T>>(head, tail, waitset, buffer, capacity, active, stmin);
+        }
+        
+        /**
+         * @brief Create a read-only channel
+         * @param head Consumer index pointer (in shared memory)
+         * @param tail Producer index pointer (in shared memory)
+         * @param waitset Event flags pointer (optional, can be nullptr)
+         * @param buffer Ring buffer storage pointer (in shared memory)
+         * @param capacity Buffer capacity (must be power of 2)
+         * @return UniqueHandle to Channel<T> (holding ReadChannel)
+         * 
+         * @details Creates a ReadChannel that:
+         * - Can read values via Read(), ReadWithPolicy(), and Peek()
+         * - Returns error on Write() operations
+         * - Does not own shared memory (only references it)
+         */
+        static UniqueHandle<Channel<T>> CreateReadChannel(
+            Atomic<UInt16>* head,
+            Atomic<UInt16>* tail,
+            Atomic<UInt32>* waitset,
+            T* buffer,
+            UInt16 capacity,
+            Atomic<Bool>* active = nullptr,
+            Atomic<UInt16>* stmin = nullptr) noexcept
+        {
+            return MakeUnique<ReadChannel<T>>(head, tail, waitset, buffer, capacity, active, stmin);
+        }
+        
+        /**
+         * @brief Create write channel from ChannelQueue
+         * @param queue Pointer to ChannelQueue in shared memory
+         * @return UniqueHandle to Channel<T> (holding WriteChannel), or nullptr if queue is null
+         * 
+         * @details Convenience method that extracts fields from ChannelQueue
+         * and creates a WriteChannel. Assumes buffer follows ChannelQueue struct.
+         */
+        static UniqueHandle<Channel<T>> CreateWriteChannelFromQueue(ChannelQueue* queue) noexcept
+        {
+            if (queue == nullptr) {
+                return nullptr;
+            }
+            
+            return MakeUnique<WriteChannel<T>>(
+                &queue->head,
+                &queue->tail,
+                &queue->queue_waitset,
+                reinterpret_cast<T*>(queue->GetBuffer()),
+                queue->capacity,
+                &queue->active,
+                &queue->STmin
+            );
+        }
+        
+        /**
+         * @brief Create read channel from ChannelQueue
+         * @param queue Pointer to ChannelQueue in shared memory
+         * @return UniqueHandle to Channel<T> (holding ReadChannel), or nullptr if queue is null
+         * 
+         * @details Convenience method that extracts fields from ChannelQueue
+         * and creates a ReadChannel. Assumes buffer follows ChannelQueue struct.
+         */
+        static UniqueHandle<Channel<T>> CreateReadChannelFromQueue(ChannelQueue* queue) noexcept
+        {
+            if (queue == nullptr) {
+                return nullptr;
+            }
+            
+            return MakeUnique<ReadChannel<T>>(
+                &queue->head,
+                &queue->tail,
+                &queue->queue_waitset,
+                reinterpret_cast<T*>(queue->GetBuffer()),
+                queue->capacity,
+                &queue->active,
+                &queue->STmin
+            );
+        }
+        
+    private:
+        // Factory class - no instantiation
+        ChannelFactory() = delete;
+        ~ChannelFactory() = delete;
+        ChannelFactory(const ChannelFactory&) = delete;
+        ChannelFactory& operator=(const ChannelFactory&) = delete;
     };
     
 }  // namespace ipc

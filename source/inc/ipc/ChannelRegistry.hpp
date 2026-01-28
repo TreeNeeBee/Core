@@ -26,60 +26,34 @@ namespace ipc
     
     class ChannelRegistry final
     {
-    public:    
-        /**
-        * @brief Get current snapshot of subscriber queue indices
-        * @param ctrl Pointer to ControlBlock in shared memory
-        * @return Copy of current active snapshot
-        * 
-        * @details
-        * - Lock-free read using memory_order_acquire
-        * - Returns a stack copy, very fast
-        * - Publisher calls this before sending messages
-        */
-        static inline const UInt8* GetChannelSnapshot( ControlBlock* ctrl ) noexcept
+    public:
+        static Result< UInt8 > RegisterReadChannel( ControlBlock* ctrl, UInt8 index = 0xFF ) noexcept
         {
-            return ctrl->GetSnapshot();
+            return RegisterChannel( ctrl, true, index );
         }
 
-        static inline UInt8 GetChannelSnapshotCount( ControlBlock* ctrl ) noexcept
+        static Bool UnregisterReadChannel( ControlBlock* ctrl, UInt8 index ) noexcept
         {
-            return ctrl->GetSnapshotCount();
+            return UnregisterChannel( ctrl, true, index );
         }
-        
-        /**
-        * @brief Register a new subscriber queue
-        * @param ctrl Pointer to ControlBlock in shared memory
-        * @param index Queue index to register
-        * @return true if registered successfully, false if full or already exists
-        * 
-        * @details
-        * - Uses bitmask for O(1) registration
-        * - Regenerates snapshot from ready_mask
-        * - Lock-free with CAS on ready_mask
-        */
-        static Result< UInt8 > RegisterChannel( ControlBlock* ctrl, UInt8 index = 0xFF ) noexcept;
-        
-        /**
-        * @brief Unregister a subscriber queue
-        * @param ctrl Pointer to ControlBlock in shared memory
-        * @param index Queue index to unregister
-        * @return true if unregistered successfully, false if not found
-        * 
-        * @details
-        * - Uses bitmask for O(1) unregistration
-        * - Regenerates snapshot from ready_mask
-        * - Lock-free with CAS on ready_mask
-        */
-        static Bool UnregisterChannel( ControlBlock* ctrl, UInt8 index ) noexcept;
 
+        static Result< UInt8 > RegisterWriteChannel( ControlBlock* ctrl, UInt8 index = 0xFF ) noexcept
+        {
+            return RegisterChannel( ctrl, false, index );
+        }
+
+        static Bool UnregisterWriteChannel( ControlBlock* ctrl, UInt8 index ) noexcept
+        {
+            return UnregisterChannel( ctrl, false, index );
+        }
+   
         /**
         * @brief Mark channel as active
         * @param ctrl Pointer to ControlBlock in shared memory
         * @param index Queue index to activate
         * @return true if successful, false if invalid index
         */
-        static Bool ActiveChannel( SharedMemoryManager* shm, UInt8 index ) noexcept;
+        static Bool ActiveChannel( SharedMemoryManager* shm, Bool isReadChannel, UInt8 index ) noexcept;
 
         /**
         * @brief Mark channel as inactive
@@ -87,7 +61,7 @@ namespace ipc
         * @param index Queue index to deactivate
         * @return true if successful, false if invalid index
         */
-        static Bool DeactiveChannel( SharedMemoryManager* shm, UInt8 index ) noexcept;
+        static Bool DeactiveChannel( SharedMemoryManager* shm, Bool isReadChannel, UInt8 index ) noexcept;
     
     protected:
         ChannelRegistry() = delete;
@@ -100,6 +74,17 @@ namespace ipc
 
     private:
         /**
+        * @brief Allocate a unique queue index for new publisher
+        * @param ctrl Pointer to ControlBlock in shared memory
+        * @return Unique queue index or kInvalidChunkIndex if full
+        * 
+        * @details
+        * - Finds first available slot from ready_mask using bit operations
+        * - Returns kInvalidChunkIndex if all slots occupied (kMaxChannels)
+        */
+        static Result< UInt8 > AllocateReadChannel( ControlBlock* ctrl, UInt8 index = 0xFF ) noexcept;
+    
+        /**
         * @brief Allocate a unique queue index for new subscriber
         * @param ctrl Pointer to ControlBlock in shared memory
         * @return Unique queue index or kInvalidChunkIndex if full
@@ -108,9 +93,33 @@ namespace ipc
         * - Finds first available slot from ready_mask using bit operations
         * - Returns kInvalidChunkIndex if all slots occupied (kMaxChannels)
         */
-        static Result< UInt8 > AllocateQueueIndex( ControlBlock* ctrl, UInt8 index = 0xFF ) noexcept;
-    
-        static Bool RegenerateSnapshot( ControlBlock* ctrl ) noexcept;
+        static Result< UInt8 > AllocateWriteChannel( ControlBlock* ctrl, UInt8 index = 0xFF ) noexcept;
+
+        /**
+        * @brief Register a new subscriber queue
+        * @param ctrl Pointer to ControlBlock in shared memory
+        * @param index Queue index to register
+        * @return true if registered successfully, false if full or already exists
+        * 
+        * @details
+        * - Uses bitmask for O(1) registration
+        * - Regenerates snapshot from ready_mask
+        * - Lock-free with CAS on ready_mask
+        */
+        static Result< UInt8 > RegisterChannel( ControlBlock* ctrl, Bool isReadChannel, UInt8 index = 0xFF ) noexcept;
+        
+        /**
+        * @brief Unregister a subscriber queue
+        * @param ctrl Pointer to ControlBlock in shared memory
+        * @param index Queue index to unregister
+        * @return true if unregistered successfully, false if not found
+        * 
+        * @details
+        * - Uses bitmask for O(1) unregistration
+        * - Regenerates snapshot from ready_mask
+        * - Lock-free with CAS on ready_mask
+        */
+        static Bool UnregisterChannel( ControlBlock* ctrl, Bool isReadChannel, UInt8 index ) noexcept;
     };
 }  // namespace ipc
 }  // namespace core

@@ -7,6 +7,7 @@
  */
 
 #include "ipc/Subscriber.hpp"
+#include "ipc/Channel.hpp"
 #include "ipc/Message.hpp"
 #include "ipc/ChannelRegistry.hpp"
 #include "ipc/WaitSetHelper.hpp"
@@ -56,7 +57,7 @@ namespace ipc
         
         while ( true ) {
             // Allocate unique queue index from shared memory control block
-            auto subscriber_id_result = ChannelRegistry::RegisterChannel( ctrl );
+            auto subscriber_id_result = ChannelRegistry::RegisterReadChannel( ctrl, config.channel_id );
             if ( DEF_LAP_IF_UNLIKELY( !subscriber_id_result ) ) {
                 if ( subscriber_id_result.Error() == CoreErrc::kIPCRetry ) {
                     // Retry allocation
@@ -80,138 +81,71 @@ namespace ipc
         }   
         // Create subscriber
         Subscriber subscriber( shmPath, config, std::move( shm ), 
-                                std::move(allocator), queue_index );
+                                std::move(allocator) );
         
         return Result< Subscriber >( std::move( subscriber ) );
     }
-    
-    Subscriber::~Subscriber() noexcept
-    {
-        // Automatically disconnect on destruction
-        (void)Disconnect();
-    }
 
-    Result< Sample > Subscriber::Receive( SubscribePolicy policy ) noexcept
+    Result< Vector< Sample > > Subscriber::Receive( UInt8 channel_id, SubscribePolicy policy ) noexcept
     {
-        // Get queue from shared memory
-        auto* queue = shm_->GetChannelQueue(subscriber_id_);
-        if ( !queue ) {
-            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
-        }
-        
-        // Try to dequeue chunk index (SPSC consumer side)
-        UInt16 head = queue->head.load(std::memory_order_relaxed);
-        UInt16 tail = queue->tail.load(std::memory_order_acquire);
-        
-        if ( head == tail ) {
-            // Queue empty - handle based on policy
-            if ( DEF_LAP_IF_LIKELY( policy == SubscribePolicy::kBlock ) ) {
-                // Block waiting for data using WaitSet
-                Duration timeout = Duration( config_.timeout );  // 100ms default
-                
-                // Use futex-based wait for efficient blocking
-                auto wait_result = WaitSetHelper::WaitForFlags(
-                    &queue->queue_waitset,
-                    EventFlag::kHasData,
-                    timeout
-                );
-                
-                if ( !wait_result ) {
-                    // Timeout or error
-                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
-                }
-                
-                // Recheck queue after wake
-                head = queue->head.load( std::memory_order_relaxed );
-                tail = queue->tail.load( std::memory_order_acquire );
-                
-                if ( head == tail ) {
-                    // Spurious wakeup, return error
-                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
-                }
-            } else if ( policy == SubscribePolicy::kWait ) {
-                // Busy-wait polling for data using WaitSet
-                Duration timeout = Duration( config_.timeout );  // 10ms default
-                
-                // Use WaitSet poll for efficient busy-waiting
-                Bool has_data = WaitSetHelper::PollForFlags(
-                    &queue->queue_waitset,
-                    EventFlag::kHasData,
-                    timeout
-                );
-                
-                if ( !has_data ) {
-                    // Timeout
-                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
-                }
-                
-                // Recheck queue after poll success
-                head = queue->head.load( std::memory_order_relaxed );
-                tail = queue->tail.load( std::memory_order_acquire );
-                
-                if ( head == tail ) {
-                    // Data was consumed by another thread
-                    return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
-                }
-            } else if ( policy == SubscribePolicy::kSkip ) {
-                return Result< Sample >( MakeErrorCode( CoreErrc::kWouldBlock ) );
-            } else if ( policy == SubscribePolicy::kError ) {
-                return Result< Sample >( MakeErrorCode( CoreErrc::kIPCQueueEmpty ) );
-            } else {
-                // Unknown policy
-                return Result< Sample >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        if ( channel_id != kInvalidChannelID ) {
+            auto result = InnerReceive( channel_id, policy );
+
+            if ( !result ) {
+                return Result< Vector< Sample > >::FromError( result.Error() );
             }
-        }
-        
-        // Dequeue chunk_index
-        auto buffer = queue->GetBuffer();
-        UInt16 chunk_index = buffer[head].chunk_index;
-        
-        // Chunk index read from queue
-        
-        // Update head (release semantics for producer visibility)
-        UInt16 next_head = static_cast<UInt16>((head + 1) & (queue->capacity - 1));
-        queue->head.store( next_head, std::memory_order_release );
 
-        // Create Sample wrapper
-        Sample sample( allocator_.get(), chunk_index );
-        if ( !sample.IsValid() ) {
-            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+            return Result< Vector< Sample > >( Vector< Sample >( result.Value() ) );
         }
 
-        if ( sample.GetState() != ChunkState::kSent &&
-             sample.GetState() != ChunkState::kReceived ) {
-            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+        Vector< Sample > samples;
+        for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+            auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
+            if ( !read_result )  {
+                // skip
+                continue;
+            }
+            // Extract chunk_index from ChannelQueueValue
+            UInt16 chunk_index = read_result.Value().chunk_index;
+
+            // Create Sample wrapper
+            Sample sample( allocator_.get(), chunk_index );
+            if ( !sample.IsValid() ) {
+                return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+            }
+
+            if ( sample.GetState() != ChunkState::kSent &&
+                sample.GetState() != ChunkState::kReceived ) {
+                return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+            }
+            sample.TransitionState( ChunkState::kReceived );
+
+            samples.emplace_back( std::move( sample ) );
         }
 
-        sample.TransitionState( ChunkState::kReceived );
-
-        // // Call message received callback
-        // sample.onMessageReceived();
-        
-        return Result< Sample >( std::move( sample ) );
+        return Result< Vector< Sample > >( std::move( samples ) );
     }
 
-    Result< Size > Subscriber::Receive( Byte* buffer, Size size,
-                         SubscribePolicy policy ) noexcept
-    {
-        auto sample_result = Receive( policy );
-        if ( !sample_result ) {
-            return Result< Size >::FromError( sample_result.Error() );
-        }
+    // Result< Size > Subscriber::Receive( Byte* buffer, Size size,
+    //                      SubscribePolicy policy ) noexcept
+    // {
+    //     auto sample_result = Receive( policy );
+    //     if ( !sample_result ) {
+    //         return Result< Size >::FromError( sample_result.Error() );
+    //     }
         
-        auto sample = std::move( sample_result ).Value();
+    //     auto sample = std::move( sample_result ).Value();
         
-        Size copySize = size < sample.RawDataSize() ? size : sample.RawDataSize();
+    //     Size copySize = size < sample.RawDataSize() ? size : sample.RawDataSize();
         
-        std::memcpy( buffer, sample.RawData(), copySize );
+    //     std::memcpy( buffer, sample.RawData(), copySize );
         
-        return Result< Size >::FromValue( copySize );
-    }
+    //     return Result< Size >::FromValue( copySize );
+    // }
         
     Bool Subscriber::IsQueueEmpty() const noexcept
     {
-        auto* queue = shm_->GetChannelQueue( subscriber_id_ );
+        auto* queue = shm_->GetChannelQueue( config_.channel_id );
         DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
         
         UInt32 head = queue->head.load( std::memory_order_acquire );
@@ -221,7 +155,7 @@ namespace ipc
     
     UInt32 Subscriber::GetQueueSize() const noexcept
     {
-        auto* queue = shm_->GetChannelQueue( subscriber_id_ );
+        auto* queue = shm_->GetChannelQueue( config_.channel_id );
         DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
         
         UInt32 head = queue->head.load( std::memory_order_acquire );
@@ -238,7 +172,7 @@ namespace ipc
     {
         config_.STmin = stmin;
 
-        ChannelQueue* queue = shm_->GetChannelQueue( subscriber_id_ );
+        ChannelQueue* queue = shm_->GetChannelQueue( config_.channel_id );
         if ( queue ) {
             queue->STmin.store( stmin, std::memory_order_release );
         }
@@ -250,7 +184,7 @@ namespace ipc
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
         }
 
-        ChannelRegistry::ActiveChannel( shm_.get(), subscriber_id_ );
+        ChannelRegistry::ActiveChannel( shm_.get(), config_.channel_id );
 
         return {};
     }
@@ -262,14 +196,55 @@ namespace ipc
         }
 
         // ====== Step 1: Deactivate channel ======
-        ChannelRegistry::DeactiveChannel( shm_.get(), subscriber_id_ );
-        
+        ChannelRegistry::DeactiveChannel( shm_.get(), config_.channel_id );
+
+        return {};
+    }
+
+    Subscriber( const String& shmPath,
+                  const SubscriberConfig& config,
+                  UniqueHandle<SharedMemoryManager> shm,
+                  UniqueHandle<ChunkPoolAllocator> allocator) noexcept
+            : shm_path_(shmPath)
+            , config_(config)
+            , shm_(std::move(shm))
+            , allocator_(std::move(allocator))
+            , read_channel_(nullptr)
+    {
+        DEF_LAP_ASSERT( shm_ != nullptr, "SharedMemoryManager must not be null" );
+        DEF_LAP_ASSERT( allocator_ != nullptr, "ChunkPoolAllocator must not be null" );
+
+        active_channel_index_.store( 0, std::memory_order_relaxed );
+
+        auto ctrl = shm_->GetControlBlock();
+        if ( ctrl->header.type == IPCType::kMPSC ) {
+            // Start channel scanner thread for MPSC
+            is_running_ = true;
+            scanner_thread_ = std::thread( &Subscriber::InnerChannelScanner, this , 1000, 10000 ); // 10ms interval
+        } else if ( ctrl->header.type == IPCType::kMPSC || ctrl->header.type == IPCType::kMPMC ) {
+            // No scanner needed for MPSC or MPMC, just create one read channel for each subscriber
+            is_running_ = false;
+            read_channels_[0].emplace( config_.channel_id,
+                ChannelFactory<ChannelQueueValue>::CreateReadChannelFromQueue(
+                    shm_->GetChannelQueue( config_.channel_id ) ) );
+        } else {
+            DEF_LAP_ASSERT( false, "Unsupported IPC type" );
+        }
+    }
+     
+    Subscriber::~Subscriber() noexcept
+    {
+        is_running_ = false;
+
+        // Step 1: Disconnect from service
+        Disconnect();
+
         // ====== Step 2: Unregister from ChannelRegistry ======
-        ChannelRegistry::UnregisterChannel( shm_->GetControlBlock(), subscriber_id_ );
+        ChannelRegistry::UnregisterChannel( shm_->GetControlBlock(), config_.channel_id );
         
         // ====== Step 3: Consume remaining messages in queue ======
         // This ensures ref_count is properly decremented
-        auto* queue = shm_->GetChannelQueue( subscriber_id_ );
+        auto* queue = shm_->GetChannelQueue( config_.channel_id );
         
         if ( queue ) {
             while ( !IsQueueEmpty() ) {
@@ -281,9 +256,115 @@ namespace ipc
                 }
             }
         }
-        return {};
+
+        if ( scanner_thread_.joinable() ) {
+            scanner_thread_.join();
+        }
+        read_channels_[0].clear();
+        read_channels_[1].clear();
     }
 
+    /**
+    * @brief Internal channel scanner thread
+    * @details Periodically scans for active publishers and updates read channels
+    */
+    void Subscriber::InnerChannelScanner( UInt16 timeout_microseconds, UInt16 interval_microseconds ) noexcept
+    {
+        auto* ctrl = shm_->GetControlBlock();
+
+        DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock must not be null" );
+
+        auto& write_mask = ctrl->registry.write_mask;
+        auto& write_seq = ctrl->registry.write_seq;
+
+        struct timespec ts = {
+            .tv_sec  = 0,
+            .tv_nsec = ( timeout_microseconds == 0 ? 10'000'000 : timeout_microseconds * 1000 ),
+        };
+
+        // For SPMC or MPSC, we only need to track active publishers
+        // Do not use in MPMC
+        UInt32 last = 0;
+        while ( is_running_ ) {
+            while ( write_seq.load( std::memory_order_acquire ) == last ) {
+                futex_wait( &write_seq, last, &ts );
+            }
+
+            last = write_seq.load(std::memory_order_acquire);
+            auto mask = write_mask.load(std::memory_order_acquire);
+            UpdateReadChannel( mask );
+
+            std::this_thread::sleep_for( std::chrono::microseconds( interval_microseconds ) );
+        }
+    }
+
+    /* @brief Update read channels based on active publishers
+    * @details Called periodically to refresh the list of active channels
+    * - Scans ChannelRegistry for active publishers
+    * - Updates internal read_channels_ vector accordingly
+    */
+    void Subscriber::UpdateReadChannel( UInt64 write_mask ) noexcept
+    {
+        auto updateIndex = ( active_channel_index_.load(std::memory_order_acquire) + 1 ) % 2;
+        auto& read_channel = read_channels_[ updateIndex ]; 
+
+        read_channel.clear();
+        if ( write_mask == 0 ) {
+            // No active subscribers
+            active_channel_index_.store( updateIndex, std::memory_order_release );
+            return;
+        }
+
+        while ( write_mask ) {
+            int idx = __builtin_ctzll( write_mask );  // Count trailing zeros
+            
+            // Get subscriber queue from shared memory
+            auto* queue = shm_->GetChannelQueue( idx );
+            if ( queue != nullptr ) {
+                auto channel = ChannelFactory<ChannelQueueValue>::CreateReadChannelFromQueue( queue );
+                if ( channel ) {
+                    read_channel.emplace( idx, std::move( channel ) );
+                }
+            }
+
+            write_mask &= write_mask - 1;  // Clear lowest set bit
+        }
+        active_channel_index_.store( updateIndex, std::memory_order_release );
+    }
+
+    Result< Sample > InnerReceive( UInt8 channel_id, SubscribePolicy policy ) noexcept
+    {
+        if ( channel_id >= kMaxChannels ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );
+        }
+
+        auto it = read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ].find( channel_id );
+        if ( it == read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ].end() ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kChannelInvalid ) );
+        }
+
+        auto read_result = it->second->ReadWithPolicy( policy, config_.timeout );
+        if (!read_result) {
+            return Result< Sample >( read_result.Error() );
+        }
+        // Extract chunk_index from ChannelQueueValue
+        UInt16 chunk_index = read_result.Value().chunk_index;
+
+        // Create Sample wrapper
+        Sample sample( allocator_.get(), chunk_index );
+        if ( !sample.IsValid() ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+        }
+
+        if ( sample.GetState() != ChunkState::kSent &&
+             sample.GetState() != ChunkState::kReceived ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+        }
+
+        sample.TransitionState( ChunkState::kReceived );
+
+        return Result< Sample >::FromValue( std::move( sample ) );
+    }
 }  // namespace ipc
 }  // namespace core
 }  // namespace lap

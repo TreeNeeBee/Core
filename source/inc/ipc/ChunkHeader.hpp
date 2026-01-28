@@ -43,7 +43,7 @@ namespace ipc
      *   [8-11] next_free_index (4B atomic)
      *   [12-15] chunk_index (4B)
      */
-    struct DEF_LAP_SYS_ALIGN ChunkHeader
+    struct alignas( kSystemWordSize ) ChunkHeader
     {
         //=====================================================================
         // Reference Counting (8B)
@@ -51,20 +51,17 @@ namespace ipc
         
         /// Reference count: number of Subscribers holding this chunk
         /// When ref_count reaches 0, chunk returns to free list
-        std::atomic<UInt8>  ref_count;  
-        std::atomic<UInt8>  state;              ///< ChunkState enum
+        Atomic<UInt8>       ref_count;  
+        Atomic<UInt8>       state;              ///< ChunkState enum
         UInt16              crc_;               ///< CRC for data integrity
         UInt32              payload_size_;      ///< Size of user payload
         
-        //=====================================================================
-        // Free-List Linkage (4B)
-        //=====================================================================
-        
+        Atomic<UInt8>       channel_id;         ///< Channel ID (for multi-channel support)
+        UInt8               reserved_[3];       ///< Padding for alignment  
+
         /// Next chunk index in free list (kInvalidChunkIndex if end)
-        std::atomic<UInt32> next_free_index;
-        
-        //=====================================================================
-        UInt32 chunk_index;          ///< Index in the pool  
+        Atomic<UInt16>      next_free_index;
+        UInt16              chunk_index;        ///< Index in the pool  
 
         // Methods
         //=====================================================================
@@ -72,9 +69,9 @@ namespace ipc
         /**
          * @brief Initialize chunk header
          * @param index Chunk index in pool
-         * @param payload_offset Offset to user payload
+         * @param payload_size Size of user payload
          */
-        void Initialize( UInt32 index, UInt32 payload_size ) noexcept
+        void Initialize( UInt16 index, UInt32 payload_size ) noexcept
         {
             chunk_index = index;
             payload_size_ = payload_size;
@@ -90,7 +87,7 @@ namespace ipc
          */
         inline void* GetPayload() noexcept
         {
-            return reinterpret_cast<UInt8*>(this) + sizeof( ChunkHeader );
+            return reinterpret_cast< UInt8* >( this + 1 );
         }
         
         /**
@@ -99,19 +96,18 @@ namespace ipc
          */
         inline const void* GetPayload() const noexcept
         {
-            return reinterpret_cast<const UInt8*>(this) + sizeof( ChunkHeader );
+            return reinterpret_cast<const UInt8*>( this + 1 );
         }
         
         /**
          * @brief Get chunk header from payload pointer
          * @param payload User payload pointer
-         * @param payload_offset Offset used during initialization
          * @return Chunk header pointer
          */
-        static inline ChunkHeader* FromPayload( void* payload, UInt16 payload_offset ) noexcept
+        static inline ChunkHeader* FromPayload( void* payload ) noexcept
         {
             return reinterpret_cast< ChunkHeader* >(
-                reinterpret_cast<UInt8*>( payload ) - sizeof( ChunkHeader ) - payload_offset
+                reinterpret_cast<UInt8*>( payload ) - sizeof( ChunkHeader )
             );
         }
     };

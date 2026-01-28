@@ -20,6 +20,7 @@
 #include "CString.hpp"
 #include "Message.hpp"
 #include "CTypedef.hpp"
+#include "Channel.hpp"
 
 namespace lap
 {
@@ -32,7 +33,8 @@ namespace ipc
      */
     struct PublisherConfig
     {
-        UInt32 max_chunks       = kDefaultChunks;            ///< Maximum chunks in pool
+        UInt8  channel_id      = 0xFF;                          ///< Channel ID (for multi-channel support)
+        UInt32 max_chunks       = kDefaultChunks;               ///< Maximum chunks in pool
         UInt32 chunk_size       = 0;                            ///< Chunk size (payload)
         UInt64 loan_timeout     = 100000000;                    ///< Loan timeout (ns), 0 means no wait
         UInt64 publish_timeout  = 100000000;                    ///< Publish timeout (ns), 0 means no wait
@@ -56,6 +58,9 @@ namespace ipc
     class Publisher
     {
     public:
+        using _MapChannel = Map< UInt8, UniqueHandle< Channel< ChannelQueueValue > > >;
+    
+    public:
         /**
          * @brief Create publisher
          * @param service_name Service name
@@ -68,7 +73,7 @@ namespace ipc
         /**
          * @brief Destructor
          */
-        ~Publisher() noexcept = default;
+        ~Publisher() noexcept;
         
         // Delete copy - external users must use Create()
         Publisher(const Publisher&) = delete;
@@ -112,7 +117,7 @@ namespace ipc
          * @brief Get event hooks
          * @return Event hooks pointer (may be null)
          */
-        IPCEventHooks* GetEventHooks() const noexcept
+        inline IPCEventHooks* GetEventHooks() const noexcept
         {
             return event_hooks_.get();
         }
@@ -145,10 +150,10 @@ namespace ipc
          * @note For external use, prefer SendCopy() or SendEmplace() instead.
          *       This method is protected to allow advanced usage in derived classes.
          */
-        Result< void > Send( Sample&& sample, 
+        Result< void > Send( Sample&& sample, Uint8 channel_id = kInvalidChannelID,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
-        Result< void > Send( Byte* buffer, Size size,
+        Result< void > Send( Byte* buffer, Size size, Uint8 channel_id = kInvalidChannelID,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
         /**
@@ -164,7 +169,7 @@ namespace ipc
          * - write_fn should return number of bytes written
          */
         template<class Fn>
-        Result< void > Send( Fn&& write_fn,
+        Result< void > Send( Fn&& write_fn, Uint8 channel_id = kInvalidChannelID,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept
         {
             static_assert(std::is_invocable_r_v<Size, Fn, Byte*, Size>,
@@ -186,7 +191,7 @@ namespace ipc
                 // Fill function wrote more than chunk size
                 return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
             }
-            return Send( std::move( sample ), policy );
+            return Send( std::move( sample ), channel_id, policy );
         }
 
     private:
@@ -196,26 +201,35 @@ namespace ipc
         Publisher( const String& shmPath,
                  const PublisherConfig& config,
                  UniqueHandle<SharedMemoryManager> shm,
-                 UniqueHandle<ChunkPoolAllocator> allocator) noexcept
-            : shm_path_(shmPath)
-            , config_(config)
-            , shm_(std::move(shm))
-            , allocator_(std::move(allocator))
-            , event_hooks_(nullptr)
-        {
-            // Initialize last_send_ to epoch (far past) to ensure first send is not skipped
-            for ( UInt32 i = 0; i < kMaxChannels; ++i ) {
-                last_send_[i] = SteadyClock::time_point{};
-            }
-        }
+                 UniqueHandle<ChunkPoolAllocator> allocator) noexcept;
+
+        /**
+        * @brief Internal channel scanner thread
+        * @details Periodically scans for active subscribers and updates write channels
+        */
+        void InnerChannelScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+
+        /* @brief Update write channels based on active subscribers
+        * @details Called periodically to refresh the list of active channels
+        * - Scans ChannelRegistry for active subscribers
+        * - Updates internal write_channels_ vector accordingly
+        */
+        void UpdateWriteChannel( UInt64 write_mask ) noexcept;
+
+        // Result< void > InnerSend( Sample&& sample, UInt8 channel_id,
+        //                                 PublishPolicy policy ) noexcept;
 
     private:
-        String shm_path_;                                     ///< Shared memory path
-        PublisherConfig config_;                             ///< Configuration
-        UniqueHandle< SharedMemoryManager > shm_;            ///< Shared memory manager
-        UniqueHandle< ChunkPoolAllocator > allocator_;       ///< Chunk allocator
-        SharedHandle< IPCEventHooks > event_hooks_;          ///< Event hooks for monitoring
-        SteadyClock::time_point last_send_[kMaxChannels]; ///< Last send timestamps per subscriber
+        String                              shm_path_;                  ///< Shared memory path
+        PublisherConfig                     config_;                    ///< Configuration
+        UniqueHandle< SharedMemoryManager > shm_;                       ///< Shared memory manager
+        UniqueHandle< ChunkPoolAllocator >  allocator_;                 ///< Chunk allocator
+        SharedHandle< IPCEventHooks >       event_hooks_;               ///< Event hooks for monitoring
+        Bool                                is_running_{false};         ///< thread running flag
+        std::thread                         scanner_thread_;            ///< Channel scanner thread
+        SteadyClock::time_point             last_send_[kMaxChannels];   ///< Last send timestamps per subscriber
+        Atomic<UInt8>                       active_channel_index_;      ///< Active channel index
+        _MapChannel                         write_channels_[2];         ///< Write channels for each subscriber
     };
     
 }  // namespace ipc

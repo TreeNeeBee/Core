@@ -65,7 +65,8 @@ namespace core
         kChannelWriteFailed         = 163,  // Write operation failed
         kChannelReadFailed          = 164,  // Read operation failed
         kChannelPolicyNotSupported  = 165,  // Policy not supported
-        kChannelSpuriousWakeup      = 166   // Spurious wakeup occurred
+        kChannelSpuriousWakeup      = 166,  // Spurious wakeup occurred
+        kChannelNotFound            = 167   // Channel not found
     };
 
     inline constexpr const Char* CoreErrMessage( CoreErrc errCode )
@@ -135,6 +136,8 @@ namespace core
             return "Channel policy not supported";
         case CoreErrc::kChannelSpuriousWakeup:
             return "Channel spurious wakeup occurred";
+        case CoreErrc::kChannelNotFound:
+            return "Channel not found";
         default:
             return "Unknown error";
         }

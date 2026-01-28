@@ -7,32 +7,25 @@ namespace core
 {
 namespace ipc
 {
-    Result< UInt8 > ChannelRegistry::RegisterChannel( ControlBlock* ctrl, UInt8 channel_index ) noexcept
+    Result< UInt8 > ChannelRegistry::RegisterChannel( ControlBlock* ctrl, Bool isReadChannel, UInt8 channel_index ) noexcept
     {
-        DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );
-   
-        auto result = AllocateQueueIndex( ctrl, channel_index );
-        
-        if ( result ) {
-            channel_index = result.Value();
+        DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );   
+        if ( isReadChannel ) {
+            return AllocateReadChannel( ctrl, channel_index ).AndThen( [&]( UInt8 index ) {
+                return Result< UInt8 >( index );
+            } ).OrElse( [&]( const ErrorCode& ec ) {
+                return Result< UInt8 >::FromError( ec );
+            } );
         } else {
-            INNER_CORE_LOG( "ChannelRegistry::RegisterChannel - Failed to allocate queue index %s", result.Error().Message().data() );
-            return Result< UInt8 >::FromError( result.Error() );  // Allocation failed
+            return AllocateWriteChannel( ctrl, channel_index ).AndThen( [&]( UInt8 index ) {
+                return Result< UInt8 >( index );
+            } ).OrElse( [&]( const ErrorCode& ec ) {
+                return Result< UInt8 >::FromError( ec );
+            } );
         }
-        
-        // Validate queue index
-        if ( channel_index >= kMaxChannels ) {
-            return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );
-        }
-
-        INNER_CORE_LOG( "ChannelRegistry::RegisterChannel - channel Index: %u", channel_index );
-
-        RegenerateSnapshot( ctrl );
-
-        return Result< UInt8 >( channel_index );
     }
 
-    Bool ChannelRegistry::UnregisterChannel( ControlBlock* ctrl, UInt8 channel_index ) noexcept
+    Bool ChannelRegistry::UnregisterChannel( ControlBlock* ctrl, Bool isReadChannel, UInt8 channel_index ) noexcept
     {
         DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );
 
@@ -44,27 +37,47 @@ namespace ipc
         INNER_CORE_LOG( "ChannelRegistry::UnregisterChannel - channel Index: %u", channel_index );
 
         // Try to clear bit in ready_mask (CAS loop)
-        while (true) {
-            UInt32 expected_mask = ctrl->registry.ready_mask.load(std::memory_order_acquire);
-            
-            // Check if not registered
-            if ( !(expected_mask & (static_cast<UInt32>(1U) << channel_index)) ) {
-                return false;  // Not registered
+        if ( isReadChannel ) {
+            while (true) {
+                UInt64 expected_mask = ctrl->registry.read_mask.load(std::memory_order_acquire);
+                
+                // Check if not registered
+                if ( !(expected_mask & (static_cast<UInt64>(1U) << channel_index)) ) {
+                    return false;  // Not registered
+                }
+                
+                UInt64 new_mask = expected_mask & ~(static_cast<UInt64>(1U) << channel_index);
+                if ( ctrl->registry.read_mask.compare_exchange_weak(
+                        expected_mask, new_mask,
+                        std::memory_order_acq_rel, std::memory_order_acquire) ) {
+                    break;  // Successfully cleared bit
+                }
             }
-            
-            UInt32 new_mask = expected_mask & ~(static_cast<UInt32>(1U) << channel_index);
-            if ( ctrl->registry.ready_mask.compare_exchange_weak(
-                    expected_mask, new_mask,
-                    std::memory_order_acq_rel, std::memory_order_acquire) ) {
-                break;  // Successfully cleared bit
+        } else {
+            while (true) {
+                UInt64 expected_mask = ctrl->registry.write_mask.load(std::memory_order_acquire);
+                
+                // Check if not registered
+                if ( !(expected_mask & (static_cast<UInt64>(1U) << channel_index)) ) {
+                    return false;  // Not registered
+                }
+                
+                UInt64 new_mask = expected_mask & ~(static_cast<UInt64>(1U) << channel_index);
+                if ( ctrl->registry.write_mask.compare_exchange_weak(
+                        expected_mask, new_mask,
+                        std::memory_order_acq_rel, std::memory_order_acquire) ) {
+                    break;  // Successfully cleared bit
+                }
             }
         }
 
-        return RegenerateSnapshot( ctrl );
+        // return RegenerateSnapshot( ctrl );
+        return true;
     }
 
-    Bool ChannelRegistry::ActiveChannel( SharedMemoryManager* shm, UInt8 index ) noexcept
+    Bool ChannelRegistry::ActiveChannel( SharedMemoryManager* shm, Bool isReadChannel, UInt8 index ) noexcept
     {
+        UNUSED( isReadChannel );
         DEF_LAP_ASSERT( shm != nullptr, "SharedMemoryManager pointer is null" );
         DEF_LAP_ASSERT( index < kMaxChannels, "Queue index out of range" );
         
@@ -72,8 +85,9 @@ namespace ipc
         return true;
     }
 
-    Bool ChannelRegistry::DeactiveChannel( SharedMemoryManager* shm, UInt8 index ) noexcept
+    Bool ChannelRegistry::DeactiveChannel( SharedMemoryManager* shm, Bool isReadChannel, UInt8 index ) noexcept
     {
+        UNUSED( isReadChannel );
         DEF_LAP_ASSERT( shm != nullptr, "SharedMemoryManager pointer is null" );
         DEF_LAP_ASSERT( index < kMaxChannels, "Queue index out of range" );
 
@@ -81,71 +95,104 @@ namespace ipc
         return true;
     }
 
-    Result<UInt8> ChannelRegistry::AllocateQueueIndex( ControlBlock* ctrl, UInt8 index ) noexcept
-    {
-        UInt32 mask = ctrl->registry.ready_mask.load(std::memory_order_acquire);
-        
-        if ( index != 0xFF ) {
-            // Specific index requested, check if available
-            if ( index >= kMaxChannels ) {
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );  // Already occupied
-            }
-
-            UInt32 bitSet = static_cast< UInt32 >( 1U ) << index;
-            if ( mask & bitSet ) {
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );  // Already occupied
-            }
-            
-            UInt32 old = ctrl->registry.ready_mask.fetch_or( bitSet, std::memory_order_acq_rel );
-            if ( old & bitSet ) {
-                // Another thread set the bit first
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
-            }
-            
-            return Result< UInt8 >( index );
-        } else {
-            // Find first unset bit (invert mask to find 0s as 1s)
-            UInt32 m = ~mask;
-            if ( m == 0 ) {
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );  // All slots occupied
-            }
-
-            int idx = __builtin_ctz( m );  // UInt32 version
-
-            UInt32 bitSet = static_cast< UInt32 >( 1U ) << idx;
-            UInt32 old = ctrl->registry.ready_mask.fetch_or( bitSet, std::memory_order_acq_rel );
-            if ( old & bitSet ) {
-                // Another thread set the bit first, retry
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCRetry ) );
-            }
-
-            return Result< UInt8 >( idx );
-        }
-    }
-
-    Bool ChannelRegistry::RegenerateSnapshot( ControlBlock* ctrl ) noexcept
+    Result<UInt8> ChannelRegistry::AllocateReadChannel( ControlBlock* ctrl, UInt8 index ) noexcept
     {
         DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );
 
-        // Get inactive buffer as write buffer
-        UInt32 active_idx = ctrl->registry.active_index.load(std::memory_order_acquire);
-        UInt32 write_idx = 1 - active_idx;
-        auto write_snap = ctrl->registry.GetSnapshot(write_idx);
+        // Load current read mask
+        UInt64 mask = ctrl->registry.read_mask.load(std::memory_order_acquire);
         
-        // Regenerate snapshot from ready_mask (optimized bit traversal)
-        UInt8 count = 0;
-        UInt32 m = ctrl->registry.ready_mask.load(std::memory_order_acquire);
-        while ( m ) {
-            int idx = __builtin_ctz( m );  // Count trailing zeros
-            write_snap[ count++ ] = static_cast< UInt8 >( idx );
-            m &= m - 1;  // Clear lowest set bit
+        // Check MPSC constraint: only one subscriber allowed
+        if ( ( ctrl->GetIPCType() == IPCType::kMPSC ) && ( mask != 0 ) ) {
+            return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
         }
-        ctrl->registry.active_count[write_idx] = count;
 
-        // Switch active snapshot to write buffer
-        ctrl->registry.active_index.store( write_idx, std::memory_order_release );
+        // Determine target index
+        UInt8 target_index = index;
+        
+        if ( index == 0xFF ) {
+            // Auto-allocate: find first available slot
+            UInt64 available_mask = ~mask;
+            if ( available_mask == 0 ) {
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );  // All slots occupied
+            }
+            
+            target_index = static_cast< UInt8 >( __builtin_ctz( available_mask ) );
+        } else {
+            // Specific index requested: validate
+            if ( index >= kMaxChannels ) {
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );
+            }
+            
+            UInt64 bit_mask = static_cast< UInt64 >( 1U ) << index;
+            if ( mask & bit_mask ) {
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
+            }
+        }
 
-        return true;
+        // Try to set bit atomically (CAS loop protection)
+        UInt64 bit_to_set = static_cast< UInt64 >( 1U ) << target_index;
+        UInt64 old_mask = ctrl->registry.read_mask.fetch_or( bit_to_set, std::memory_order_acq_rel );
+        
+        if ( old_mask & bit_to_set ) {
+            // Another thread set the bit first, retry needed
+            return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCRetry ) );
+        }
+        
+        // Increment sequence number
+        ctrl->registry.read_seq.fetch_add( 1, std::memory_order_acq_rel );
+        
+        return Result< UInt8 >( target_index );
+    }
+
+    Result< UInt8 > ChannelRegistry::AllocateWriteChannel( ControlBlock* ctrl, UInt8 index ) noexcept
+    {
+        DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );
+
+        // Load current write mask
+        UInt64 mask = ctrl->registry.write_mask.load(std::memory_order_acquire);
+        
+        // Check SPMC constraint: only one publisher allowed
+        if ( ( ctrl->GetIPCType() == IPCType::kSPMC ) && ( mask != 0 ) ) {
+            return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
+        }
+
+        // Determine target index
+        UInt8 target_index = index;
+        
+        if ( index == 0xFF ) {
+            // Auto-allocate: find first available slot
+            UInt64 available_mask = ~mask;
+            if ( available_mask == 0 ) {
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );  // All slots occupied
+            }
+            
+            target_index = static_cast< UInt8 >( __builtin_ctz( available_mask ) );
+        } else {
+            // Specific index requested: validate
+            if ( index >= kMaxChannels ) {
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );
+            }
+            
+            UInt64 bit_mask = static_cast< UInt64 >( 1U ) << index;
+            if ( mask & bit_mask ) {
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
+            }
+        }
+
+        // Try to set bit atomically (CAS loop protection)
+        UInt64 bit_to_set = static_cast< UInt64 >( 1U ) << target_index;
+        UInt64 old_mask = ctrl->registry.write_mask.fetch_or( bit_to_set, std::memory_order_acq_rel );
+        
+        if ( old_mask & bit_to_set ) {
+            // Another thread set the bit first, retry needed
+            return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCRetry ) );
+        }
+        
+        // Increment sequence number
+        ctrl->registry.write_seq.fetch_add( 1, std::memory_order_acq_rel );
+        
+        return Result< UInt8 >( target_index );
     }
 }
 }  // namespace core

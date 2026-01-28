@@ -19,6 +19,7 @@
 #include "CResult.hpp"
 #include "CString.hpp"
 #include "Message.hpp"
+#include "Channel.hpp"
 #include <memory>
 #include <type_traits>
 #include <chrono>
@@ -59,6 +60,9 @@ namespace ipc
     class Subscriber
     {
     public:
+        using _MapChannel = Map< UInt8, UniqueHandle< Channel< ChannelQueueValue > > >;
+
+    public:
         /**
          * @brief Create subscriber
          * @param shm Service name
@@ -91,10 +95,7 @@ namespace ipc
          * - Creates Sample wrapper
          * - Behavior on empty queue depends on policy
          */
-        Result< Sample > Receive( SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
-
-        Result< Size > Receive( Byte* buffer, Size size,
-                         SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
+        Result< Vector< Sample > > Receive( UInt8 channel_id = kInvalidChannelID, SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
         
         /**
          * @brief Receive message using lambda/function to read payload
@@ -109,18 +110,57 @@ namespace ipc
          * - read_fn should return number of bytes read
          */
         template<class Fn>
-        Result< Size > Receive( Fn&& read_fn,
+        Result< UInt8 > Receive( Fn&& read_fn, UInt8 channel_id = kInvalidChannelID,
                          SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept
         {
-            static_assert(std::is_invocable_r_v<Size, Fn, Byte*, Size>,
-                      "Fn must be callable like Size(Byte*, Size)");
-            auto sample_result = Receive( policy );
-            if ( !sample_result ) {
-                return Result< Size >::FromError( sample_result.Error() );
-            }
-            auto sample = std::move( sample_result ).Value();
+            DEF_LAP_STATIC_ASSERT( std::is_invocable_r_v<Size, Fn, UInt8, Byte*, Size>,
+                      "Fn must be callable like Size( UInt8, Byte*, Size)" );
+            
+            if ( channel_id == kInvalidChannelID ) {
+                auto sample_result = InnerReceive( channel_id, policy );
+                if ( !sample_result ) {
+                    return Result< UInt8 >::FromError( sample_result.Error() );
+                }
+                auto sample = std::move( sample_result ).Value();
+                Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
+                if ( readSize > sample.RawDataSize() ) {
+                    return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
+                } else {
+                    return Result< UInt8 >::FromValue( 1 );
+                }
+            } else {
+                UInt8 totalRead = 0;
+                for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+                    auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
+                    if ( !read_result )  {
+                        // skip
+                        continue;
+                    }
+                    // Extract chunk_index from ChannelQueueValue
+                    UInt16 chunk_index = read_result.Value().chunk_index;
 
-            return Result< Size >::FromValue( read_fn( sample.RawData(), sample.RawDataSize() ) );
+                    // Create Sample wrapper
+                    Sample sample( allocator_.get(), chunk_index );
+                    if ( !sample.IsValid() ) {
+                        return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+                    }
+
+                    if ( sample.GetState() != ChunkState::kSent &&
+                        sample.GetState() != ChunkState::kReceived ) {
+                        return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+                    }
+                    sample.TransitionState( ChunkState::kReceived );
+
+                    Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
+                    if ( readSize > sample.RawDataSize() ) {
+                        // return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
+                        INNER_CORE_LOG( "Subscriber::Receive - Read overflow on channel %u", sample.ChannelID() );
+                    } else {
+                        totalRead++;
+                    }
+                }
+                return Result< UInt8 >::FromValue( totalRead );
+            }
         }
 
         /**
@@ -184,24 +224,33 @@ namespace ipc
         Subscriber( const String& shmPath,
                   const SubscriberConfig& config,
                   UniqueHandle<SharedMemoryManager> shm,
-                  UniqueHandle<ChunkPoolAllocator> allocator,
-                  UInt32 subscriber_id) noexcept
-            : shm_path_(shmPath)
-            , config_(config)
-            , shm_(std::move(shm))
-            , allocator_(std::move(allocator))
-            , subscriber_id_(subscriber_id)
-        {
-            ;
-        }
+                  UniqueHandle<ChunkPoolAllocator> allocator) noexcept;
 
-    public:    
-        String shm_path_;                                       ///< Shared memory path
-        SubscriberConfig config_;                               ///< Configuration
-        UniqueHandle<SharedMemoryManager> shm_;                 ///< Shared memory manager
-        UniqueHandle<ChunkPoolAllocator> allocator_;            ///< Chunk allocator
-        UInt32 subscriber_id_;                                  ///< Unique subscriber ID
-        SharedHandle<IPCEventHooks> event_hooks_;               ///< Event hooks for monitoring
+        /**
+        * @brief Internal channel scanner thread
+        * @details Periodically scans for active publishers and updates read channels
+        */
+        void InnerChannelScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+
+        /* @brief Update read channels based on active publishers
+        * @details Called periodically to refresh the list of active channels
+        * - Scans ChannelRegistry for active publishers
+        * - Updates internal read_channels_ vector accordingly
+        */
+        void UpdateReadChannel( UInt64 read_mask ) noexcept;
+
+        Result< Sample > InnerReceive( UInt8 channel_id, SubscribePolicy policy ) noexcept;
+
+    public:
+        String                              shm_path_;              ///< Shared memory path
+        SubscriberConfig                    config_;                ///< Configuration
+        UniqueHandle<SharedMemoryManager>   shm_;                   ///< Shared memory manager
+        UniqueHandle<ChunkPoolAllocator>    allocator_;             ///< Chunk allocator
+        SharedHandle<IPCEventHooks>         event_hooks_;           ///< Event hooks for monitoring
+        Bool                                is_running_{false};     ///< thread running flag
+        std::thread                         scanner_thread_;        ///< Channel scanner thread
+        Atomic<UInt8>                       active_channel_index_;  ///< Active read channel index
+        _MapChannel                         read_channels_[2];      ///< Read channels for this subscriber
     };
     
 }  // namespace ipc

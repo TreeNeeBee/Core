@@ -145,6 +145,7 @@ namespace ipc
         ctrl->Initialize( config.max_chunks,
                         config.max_channels > 0 ? config.max_channels : kMaxChannels,
                         config.chunk_size,
+                        config.ipc_type,
                         config.channel_capacity > 0 ? config.channel_capacity : kMaxChannelCapacity );
         
         // Initialize all ChannelQueue slots in Region 2 (0x100000-0x1FFFFF)

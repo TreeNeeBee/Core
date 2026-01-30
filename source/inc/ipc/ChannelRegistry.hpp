@@ -53,7 +53,7 @@ namespace ipc
         * @param index Queue index to activate
         * @return true if successful, false if invalid index
         */
-        static Bool ActiveChannel( SharedMemoryManager* shm, Bool isReadChannel, UInt8 index ) noexcept;
+        static Bool ActiveChannel( SharedMemoryManager* shm, UInt8 index ) noexcept;
 
         /**
         * @brief Mark channel as inactive
@@ -61,7 +61,7 @@ namespace ipc
         * @param index Queue index to deactivate
         * @return true if successful, false if invalid index
         */
-        static Bool DeactiveChannel( SharedMemoryManager* shm, Bool isReadChannel, UInt8 index ) noexcept;
+        static Bool DeactiveChannel( SharedMemoryManager* shm, UInt8 index ) noexcept;
     
     protected:
         ChannelRegistry() = delete;

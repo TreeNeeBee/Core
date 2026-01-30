@@ -494,6 +494,7 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
     config.chunk_size = kImageSize;
     config.max_chunks = 3;  // 减少到3以适应64MB /dev/shm限制 (3×5.53MB×3=50MB)
     config.policy = PublishPolicy::kOverwrite;
+    config.ipc_type = IPCType::kSPMC;
     
     auto pub_result = Publisher::Create(shm_path, config);
     if (!pub_result.HasValue()) {
@@ -639,6 +640,7 @@ private:
         config.max_chunks = 3;  // 匹配Publisher配置
         config.STmin = 10;  // 10ms限流，保证100FPS
         config.empty_policy = SubscribePolicy::kSkip;
+        config.ipc_type = IPCType::kSPMC;
         
         std::unique_ptr<Subscriber> subscriber;
         for (int retry = 0; retry < 5; ++retry) {
@@ -673,14 +675,14 @@ private:
         // 接收循环
         while (running_.load()) {
             auto recv_start = std::chrono::high_resolution_clock::now();
-            auto sample_result = subscriber->Receive(SubscribePolicy::kSkip);
+            auto sample_result = subscriber->Receive(kInvalidChannelID, SubscribePolicy::kSkip);
             auto recv_end = std::chrono::high_resolution_clock::now();
 
             // std::cerr << "[SubThread-" << camera_id << "] count: " << subscriber->allocator_->GetAllocatedCount() 
                         // << ", queue: " << static_cast<UInt32>(subscriber->shm_->GetChannelQueue(camera_id)->STmin.load(std::memory_order_acquire)) << std::endl;
-            if (sample_result.HasValue()) {
-                auto sample = std::move(sample_result).Value();
-                
+            if (sample_result.HasValue() && !sample_result.Value().empty()) {
+                auto& samples = sample_result.Value();
+                auto& sample = samples[0];
                 
                 UInt64 recv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     recv_end - recv_start).count();

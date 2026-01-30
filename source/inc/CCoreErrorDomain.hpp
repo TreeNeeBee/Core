@@ -31,6 +31,7 @@ namespace core
 {
     enum class CoreErrc : ErrorDomain::CodeType 
     {
+        // General Error Codes (0-199)
         kInvalidArgument            = 22,
         kInvalidMetaModelShortname  = 137,
         kInvalidMetaModelPath       = 138,
@@ -41,32 +42,33 @@ namespace core
         kResourceExhausted          = 143,  // Resource exhausted (e.g., max chunks reached)
         kWouldBlock                 = 144,  // Operation would block (no data available)
         
-        // IPC Error Codes (145-170)
-        kIPCShmCreateFailed         = 145,  // Failed to create shared memory
-        kIPCShmNotFound             = 146,  // Shared memory not found
-        kIPCShmMapFailed            = 147,  // Failed to map shared memory
-        kIPCShmStatFailed           = 148,  // Failed to stat shared memory
-        kIPCShmInvalidMagic         = 149,  // Invalid magic number in shared memory
-        kIPCChunkPoolExhausted      = 150,  // Chunk pool exhausted
-        kIPCQueueFull               = 151,  // Subscriber queue full
-        kIPCQueueEmpty              = 152,  // Subscriber queue empty
-        kIPCInvalidChannelIndex     = 153,  // Invalid queue index
-        kIPCChannelAlreadyInUse     = 154,  // Queue index already in use
-        kIPCRetry                   = 155,  // Retry operation
-        kIPCInvalidChunkIndex       = 156,  // Invalid chunk index
-        kIPCInvalidState            = 157,  // Invalid chunk state
+        // IPC Error Codes (200-399)
+        kIPCShmCreateFailed         = 200,  // Failed to create shared memory
+        kIPCShmNotFound             = 201,  // Shared memory not found
+        kIPCShmMapFailed            = 202,  // Failed to map shared memory
+        kIPCShmStatFailed           = 203,  // Failed to stat shared memory
+        kIPCShmInvalidMagic         = 204,  // Invalid magic number in shared memory
+        kIPCChunkPoolExhausted      = 205,  // Chunk pool exhausted
+        kIPCQueueFull               = 206,  // Subscriber queue full
+        kIPCQueueEmpty              = 207,  // Subscriber queue empty
+        kIPCInvalidChannelIndex     = 208,  // Invalid queue index
+        kIPCChannelAlreadyInUse     = 209,  // Queue index already in use
+        kIPCRetry                   = 210,  // Retry operation
+        kIPCInvalidChunkIndex       = 211,  // Invalid chunk index
+        kIPCInvalidState            = 212,  // Invalid chunk state
+        kIPCReadOverflow            = 213,  // Read size exceeds chunk size
         
-        // Channel Error Codes (158-170)
-        kChannelInvalid             = 158,  // Channel is not initialized or invalid
-        kChannelFull                = 159,  // Channel queue is full (write failed)
-        kChannelEmpty               = 160,  // Channel queue is empty (read failed)
-        kChannelTimeout             = 161,  // Operation timed out
-        kChannelWaitsetUnavailable  = 162,  // Waitset pointer is null
-        kChannelWriteFailed         = 163,  // Write operation failed
-        kChannelReadFailed          = 164,  // Read operation failed
-        kChannelPolicyNotSupported  = 165,  // Policy not supported
-        kChannelSpuriousWakeup      = 166,  // Spurious wakeup occurred
-        kChannelNotFound            = 167   // Channel not found
+        // Channel Error Codes (400-599)
+        kChannelInvalid             = 400,  // Channel is not initialized or invalid
+        kChannelFull                = 401,  // Channel queue is full (write failed)
+        kChannelEmpty               = 402,  // Channel queue is empty (read failed)
+        kChannelTimeout             = 403,  // Operation timed out
+        kChannelWaitsetUnavailable  = 404,  // Waitset pointer is null
+        kChannelWriteFailed         = 405,  // Write operation failed
+        kChannelReadFailed          = 406,  // Read operation failed
+        kChannelPolicyNotSupported  = 407,  // Policy not supported
+        kChannelSpuriousWakeup      = 408,  // Spurious wakeup occurred
+        kChannelNotFound            = 409   // Channel not found
     };
 
     inline constexpr const Char* CoreErrMessage( CoreErrc errCode )
@@ -118,6 +120,8 @@ namespace core
             return "Invalid chunk index";
         case CoreErrc::kIPCInvalidState:
             return "Invalid chunk state";
+        case CoreErrc::kIPCReadOverflow:
+            return "Read size exceeds chunk size";
         case CoreErrc::kChannelInvalid:
             return "Channel is not initialized or invalid";
         case CoreErrc::kChannelFull:

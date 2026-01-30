@@ -492,9 +492,9 @@ namespace ipc
                         }
                         
                         {
-                            Duration timeout = (timeout_ns > 0) 
-                                ? Duration(timeout_ns) 
-                                : Duration::zero();  // 0 = infinite
+                            std::chrono::nanoseconds timeout = (timeout_ns > 0) 
+                                ? std::chrono::nanoseconds(timeout_ns) 
+                                : std::chrono::nanoseconds::zero();  // 0 = infinite
                             
                             auto result = WaitSetHelper::WaitForFlags(
                                 this->waitset_,
@@ -524,9 +524,9 @@ namespace ipc
                         }
                         
                         {
-                            Duration timeout = (timeout_ns > 0) 
-                                ? Duration(timeout_ns) 
-                                : Duration(10000000);  // Default 10ms for polling
+                            std::chrono::nanoseconds timeout = (timeout_ns > 0) 
+                                ? std::chrono::nanoseconds(timeout_ns) 
+                                : std::chrono::nanoseconds(10000000);  // Default 10ms for polling
                             
                             Bool success = WaitSetHelper::PollForFlags(
                                 this->waitset_,
@@ -753,9 +753,9 @@ namespace ipc
                         }
                         
                         {
-                            Duration timeout = (timeout_ns > 0) 
-                                ? Duration(timeout_ns) 
-                                : Duration::zero();  // 0 = infinite
+                            std::chrono::nanoseconds timeout = (timeout_ns > 0) 
+                                ? std::chrono::nanoseconds(timeout_ns) 
+                                : std::chrono::nanoseconds::zero();  // 0 = infinite
                             
                             auto result = WaitSetHelper::WaitForFlags(
                                 this->waitset_,
@@ -784,9 +784,9 @@ namespace ipc
                         }
                         
                         {
-                            Duration timeout = (timeout_ns > 0) 
-                                ? Duration(timeout_ns) 
-                                : Duration(10000000);  // Default 10ms for polling
+                            std::chrono::nanoseconds timeout = ( timeout_ns > 0 ) 
+                                ? std::chrono::nanoseconds( timeout_ns ) 
+                                : std::chrono::nanoseconds( 10000000 );  // Default 10ms for polling
                             
                             Bool success = WaitSetHelper::PollForFlags(
                                 this->waitset_,

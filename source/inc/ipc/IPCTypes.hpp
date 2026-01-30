@@ -268,37 +268,6 @@ namespace ipc
         constexpr UInt32 kHasFreeChunk  = 0x04;  ///< ChunkPool has free chunks
     }
     
-    // ========================================================================
-    // Duration Types
-    // ========================================================================
-    
-    using Duration = std::chrono::nanoseconds;
-    using TimePoint = std::chrono::steady_clock::time_point;
-    
-    // ========================================================================
-    // Helper Functions
-    // ========================================================================
-    
-    /**
-     * @brief Align size to shared memory boundary (2MB)
-     * @param size Size to align
-     * @return Aligned size
-     */
-    inline constexpr UInt64 AlignToShmSize(UInt64 size) noexcept
-    {
-        return (size + kShmAlignment - 1) / kShmAlignment * kShmAlignment;
-    }
-    
-    /**
-     * @brief Align size to cache line boundary
-     * @param size Size to align
-     * @return Aligned size
-     */
-    inline constexpr UInt64 AlignToCacheLine(UInt64 size) noexcept
-    {
-        return (size + kCacheLineSize - 1) / kCacheLineSize * kCacheLineSize;
-    }
-    
     /**
      * @brief Convert ChunkState to string
      * @param state Chunk state

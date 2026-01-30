@@ -23,6 +23,7 @@
 #include <memory>
 #include <type_traits>
 #include <chrono>
+#include <thread>
 
 namespace lap
 {
@@ -35,13 +36,14 @@ namespace ipc
      */
     struct SubscriberConfig
     {
-        UInt8   channel_id = 0xFF;                                  ///< Channel ID (for multi-channel support)
-        UInt16  STmin = 0;                                          ///< Minimum interval between messages (microseconds)
-        UInt32  max_chunks = kDefaultChunks;                     ///< Maximum chunks in pool
-        UInt32  chunk_size = 0;                                     ///< Chunk size (payload), 0 means default
-        UInt32  channel_capacity = kMaxChannelCapacity;                  ///< Queue capacity
-        UInt64  timeout = 100000000;                                ///< Receive timeout (ns), 0 means no wait
-        SubscribePolicy empty_policy = SubscribePolicy::kBlock;     ///< Default policy
+        UInt8               channel_id = 0xFF;                          ///< Channel ID (for multi-channel support)
+        UInt16              STmin = 0;                                  ///< Minimum interval between messages (microseconds)
+        UInt32              max_chunks = kDefaultChunks;                ///< Maximum chunks in pool
+        UInt32              chunk_size = 0;                             ///< Chunk size (payload), 0 means default
+        UInt32              channel_capacity = kMaxChannelCapacity;     ///< Queue capacity
+        UInt64              timeout = 100000000;                        ///< Receive timeout (ns), 0 means no wait
+        SubscribePolicy     empty_policy = SubscribePolicy::kBlock;     ///< Default policy
+        IPCType             ipc_type = IPCType::kSPMC;                  ///< IPC type
     };
     
     /**
@@ -82,8 +84,8 @@ namespace ipc
         Subscriber& operator=(const Subscriber&) = delete;
         
         // Allow move - required by Result<Subscriber>
-        Subscriber(Subscriber&&) noexcept = default;
-        Subscriber& operator=(Subscriber&&) noexcept = default;
+        Subscriber(Subscriber&&) noexcept;
+        Subscriber& operator=(Subscriber&&) noexcept = delete;
         
         /**
          * @brief Receive next message
@@ -96,7 +98,7 @@ namespace ipc
          * - Behavior on empty queue depends on policy
          */
         Result< Vector< Sample > > Receive( UInt8 channel_id = kInvalidChannelID, SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
-        
+
         /**
          * @brief Receive message using lambda/function to read payload
          * @tparam Fn Callable type with signature Size(Byte*, Size)
@@ -111,58 +113,34 @@ namespace ipc
          */
         template<class Fn>
         Result< UInt8 > Receive( Fn&& read_fn, UInt8 channel_id = kInvalidChannelID,
-                         SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept
-        {
-            DEF_LAP_STATIC_ASSERT( std::is_invocable_r_v<Size, Fn, UInt8, Byte*, Size>,
-                      "Fn must be callable like Size( UInt8, Byte*, Size)" );
-            
-            if ( channel_id == kInvalidChannelID ) {
-                auto sample_result = InnerReceive( channel_id, policy );
-                if ( !sample_result ) {
-                    return Result< UInt8 >::FromError( sample_result.Error() );
-                }
-                auto sample = std::move( sample_result ).Value();
-                Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
-                if ( readSize > sample.RawDataSize() ) {
-                    return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
-                } else {
-                    return Result< UInt8 >::FromValue( 1 );
-                }
-            } else {
-                UInt8 totalRead = 0;
-                for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
-                    auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
-                    if ( !read_result )  {
-                        // skip
-                        continue;
-                    }
-                    // Extract chunk_index from ChannelQueueValue
-                    UInt16 chunk_index = read_result.Value().chunk_index;
+                         SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
 
-                    // Create Sample wrapper
-                    Sample sample( allocator_.get(), chunk_index );
-                    if ( !sample.IsValid() ) {
-                        return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
-                    }
 
-                    if ( sample.GetState() != ChunkState::kSent &&
-                        sample.GetState() != ChunkState::kReceived ) {
-                        return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
-                    }
-                    sample.TransitionState( ChunkState::kReceived );
+        /*** @brief Receive next message once
+         * @param policy Queue empty policy (overrides config)
+         * @return Result with Sample or error
+         * @details
+         * - Dequeues chunk index from queue
+         * - Creates Sample wrapper
+         * - Behavior on empty queue depends on policy
+         */
+        Result< Sample > ReceiveOnce( UInt8 channel_id = kInvalidChannelID, SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
 
-                    Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
-                    if ( readSize > sample.RawDataSize() ) {
-                        // return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
-                        INNER_CORE_LOG( "Subscriber::Receive - Read overflow on channel %u", sample.ChannelID() );
-                    } else {
-                        totalRead++;
-                    }
-                }
-                return Result< UInt8 >::FromValue( totalRead );
-            }
-        }
-
+        /**
+         * @brief Receive message once using lambda/function to read payload
+         * @tparam Fn Callable type with signature Size(Byte*, Size)
+         * @param read_fn Function to read data from chunk
+         * @param policy Subscribe policy
+         * @return Result with bytes read or error
+         * 
+         * @details
+         * - Template implementation must be in header for proper instantiation
+         * - Receives a sample, calls read_fn to process it
+         * - read_fn should return number of bytes read
+         */
+        template<class Fn>
+        Result< Size > ReceiveOnce( Fn&& read_fn, UInt8 channel_id = kInvalidChannelID,
+                         SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
         /**
          * @brief Get service name
          * @return Service name
@@ -216,6 +194,18 @@ namespace ipc
          * - Idempotent (safe to call multiple times)
          */
         Result< void > Disconnect() noexcept;
+
+        /**
+         * @brief Start internal channel scanner thread
+         * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)
+         * @param interval_microseconds Scan interval in microseconds
+         */
+        void StartScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+        
+        /**
+         * @brief Stop internal channel scanner thread
+         */
+        void StopScanner() noexcept;
     
     protected:
         /**
@@ -247,7 +237,7 @@ namespace ipc
         UniqueHandle<SharedMemoryManager>   shm_;                   ///< Shared memory manager
         UniqueHandle<ChunkPoolAllocator>    allocator_;             ///< Chunk allocator
         SharedHandle<IPCEventHooks>         event_hooks_;           ///< Event hooks for monitoring
-        Bool                                is_running_{false};     ///< thread running flag
+        Atomic<Bool>                        is_running_;            ///< thread running flag
         std::thread                         scanner_thread_;        ///< Channel scanner thread
         Atomic<UInt8>                       active_channel_index_;  ///< Active read channel index
         _MapChannel                         read_channels_[2];      ///< Read channels for this subscriber

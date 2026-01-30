@@ -335,11 +335,12 @@ void RunForwarderNode(int region_id) {
     
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
         // Block策略会根据STMin自动控制接收频率
-        auto sample_result = subscriber.Receive(SubscribePolicy::kBlock);
+        auto sample_result = subscriber.Receive(kInvalidChannelID, SubscribePolicy::kBlock);
         
-        if (sample_result.HasValue()) {
+        if (sample_result.HasValue() && !sample_result.Value().empty()) {
             ChainMessage msg;
-            sample_result.Value().Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
+            auto& samples = sample_result.Value();
+            samples[0].Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
             msg_count++;
             
             // 直接路由到下一个区域
@@ -401,11 +402,12 @@ void RunMonitorNode(int region_id) {
     intervals.reserve(1000);
     
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
-        auto sample_result = subscriber.Receive(SubscribePolicy::kBlock);
+        auto sample_result = subscriber.Receive(kInvalidChannelID, SubscribePolicy::kBlock);
         
-        if (sample_result.HasValue()) {
+        if (sample_result.HasValue() && !sample_result.Value().empty()) {
             ChainMessage msg;
-            sample_result.Value().Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
+            auto& samples = sample_result.Value();
+            samples[0].Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
             
             UInt64 recv_timestamp = GetTimestampUs();
             UInt64 latency_us = recv_timestamp - msg.timestamp_us;

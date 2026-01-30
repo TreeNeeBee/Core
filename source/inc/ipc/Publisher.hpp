@@ -21,6 +21,7 @@
 #include "Message.hpp"
 #include "CTypedef.hpp"
 #include "Channel.hpp"
+#include <thread>
 
 namespace lap
 {
@@ -33,13 +34,14 @@ namespace ipc
      */
     struct PublisherConfig
     {
-        UInt8  channel_id      = 0xFF;                          ///< Channel ID (for multi-channel support)
-        UInt32 max_chunks       = kDefaultChunks;               ///< Maximum chunks in pool
-        UInt32 chunk_size       = 0;                            ///< Chunk size (payload)
-        UInt64 loan_timeout     = 100000000;                    ///< Loan timeout (ns), 0 means no wait
-        UInt64 publish_timeout  = 100000000;                    ///< Publish timeout (ns), 0 means no wait
-        LoanPolicy loan_policy  = LoanPolicy::kError;           ///< Loan failure policy
-        PublishPolicy policy    = PublishPolicy::kOverwrite;    ///< Policy when full
+        UInt8           channel_id          = 0xFF;                         ///< Channel ID (for multi-channel support)
+        UInt32          max_chunks          = kDefaultChunks;               ///< Maximum chunks in pool
+        UInt32          chunk_size          = 0;                            ///< Chunk size (payload)
+        UInt64          loan_timeout        = 100000000;                    ///< Loan timeout (ns), 0 means no wait
+        UInt64          publish_timeout     = 100000000;                    ///< Publish timeout (ns), 0 means no wait
+        LoanPolicy      loan_policy         = LoanPolicy::kError;           ///< Loan failure policy
+        PublishPolicy   policy              = PublishPolicy::kOverwrite;    ///< Policy when full
+        IPCType         ipc_type            = IPCType::kSPMC;               ///< IPC type
     };
     
     /**
@@ -68,7 +70,7 @@ namespace ipc
          * @return Result with publisher or error
          */
         static Result< Publisher > Create(const String& shmPath,
-                                          const PublisherConfig& config = {}) noexcept;
+                                            const PublisherConfig& config = {}) noexcept;
         
         /**
          * @brief Destructor
@@ -80,8 +82,8 @@ namespace ipc
         Publisher& operator=(const Publisher&) = delete;
 
         // Allow move - required by Result<Publisher>
-        Publisher(Publisher&&) noexcept = default;
-        Publisher& operator=(Publisher&&) noexcept = default;
+        Publisher(Publisher&&) noexcept;
+        Publisher& operator=(Publisher&&) noexcept = delete;
         
         /**
          * @brief Get service name
@@ -150,10 +152,10 @@ namespace ipc
          * @note For external use, prefer SendCopy() or SendEmplace() instead.
          *       This method is protected to allow advanced usage in derived classes.
          */
-        Result< void > Send( Sample&& sample, Uint8 channel_id = kInvalidChannelID,
+        Result< void > Send( Sample&& sample, UInt8 channel_id = kInvalidChannelID,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
-        Result< void > Send( Byte* buffer, Size size, Uint8 channel_id = kInvalidChannelID,
+        Result< void > Send( Byte* buffer, Size size, UInt8 channel_id = kInvalidChannelID,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
         /**
@@ -169,7 +171,7 @@ namespace ipc
          * - write_fn should return number of bytes written
          */
         template<class Fn>
-        Result< void > Send( Fn&& write_fn, Uint8 channel_id = kInvalidChannelID,
+        Result< void > Send( Fn&& write_fn, UInt8 channel_id = kInvalidChannelID,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept
         {
             static_assert(std::is_invocable_r_v<Size, Fn, Byte*, Size>,
@@ -193,6 +195,18 @@ namespace ipc
             }
             return Send( std::move( sample ), channel_id, policy );
         }
+
+        /**
+         * @brief Start internal channel scanner thread
+         * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)
+         * @param interval_microseconds Scan interval in microseconds
+         */
+        void StartScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+
+        /**
+         * @brief Stop internal channel scanner thread
+         */
+        void StopScanner() noexcept;
 
     private:
         /**
@@ -225,7 +239,7 @@ namespace ipc
         UniqueHandle< SharedMemoryManager > shm_;                       ///< Shared memory manager
         UniqueHandle< ChunkPoolAllocator >  allocator_;                 ///< Chunk allocator
         SharedHandle< IPCEventHooks >       event_hooks_;               ///< Event hooks for monitoring
-        Bool                                is_running_{false};         ///< thread running flag
+        Atomic<Bool>                        is_running_;                ///< thread running flag
         std::thread                         scanner_thread_;            ///< Channel scanner thread
         SteadyClock::time_point             last_send_[kMaxChannels];   ///< Last send timestamps per subscriber
         Atomic<UInt8>                       active_channel_index_;      ///< Active channel index

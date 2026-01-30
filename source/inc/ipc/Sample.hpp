@@ -166,7 +166,7 @@ namespace ipc
         inline UInt8 ChannelID() const noexcept
         {
             if ( header_ ) {
-                return header_->channel_id_;
+                return header_->channel_id.load(std::memory_order_acquire);
             } else {
                 return kInvalidChannelID;
             }
@@ -175,7 +175,7 @@ namespace ipc
         inline void SetChannelID( UInt8 channel_id ) const noexcept
         {
             if ( header_ ) {
-                header_->channel_id_ = channel_id;
+                header_->channel_id.store(channel_id, std::memory_order_release);
             }
         }
         

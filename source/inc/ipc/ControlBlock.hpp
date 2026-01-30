@@ -50,8 +50,9 @@ namespace ipc
         //=====================================================================
         struct alignas( kSystemWordSize ) DEF_LAP_SYS_ALIGN
         {
-            Atomic<UInt16> free_list_head;    ///< Free list head index
-            Atomic<UInt16> remain_count;      ///< Current free chunks
+            Atomic< UInt16 >    free_list_head;     ///< Free list head index
+            UInt16              reserved;           ///< Padding
+            Atomic< UInt32 >    remain_count;       ///< Current free chunks
         } pool_state;
         DEF_LAP_STATIC_ASSERT( sizeof( pool_state ) <= 8, "pool_state must be less than 8 bytes" );
         
@@ -92,11 +93,12 @@ namespace ipc
         void Initialize(UInt16 max_chunks, 
                        UInt8 max_channels,
                        UInt32 chunk_size,
+                       IPCType ipc_type = IPCType::kSPMC,
                        UInt32 channel_capacity = kMaxChannelCapacity) noexcept
         {
             // Initialize header
             header.magic.store(kIPCMagicNumber, std::memory_order_release);
-            header.type = IPCType::kSPMC;
+            header.type = ipc_type;
             header.version.store(kIPCVersion, std::memory_order_release);
             header.max_chunks = max_chunks;
             header.max_channels = max_channels > kMaxChannels ? kMaxChannels : max_channels;

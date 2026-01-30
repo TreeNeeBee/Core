@@ -31,9 +31,10 @@ namespace ipc
     struct SharedMemoryConfig
     {
         UInt8  max_channels     = kMaxChannels;             ///< Max queues
-        UInt16 channel_capacity = kMaxChannelCapacity;           ///< Queue capacity
-        UInt16 max_chunks       = kDefaultChunks;        ///< Maximum chunks
+        UInt16 channel_capacity = kMaxChannelCapacity;      ///< Queue capacity
+        UInt16 max_chunks       = kDefaultChunks;           ///< Maximum chunks
         UInt32 chunk_size       = kDefaultChunkSize;        ///< Chunk size
+        IPCType ipc_type        = IPCType::kSPMC;           ///< IPC type
     };
 
     constexpr static Size kControlBlockSize     = sizeof( ControlBlock );

@@ -72,21 +72,21 @@ namespace ipc
          * @brief Deallocate a chunk (lock-free)
          * @param chunk_index Chunk index to free
          */
-        void Deallocate(UInt16 chunk_index) noexcept;
+        void Deallocate( UInt16 chunk_index ) noexcept;
         
         /**
          * @brief Get chunk header by index
          * @param chunk_index Chunk index
          * @return Chunk header pointer
          */
-        ChunkHeader* GetChunkHeader(UInt16 chunk_index) const noexcept;
+        ChunkHeader* GetChunkHeader( UInt16 chunk_index ) const noexcept;
         
         /**
          * @brief Get chunk payload by index
          * @param chunk_index Chunk index
          * @return Payload pointer
          */
-        void* GetChunkPayload(UInt16 chunk_index) const noexcept;
+        void* GetChunkPayload( UInt16 chunk_index ) const noexcept;
         
         /**
          * @brief Check if pool is exhausted

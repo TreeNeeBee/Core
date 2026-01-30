@@ -82,7 +82,7 @@ namespace ipc
                 // }
                 return kInvalidChunkIndex;
             } else {
-                auto* header = GetChunkAt(head);
+                auto* header = GetChunkAt( head );
                 UInt16 next = header->next_free_index.load(std::memory_order_acquire);
                 
                 // Try to update head to next

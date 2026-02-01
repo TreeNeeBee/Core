@@ -48,9 +48,19 @@ namespace ipc
     enum class IPCType : UInt8
     {
         kNone       = 0,    ///< Undefined / placeholder
-        kSPMC       = 1,    ///< Sent to multiple Subscribers
-        kMPSC       = 2,    ///< Received by multiple Publishers
-        kMPMC       = 3     ///< Multiple Publishers and Subscribers
+        kSPSC       = 1,    ///< Sent to single Subscribers
+        kSPMC       = 2,    ///< Sent to multiple Subscribers
+        kMPSC       = 3,    ///< Received by multiple Publishers
+        kMPMC       = 4     ///< Multiple Publishers and Subscribers
+    };
+
+    enum class SHMState : UInt8
+    {
+        kInvalid    = 0,    ///< Undefined / placeholder
+        kCreating   = 1,    ///< Shared memory in creation
+        kReady      = 2,    ///< Shared memory ready for use
+        kClosing    = 3,    ///< Shared memory in closing
+        kCorrupted  = 4     ///< Shared memory corrupted 
     };
     
     // ========================================================================

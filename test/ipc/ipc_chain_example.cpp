@@ -335,7 +335,7 @@ void RunForwarderNode(int region_id) {
     
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
         // Block策略会根据STMin自动控制接收频率
-        auto sample_result = subscriber.Receive(kInvalidChannelID, SubscribePolicy::kBlock);
+        auto sample_result = subscriber.Receive(SubscribePolicy::kBlock);
         
         if (sample_result.HasValue() && !sample_result.Value().empty()) {
             ChainMessage msg;
@@ -402,7 +402,7 @@ void RunMonitorNode(int region_id) {
     intervals.reserve(1000);
     
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
-        auto sample_result = subscriber.Receive(kInvalidChannelID, SubscribePolicy::kBlock);
+        auto sample_result = subscriber.Receive(SubscribePolicy::kBlock);
         
         if (sample_result.HasValue() && !sample_result.Value().empty()) {
             ChainMessage msg;

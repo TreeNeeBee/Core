@@ -78,6 +78,11 @@ namespace ipc
          */
         ~SharedMemoryManager() noexcept
         {
+            if ( base_addr_ != nullptr && base_addr_ != MAP_FAILED ) {
+                auto* ctrl = GetControlBlock();
+                ctrl->header.ready.store( SHMState::kClosing, std::memory_order_release );
+            }
+
             Cleanup();
         }
         
@@ -88,7 +93,7 @@ namespace ipc
         SharedMemoryManager& operator=(SharedMemoryManager&&) = delete;
         
         /**
-         * @brief Create or open shared memory segment
+         * @brief Create shared memory segment
          * @param shmPath Shared memory path (e.g., "/lightap_ipc_sensor_data")
          * @param config Configuration
          * @return Result with success or error
@@ -99,6 +104,15 @@ namespace ipc
          * - Path format: /lightap_ipc_<service_name>
          */
         Result<void> Create(const String& shmPath, 
+                           const SharedMemoryConfig& config) noexcept;
+
+        /**
+         * @brief Open existing shared memory segment
+         * @param shmPath Shared memory path
+         * @param config Configuration
+         * @return Result with success or error
+         */   
+        Result<void> Open(const String& shmPath, 
                            const SharedMemoryConfig& config) noexcept;
         
         /**
@@ -192,7 +206,7 @@ namespace ipc
         int shm_fd_;                ///< Shared memory file descriptor
         void* base_addr_;           ///< Base address of mapped memory
         //void* aligned_addr_;        ///< Aligned address for allocation
-        UInt64 size_;               ///< Total size of shared memory
+        Size size_;               ///< Total size of shared memory
         String shm_path_;           ///< Shared memory path
         SharedMemoryConfig config_; ///< Configuration
     };

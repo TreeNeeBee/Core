@@ -63,22 +63,22 @@ This example demonstrates a realistic multi-camera fusion scenario using LightAP
 ## Building
 ```bash
 cd /workspace/LightAP/build
-make camera_fusion_example
+make camera_fusion_spmc_example
 ```
 
 ## Running
 ```bash
 # Terminal 1: Start Camera 0
-./modules/Core/camera_fusion_example --cam 0
+./modules/Core/camera_fusion_spmc_example --cam 0
 
 # Terminal 2: Start Camera 1
-./modules/Core/camera_fusion_example --cam 1
+./modules/Core/camera_fusion_spmc_example --cam 1
 
 # Terminal 3: Start Camera 2
-./modules/Core/camera_fusion_example --cam 2
+./modules/Core/camera_fusion_spmc_example --cam 2
 
 # Terminal 4: Start Fusion Subscriber (wait for all cameras to start)
-./modules/Core/camera_fusion_example --fusion
+./modules/Core/camera_fusion_spmc_example --fusion
 ```
 
 ## Expected Output
@@ -97,15 +97,15 @@ make camera_fusion_example
 [Fusion] Worker-0: Received frame 0 from Cam0 (5529600 bytes)
 [Fusion] Worker-1: Received frame 0 from Cam1 (5529600 bytes)
 [Fusion] Worker-2: Received frame 0 from Cam2 (5529600 bytes)
-[Fusion] Saved: fusion_00000.bmp (3840x1440)
-[Fusion] Saved: fusion_00001.bmp (3840x1440)
+[Fusion] Saved: fusion_spmc_00000.bmp (3840x1440)
+[Fusion] Saved: fusion_spmc_00001.bmp (3840x1440)
 ...
 ```
 
 ## Output Files
-- **fusion_00000.bmp** - First captured frame (at t=5s)
-- **fusion_00001.bmp** - Second frame (at t=10s)
-- **fusion_00002.bmp** - Third frame (at t=15s)
+- **fusion_spmc_00000.bmp** - First captured frame (at t=5s)
+- **fusion_spmc_00001.bmp** - Second frame (at t=10s)
+- **fusion_spmc_00002.bmp** - Third frame (at t=15s)
 - ... (one BMP every 5 seconds)
 
 Each BMP file is **21.2 MB** (3840×1440×4 bytes + 54-byte header)

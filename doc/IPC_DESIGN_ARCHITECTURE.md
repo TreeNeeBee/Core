@@ -40,7 +40,7 @@
 |------|------|----------|
 | **零拷贝通信** | 发布者直接写入共享内存，订阅者直接读取 | ✅ 已实现 - Loan/Send API |
 | **无锁操作** | 所有关键路径无需互斥锁，使用原子操作 | ✅ 已实现 - RingBufferBlock |
-| **低延迟** | 消息传递延迟 < 5μs (实测) | ✅ 已验证 - camera_fusion_example |
+| **低延迟** | 消息传递延迟 < 5μs (实测) | ✅ 已验证 - camera_fusion_spmc_example |
 | **高吞吐** | 支持 90+ FPS (1920x720x4图像) | ✅ 已验证 - STMin=10ms测试 |
 | **确定性** | 固定大小分配，O(1) 时间复杂度 | ✅ 已实现 - ChunkPool |
 | **Pub-Sub 模式** | SPSC/SPMC/MPSC/MPMC支持 | ✅ 已实现并测试 |
@@ -312,7 +312,7 @@ UInt64 CalculateTotalSize(const PublisherConfig& config) {
 **实际示例：**
 
 ```
-示例1: camera_fusion_example (NORMAL模式)
+示例1: camera_fusion_spmc_example (NORMAL模式)
 配置:
 - max_chunks = 16
 - chunk_size = 1920×720×4 = 5,529,600 bytes (~5.3MB)
@@ -1813,7 +1813,7 @@ while (true) {
 }
 ```
 
-**高级示例 - 零拷贝大数据传输（camera_fusion_example）：**
+**高级示例 - 零拷贝大数据传输（camera_fusion_spmc_example）：**
 
 ```cpp
 // 定义图像消息
@@ -6196,7 +6196,7 @@ Result<void> SendBatch(Vector<Sample<T>>&& samples) {
 
 ### 7.3 基准测试与实际性能
 
-#### 7.3.1 camera_fusion_example 实测数据（NORMAL模式）
+#### 7.3.1 camera_fusion_spmc_example 实测数据（NORMAL模式）
 
 **测试配置：**
 ```
@@ -6267,11 +6267,11 @@ public:
 
 #### 7.3.3 压力测试结果
 
-**8小时连续压测（camera_fusion_example）：**
+**8小时连续压测（camera_fusion_spmc_example）：**
 
 ```bash
 # 启动测试
-./camera_fusion_example 28800  # 8小时 = 28800秒
+./camera_fusion_spmc_example 28800  # 8小时 = 28800秒
 
 # 实测结果（STMin=10ms配置）
 Total Runtime: 28800.5 seconds
@@ -8822,7 +8822,7 @@ cppcheck --addon=autosar --error-exitcode=1 source/
 
 **测试与验证：**
 - ✅ **SPSC测试**：单生产单消费场景
-- ✅ **SPMC测试**：单生产多消费场景（camera_fusion_example）
+- ✅ **SPMC测试**：单生产多消费场景（camera_fusion_spmc_example）
 - ✅ **MPSC测试**：多生产单消费场景
 - ✅ **MPMC测试**：多生产多消费场景
 - ✅ **8小时压力测试**：长期稳定性验证，无内存泄漏
@@ -8831,11 +8831,11 @@ cppcheck --addon=autosar --error-exitcode=1 source/
 **编译配置：**
 - ✅ **CMake集成**：BuildTemplate模块化构建
 - ✅ **编译时模式选择**：SHRINK/NORMAL/EXTEND宏定义
-- ✅ **示例程序**：camera_fusion_example, stress_test_shrink/extend等
+- ✅ **示例程序**：camera_fusion_spmc_example, stress_test_shrink/extend等
 
 ### 11.2 实测性能指标
 
-**camera_fusion_example（NORMAL模式）：**
+**camera_fusion_spmc_example（NORMAL模式）：**
 ```
 配置: 3个Camera Publisher (1920x720x4图像)
 吞吐: 90+ FPS (STMin=10ms限流)
@@ -8907,7 +8907,7 @@ CPU: 25-30% (8核ARM Cortex-A76)
 
 ### 本项目相关文档
 
-- [camera_fusion_example.cpp](../test/ipc/camera_fusion_example.cpp) - 实际测试用例
+- [camera_fusion_spmc_example.cpp](../test/ipc/camera_fusion_spmc_example.cpp) - 实际测试用例
 - [Publisher.hpp](../source/inc/ipc/Publisher.hpp) - Publisher API
 - [Subscriber.hpp](../source/inc/ipc/Subscriber.hpp) - Subscriber API
 - [IPCTypes.hpp](../source/inc/ipc/IPCTypes.hpp) - 三种IPC模式配置
@@ -8945,7 +8945,7 @@ CPU: 25-30% (8核ARM Cortex-A76)
 | **ROS 2 (FastDDS)** | ~50μs | 50K msg/s | ❌ | ❌ | 参考值 |
 
 **说明**：
-- LightAP IPC数据基于camera_fusion_example实测
+- LightAP IPC数据基于camera_fusion_spmc_example实测
 - 其他中间件数据来自公开基准测试
 - 延迟和吞吐量受硬件和消息大小影响
 

@@ -293,7 +293,7 @@ if (!opt.HasValue()) {
 
 ### Zero-Copy Message Delivery
 
-**camera_fusion_example** (NORMAL mode, 3 cameras):
+**camera_fusion_spmc_example** (SPMC mode, 3 cameras):
 ```
 Configuration:
 - Payload Size:    1920x720x4 = 5.3 MB
@@ -451,7 +451,7 @@ cd build/modules/Core
 ./ipc_test
 
 # Run IPC examples
-./camera_fusion_example 5        # 5-second test
+./camera_fusion_spmc_example 5        # 5-second test
 ./stress_test_shrink            # SHRINK mode stress test
 ./stress_test_extend            # EXTEND mode stress test
 ./ipc_chain_example             # Publisher chain demo
@@ -537,7 +537,7 @@ More examples in [test/examples/](test/examples/) and [test/ipc/](test/ipc/) dir
 - `config_policy_example.cpp` - Configuration policies
 
 **IPC Examples:**
-- `camera_fusion_example.cpp` - ⭐ **3-camera fusion with zero-copy** (5.3MB images @ 90 FPS)
+- `camera_fusion_spmc_example.cpp` - ⭐ **3-camera fusion with zero-copy** (5.3MB images @ 90 FPS)
 - `stress_test_shrink.cpp` - SHRINK mode stress test
 - `stress_test_extend.cpp` - EXTEND mode stress test
 - `ipc_chain_example.cpp` - Multi-hop Publisher chain
@@ -602,7 +602,7 @@ For commercial use or production deployment, please contact the copyright holder
 - [x] Zero-copy IPC (Publisher/Subscriber)
 - [x] Three IPC modes (SHRINK/NORMAL/EXTEND)
 - [x] Lock-free ring buffer queues
-- [x] camera_fusion_example (90+ FPS)
+- [x] camera_fusion_spmc_example (90+ FPS)
 - [x] 8-hour stress test validation
 
 ### v1.2.0 (Q2 2026)

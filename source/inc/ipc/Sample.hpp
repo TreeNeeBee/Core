@@ -274,8 +274,11 @@ namespace ipc
          */
         inline Bool IsValid() const noexcept
         {
-            return ( chunk_index_ != kInvalidChunkIndex )
-                   && ( allocator_ != nullptr ) 
+            // return ( chunk_index_ != kInvalidChunkIndex )
+            //        && ( allocator_ != nullptr ) 
+            //        && ( header_ != nullptr ) 
+            //        && ( payload_ != nullptr );
+            return ( allocator_ != nullptr ) 
                    && ( header_ != nullptr ) 
                    && ( payload_ != nullptr );
         }

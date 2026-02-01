@@ -54,6 +54,7 @@ namespace ipc
             , capacity_(0)
             , active_(nullptr)
             , stmin_(nullptr)
+            , mutex_(nullptr)
         {
         }
         
@@ -66,6 +67,7 @@ namespace ipc
          * @param capacity Buffer capacity (must be power of 2)
          * @param active Active state pointer (optional, can be nullptr)
          * @param stmin STMin pointer (optional, can be nullptr)
+         * @param mutex Mutex pointer for synchronization (optional, can be nullptr)
          */
         Channel(Atomic<UInt16>* head,
                 Atomic<UInt16>* tail,
@@ -73,7 +75,8 @@ namespace ipc
                 T* buffer,
                 UInt16 capacity,
                 Atomic<Bool>* active = nullptr,
-                Atomic<UInt16>* stmin = nullptr) noexcept
+                Atomic<UInt16>* stmin = nullptr,
+                Atomic<Bool>* mutex = nullptr) noexcept
             : head_(head)
             , tail_(tail)
             , waitset_(waitset)
@@ -81,6 +84,7 @@ namespace ipc
             , capacity_(capacity)
             , active_(active)
             , stmin_(stmin)
+            , mutex_(mutex)
         {
             ;
         }
@@ -105,6 +109,7 @@ namespace ipc
             , capacity_(other.capacity_)
             , active_(other.active_)
             , stmin_(other.stmin_)
+            , mutex_(other.mutex_)
         {
             other.Reset();
         }
@@ -122,6 +127,7 @@ namespace ipc
                 capacity_ = other.capacity_;
                 active_ = other.active_;
                 stmin_ = other.stmin_;
+                mutex_ = other.mutex_;
                 
                 other.Reset();
             }
@@ -137,6 +143,7 @@ namespace ipc
             capacity_ = 0;
             active_ = nullptr;
             stmin_ = nullptr;
+            mutex_ = nullptr;
         }
         
         /**
@@ -317,6 +324,32 @@ namespace ipc
             stmin_->store(stmin, std::memory_order_release);
         }
         
+        /**
+         * @brief Try to acquire channel lock (non-blocking)
+         * @return true if lock acquired, false if already locked
+         * @details Uses atomic flag for lock-free synchronization
+         */
+        inline Bool TryLock() noexcept
+        {
+            DEF_LAP_ASSERT( mutex_ != nullptr, "Mutex pointer is null" );
+            
+            Bool expected = false;
+            return mutex_->compare_exchange_strong(expected, true, 
+                                                  std::memory_order_acquire,
+                                                  std::memory_order_relaxed);
+        }
+        
+        /**
+         * @brief Release channel lock
+         * @details Must be called after successful TryLock
+         */
+        inline void Unlock() noexcept
+        {
+            DEF_LAP_ASSERT( mutex_ != nullptr, "Mutex pointer is null" );
+            
+            mutex_->store(false, std::memory_order_release);
+        }
+
     protected:
         Atomic<UInt16>*     head_;      ///< Consumer index pointer
         Atomic<UInt16>*     tail_;      ///< Producer index pointer
@@ -325,6 +358,7 @@ namespace ipc
         UInt16              capacity_;  ///< Buffer capacity (power of 2)
         Atomic<Bool>*       active_;    ///< Channel active state pointer (in shared memory)
         Atomic<UInt16>*     stmin_;     ///< STMin pointer (minimum send interval in microseconds, in shared memory)
+        Atomic<Bool>*       mutex_;     ///< Mutex for channel synchronization (optional, in shared memory)
     };
     
     /**
@@ -360,8 +394,9 @@ namespace ipc
                      T* buffer,
                      UInt16 capacity,
                      Atomic<Bool>* active = nullptr,
-                     Atomic<UInt16>* stmin = nullptr) noexcept
-            : Channel<T>(head, tail, waitset, buffer, capacity, active, stmin)
+                     Atomic<UInt16>* stmin = nullptr,
+                     Atomic<Bool>* mutex = nullptr) noexcept
+            : Channel<T>(head, tail, waitset, buffer, capacity, active, stmin, mutex)
         {
         }
         
@@ -512,7 +547,7 @@ namespace ipc
                             head = this->head_->load(std::memory_order_acquire);
                             
                             if (next_tail == head) {
-                                return Result<void>(MakeErrorCode(CoreErrc::kChannelSpuriousWakeup));
+                                return Result<void>(MakeErrorCode(CoreErrc::kChannelFull));
                             }
                         }
                         break;
@@ -772,7 +807,7 @@ namespace ipc
                             tail = this->tail_->load(std::memory_order_acquire);
                             
                             if (head == tail) {
-                                return Result<T>(MakeErrorCode(CoreErrc::kChannelSpuriousWakeup));
+                                return Result<T>(MakeErrorCode(CoreErrc::kChannelEmpty));
                             }
                         }
                         break;
@@ -916,9 +951,10 @@ namespace ipc
             T* buffer,
             UInt16 capacity,
             Atomic<Bool>* active = nullptr,
-            Atomic<UInt16>* stmin = nullptr) noexcept
+            Atomic<UInt16>* stmin = nullptr,
+            Atomic<Bool>* mutex = nullptr ) noexcept
         {
-            return MakeUnique<WriteChannel<T>>(head, tail, waitset, buffer, capacity, active, stmin);
+            return MakeUnique<WriteChannel<T>>(head, tail, waitset, buffer, capacity, active, stmin, mutex);
         }
         
         /**
@@ -968,7 +1004,8 @@ namespace ipc
                 reinterpret_cast<T*>(queue->GetBuffer()),
                 queue->capacity,
                 &queue->active,
-                &queue->STmin
+                &queue->STmin,
+                &queue->mutex
             );
         }
         

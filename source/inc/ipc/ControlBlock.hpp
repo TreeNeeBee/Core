@@ -33,15 +33,15 @@ namespace ipc
         //=====================================================================
         struct alignas( kSystemWordSize ) DEF_LAP_SYS_ALIGN
         {
-            Atomic<UInt32> magic;        ///< 0xICE02525 for validation
-            IPCType type;                ///< IPC type
-            UInt8 reserved;              ///< Padding
-            UInt16 max_chunks;           ///< Maximum chunks in pool
-            UInt32 chunk_size;           ///< Fixed chunk size (bytes)
-            Atomic<UInt32> version;      ///< IPC version
-            Atomic<UInt8> ref_count;     ///< Reference count
-            UInt8 max_channels;          ///< Maximum channels
-            UInt16 channel_capacity;     ///< Capacity per channel subscriber queue (64/256/1024)
+            Atomic<UInt32>      magic;              ///< 0xICE02525 for validation
+            IPCType             type;               ///< IPC type
+            Atomic<SHMState>    ready;              ///< Initialization complete
+            UInt16              max_chunks;         ///< Maximum chunks in pool
+            UInt32              chunk_size;         ///< Fixed chunk size (bytes)
+            Atomic<UInt32>      version;            ///< IPC version
+            Atomic<UInt8>       ref_count;          ///< Reference count
+            UInt8               max_channels;       ///< Maximum channels
+            UInt16              channel_capacity;   ///< Capacity per channel subscriber queue (64/256/1024)
         } header;
         DEF_LAP_STATIC_ASSERT( sizeof( header ) <= 32, "Header must be less than 32 bytes" );
         
@@ -99,6 +99,7 @@ namespace ipc
             // Initialize header
             header.magic.store(kIPCMagicNumber, std::memory_order_release);
             header.type = ipc_type;
+            header.ready.store( SHMState::kCreating, std::memory_order_release );
             header.version.store(kIPCVersion, std::memory_order_release);
             header.max_chunks = max_chunks;
             header.max_channels = max_channels > kMaxChannels ? kMaxChannels : max_channels;
@@ -123,8 +124,14 @@ namespace ipc
          */
         Bool Validate() const noexcept
         {
-            return header.magic.load(std::memory_order_acquire) == kIPCMagicNumber &&
-                   header.version.load(std::memory_order_acquire) == kIPCVersion;
+            return header.magic.load(std::memory_order_acquire) == kIPCMagicNumber && \
+                    header.version.load(std::memory_order_acquire) == kIPCVersion;
+        }
+
+        Bool Ready() const noexcept
+        {
+            return Validate() && \
+                    header.ready.load( std::memory_order_acquire ) == SHMState::kReady;
         }
 
         inline IPCType GetIPCType() const noexcept
@@ -153,7 +160,7 @@ namespace ipc
     {
         Atomic<UInt16>  STmin;              ///< microseconds for min interval
         Atomic<Bool>    active;             ///< Is this queue active
-        UInt8           reserved{0};        ///< Padding
+        Atomic<Bool>    mutex;              ///< mutex for multi-producer support
         UInt16          capacity;           ///< Queue capacity (power of 2)
         Atomic<UInt8>   in;                 ///< Producer index
         Atomic<UInt8>   out;                ///< Consumer index
@@ -177,6 +184,7 @@ namespace ipc
         {
             STmin.store( stmin, std::memory_order_release );
             active.store( false, std::memory_order_release );
+            mutex.store( false, std::memory_order_release );
             capacity = cap;
             in.store(kInvalidChannelID, std::memory_order_release);
             out.store(kInvalidChannelID, std::memory_order_release);
@@ -204,6 +212,17 @@ namespace ipc
         inline Bool IsActive() const noexcept
         {
             return active.load( std::memory_order_acquire );
+        }
+
+        inline Bool TryLock() noexcept
+        {
+            Bool expected = false;
+            return mutex.compare_exchange_strong( expected, true, std::memory_order_acquire );
+        }
+
+        inline void Unlock() noexcept
+        {
+            mutex.store( false, std::memory_order_release );
         }
     };
 }  // namespace ipc

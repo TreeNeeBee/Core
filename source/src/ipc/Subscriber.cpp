@@ -34,7 +34,7 @@ namespace ipc
         shm_config.chunk_size = config.chunk_size;
         shm_config.ipc_type   = config.ipc_type;
 
-        auto result = shm->Create( shmPath, shm_config );
+        auto result = shm->Open( shmPath, shm_config );
         if ( !result ) {
             return Result< Subscriber >( result.Error() );
         }
@@ -83,20 +83,50 @@ namespace ipc
         return Result< Subscriber >( std::move( subscriber ) );
     }
 
-    Result< Vector< Sample > > Subscriber::Receive( UInt8 channel_id, SubscribePolicy policy ) noexcept
+    Result< Vector< Sample > > Subscriber::Receive( SubscribePolicy policy ) noexcept
     {
         Vector< Sample > samples;
-        if ( channel_id != kInvalidChannelID ) {
-            auto result = InnerReceive( channel_id, policy );
 
-            if ( !result ) {
-                return Result< Vector< Sample > >::FromError( result.Error() );
+        for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+            auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
+            if ( !read_result ) {
+                if ( read_result.Error() == CoreErrc::kChannelEmpty || read_result.Error() == CoreErrc::kChannelTimeout ) {
+                    // skip
+                    continue;
+                } else {
+                    INNER_CORE_LOG( "Subscriber::Receive - ReadWithPolicy failed, error: %d\n", 
+                                    read_result.Error().Value() );
+                    return Result< Vector< Sample > >::FromError( read_result.Error() );
+                }
+            }
+            // Extract chunk_index from ChannelQueueValue
+            UInt16 chunk_index = read_result.Value().chunk_index;
+
+            // Create Sample wrapper
+            Sample sample( allocator_.get(), chunk_index );
+            if ( !sample.IsValid() ) {
+                INNER_CORE_LOG( "Subscriber::Receive - Invalid chunk index: %u\n", chunk_index );
+                return Result< Vector< Sample > >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
             }
 
-            samples.emplace_back( std::move( result ).Value() ) ;
-            return Result< Vector< Sample > >( std::move(samples) );
+            if ( sample.GetState() != ChunkState::kSent &&
+                sample.GetState() != ChunkState::kReceived ) {
+                INNER_CORE_LOG( "Subscriber::Receive - Invalid chunk state: %d for chunk index: %u\n", 
+                                static_cast<int>( sample.GetState() ), chunk_index );
+                return Result< Vector< Sample > >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+            }
+            sample.TransitionState( ChunkState::kReceived );
+
+            samples.emplace_back( std::move( sample ) );
         }
 
+        return Result< Vector< Sample > >( std::move( samples ) );
+    }
+
+    Result< UInt8 > Subscriber::Receive( _ReadFunc read_fn,
+                        SubscribePolicy policy ) noexcept
+    {
+        UInt8 totalRead = 0;
         for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
             auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
             if ( !read_result )  {
@@ -109,73 +139,61 @@ namespace ipc
             // Create Sample wrapper
             Sample sample( allocator_.get(), chunk_index );
             if ( !sample.IsValid() ) {
-                return Result< Vector< Sample > >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
             }
 
             if ( sample.GetState() != ChunkState::kSent &&
                 sample.GetState() != ChunkState::kReceived ) {
-                return Result< Vector< Sample > >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
             }
             sample.TransitionState( ChunkState::kReceived );
 
-            samples.emplace_back( std::move( sample ) );
-        }
-
-        return Result< Vector< Sample > >( std::move( samples ) );
-    }
-
-    template<class Fn>
-    Result< UInt8 > Subscriber::Receive( Fn&& read_fn, UInt8 channel_id,
-                        SubscribePolicy policy ) noexcept
-    {
-        DEF_LAP_STATIC_ASSERT( ( std::is_invocable_r_v< Size, Fn, UInt8, Byte*, Size > ),
-                    "Fn must be callable like Size( UInt8, Byte*, Size)" );
-        
-        if ( channel_id == kInvalidChannelID ) {
-            auto sample_result = InnerReceive( channel_id, policy );
-            if ( !sample_result ) {
-                return Result< UInt8 >::FromError( sample_result.Error() );
-            }
-            auto sample = std::move( sample_result ).Value();
             Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
             if ( readSize > sample.RawDataSize() ) {
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
+                // return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
+                INNER_CORE_LOG( "Subscriber::Receive - Read overflow on channel %u", sample.ChannelID() );
             } else {
-                return Result< UInt8 >::FromValue( 1 );
+                ++totalRead;
             }
-        } else {
-            UInt8 totalRead = 0;
-            for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
-                auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
-                if ( !read_result )  {
-                    // skip
-                    continue;
-                }
-                // Extract chunk_index from ChannelQueueValue
-                UInt16 chunk_index = read_result.Value().chunk_index;
-
-                // Create Sample wrapper
-                Sample sample( allocator_.get(), chunk_index );
-                if ( !sample.IsValid() ) {
-                    return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
-                }
-
-                if ( sample.GetState() != ChunkState::kSent &&
-                    sample.GetState() != ChunkState::kReceived ) {
-                    return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
-                }
-                sample.TransitionState( ChunkState::kReceived );
-
-                Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
-                if ( readSize > sample.RawDataSize() ) {
-                    // return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
-                    INNER_CORE_LOG( "Subscriber::Receive - Read overflow on channel %u", sample.ChannelID() );
-                } else {
-                    totalRead++;
-                }
-            }
-            return Result< UInt8 >::FromValue( totalRead );
         }
+        return Result< UInt8 >::FromValue( totalRead );
+    }
+
+    Result< Sample > Subscriber::ReceiveFrom( UInt8 channel_id, SubscribePolicy policy ) noexcept
+    {
+        if ( channel_id >= kMaxChannels ) {
+            return Result< Sample >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+
+        auto result = InnerReceive( channel_id, policy );
+
+        if ( !result ) {
+            INNER_CORE_LOG( "Subscriber::Receive - InnerReceive failed for channel %u, error: %d\n", 
+                            channel_id, result.Error().Value() );
+            return Result< Sample >::FromError( result.Error() );
+        }
+
+        return Result< Sample >( std::move(result).Value() );
+    }
+
+    Result< Size > Subscriber::ReceiveFrom( _ReadFunc read_fn, UInt8 channel_id, 
+                         SubscribePolicy policy ) noexcept
+    {
+        if ( channel_id >= kMaxChannels ) {
+            return Result< Size >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+        
+        auto sample_result = InnerReceive( channel_id, policy );
+        if ( !sample_result ) {
+            return Result< Size >::FromError( sample_result.Error() );
+        }
+        auto sample = std::move( sample_result ).Value();
+        Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
+        if ( readSize > sample.RawDataSize() ) {
+            return Result< Size >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
+        } else {
+            return Result< Size >::FromValue( readSize );
+        }   
     }
 
     Result< Sample > Subscriber::ReceiveOnce( UInt8 channel_id, SubscribePolicy policy ) noexcept
@@ -220,60 +238,6 @@ namespace ipc
 
         return Result< Sample >( std::move( sample ) );
     }
-
-    template<class Fn>
-    Result< Size > Subscriber::ReceiveOnce( Fn&& read_fn, UInt8 channel_id, SubscribePolicy policy ) noexcept
-    {
-        DEF_LAP_STATIC_ASSERT( ( std::is_invocable_r_v< Size, Fn, UInt8, Byte*, Size > ),
-                      "Fn must be callable like Size( UInt8, Byte*, Size)" );
-            
-        if ( channel_id == kInvalidChannelID ) {
-            auto sample_result = InnerReceive( channel_id, policy );
-            if ( !sample_result ) {
-                return Result< Size >::FromError( sample_result.Error() );
-            }
-            auto sample = std::move( sample_result ).Value();
-            Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
-            if ( readSize > sample.RawDataSize() ) {
-                return Result< Size >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
-            } else {
-                return Result< Size >::FromValue( readSize );
-            }
-        } 
-
-        auto active = active_channel_index_.load( std::memory_order_acquire );
-        if ( read_channels_[ active ].empty() ) {
-            return Result< Size >( MakeErrorCode( CoreErrc::kIPCRetry ) );
-        }
-
-        auto it = read_channels_[ active ].begin();
-
-        auto read_result = it->second->ReadWithPolicy( policy, config_.timeout );
-        if ( !read_result )  {
-            return Result< Size >( read_result.Error() );
-        }
-        // Extract chunk_index from ChannelQueueValue
-        UInt16 chunk_index = read_result.Value().chunk_index;
-
-        // Create Sample wrapper
-        Sample sample( allocator_.get(), chunk_index );
-        if ( !sample.IsValid() ) {
-            return Result< Size >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
-        }
-
-        if ( sample.GetState() != ChunkState::kSent &&
-            sample.GetState() != ChunkState::kReceived ) {
-            return Result< Size >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
-        }
-        sample.TransitionState( ChunkState::kReceived );
-
-        Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
-        if ( readSize > sample.RawDataSize() ) {
-            // return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
-            INNER_CORE_LOG( "Subscriber::Receive - Read overflow on channel %u", sample.ChannelID() );
-        }
-        return Result< Size >::FromValue( readSize );
-    }
         
     Bool Subscriber::IsQueueEmpty() const noexcept
     {
@@ -316,7 +280,11 @@ namespace ipc
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
         }
 
-        ChannelRegistry::ActiveChannel( shm_.get(), config_.channel_id );
+        is_connected_.store( true, std::memory_order_release );
+
+        for ( const auto& [channel_id, _] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+            ChannelRegistry::ActiveChannel( shm_.get(), channel_id );
+        }
 
         return {};
     }
@@ -327,7 +295,11 @@ namespace ipc
             return {};  // Already disconnected or not initialized
         }
 
-        ChannelRegistry::DeactiveChannel( shm_.get(), config_.channel_id );
+        is_connected_.store( false, std::memory_order_release );
+
+       for ( const auto& [channel_id, _] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+            ChannelRegistry::DeactiveChannel( shm_.get(), channel_id );
+        }
 
         return {};
     }
@@ -344,6 +316,7 @@ namespace ipc
         DEF_LAP_ASSERT( shm_ != nullptr, "SharedMemoryManager must not be null" );
         DEF_LAP_ASSERT( allocator_ != nullptr, "ChunkPoolAllocator must not be null" );
 
+        is_connected_.store( false, std::memory_order_relaxed );
         is_running_.store( false, std::memory_order_relaxed );
         active_channel_index_.store( 0, std::memory_order_relaxed );
         auto ctrl = shm_->GetControlBlock();
@@ -352,7 +325,17 @@ namespace ipc
                             config_.channel_id, 
                             static_cast<int>(ctrl->header.type),
                             shm_path_.c_str() );
-        StartScanner( 1000, 10000 ); // 10ms interval
+
+        if ( ctrl->header.type == IPCType::kMPSC ) {
+            StartScanner( 1000, 10000 ); // 10ms interval
+        } else {
+            // read from own channel only
+            read_channels_[0].emplace( config_.channel_id,
+                ChannelFactory<ChannelQueueValue>::CreateReadChannelFromQueue(
+                    shm_->GetChannelQueue( config_.channel_id )
+                )
+            );
+        }
     }
 
     Subscriber::Subscriber(Subscriber&& other) noexcept
@@ -365,6 +348,7 @@ namespace ipc
         shm_ = std::move(other.shm_);
         allocator_ = std::move(other.allocator_);
         event_hooks_ = std::move(other.event_hooks_);
+        is_connected_.store( other.is_connected_.load(std::memory_order_relaxed), std::memory_order_relaxed );
 
         is_running_.store( false, std::memory_order_relaxed );
         active_channel_index_.store( 0, std::memory_order_relaxed );
@@ -375,7 +359,16 @@ namespace ipc
                             static_cast<int>(ctrl->header.type),
                             shm_path_.c_str() );
 
-        StartScanner( 1000, 10000 ); // 10ms interval
+        if ( ctrl->header.type == IPCType::kMPSC ) {
+            StartScanner( 1000, 10000 ); // 10ms interval
+        } else {
+            // read from own channel only
+            read_channels_[0].emplace( config_.channel_id,
+                ChannelFactory<ChannelQueueValue>::CreateReadChannelFromQueue(
+                    shm_->GetChannelQueue( config_.channel_id )
+                )
+            );
+        }
     }
      
     Subscriber::~Subscriber() noexcept
@@ -479,6 +472,7 @@ namespace ipc
             return;
         }
 
+        auto is_connected = is_connected_.load( std::memory_order_acquire );
         while ( write_mask ) {
             int idx = __builtin_ctzll( write_mask );  // Count trailing zeros
             
@@ -488,6 +482,12 @@ namespace ipc
                 auto channel = ChannelFactory<ChannelQueueValue>::CreateReadChannelFromQueue( queue );
                 if ( channel ) {
                     read_channel.emplace( idx, std::move( channel ) );
+
+                    if ( is_connected ) {
+                        ChannelRegistry::ActiveChannel( shm_.get(), idx );
+                    } else {
+                        ChannelRegistry::DeactiveChannel( shm_.get(), idx );
+                    }
                 }
             }
 
@@ -502,8 +502,10 @@ namespace ipc
             return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );
         }
 
-        auto it = read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ].find( channel_id );
-        if ( it == read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ].end() ) {
+        auto active = active_channel_index_.load( std::memory_order_acquire );
+
+        auto it = read_channels_[ active ].find( channel_id );
+        if ( it == read_channels_[ active ].end() ) {
             return Result< Sample >( MakeErrorCode( CoreErrc::kChannelInvalid ) );
         }
 

@@ -18,9 +18,9 @@
 #include "IPCEventHooks.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
-#include "Message.hpp"
 #include "CTypedef.hpp"
 #include "Channel.hpp"
+#include "CFunction.hpp"
 #include <thread>
 
 namespace lap
@@ -60,7 +60,8 @@ namespace ipc
     class Publisher
     {
     public:
-        using _MapChannel = Map< UInt8, UniqueHandle< Channel< ChannelQueueValue > > >;
+        using _MapChannel   = Map< UInt8, UniqueHandle< Channel< ChannelQueueValue > > >;
+        using _WriteFunc    = Function< Size( UInt8, Byte*, Size ) >;
     
     public:
         /**
@@ -152,50 +153,70 @@ namespace ipc
          * @note For external use, prefer SendCopy() or SendEmplace() instead.
          *       This method is protected to allow advanced usage in derived classes.
          */
-        Result< void > Send( Sample&& sample, UInt8 channel_id = kInvalidChannelID,
+        Result< void > Send( Sample&& sample,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
-        Result< void > Send( Byte* buffer, Size size, UInt8 channel_id = kInvalidChannelID,
+        Result< void > Send( Byte* buffer, Size size,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
         /**
-         * @brief Send message using lambda/function to write payload
+         * @brief Send message using lambda/function to fill payload
          * @tparam Fn Callable type with signature Size(Byte*, Size)
-         * @param write_fn Function to write data to chunk
+         * @param write_fn Function to fill data into chunk
          * @param policy Publish policy
-         * @return Result with success or error
+         * @return Result
          * 
          * @details
          * - Template implementation must be in header for proper instantiation
-         * - Loans a chunk, calls write_fn to populate it, then sends
+         * - Loans a sample, calls write_fn to populate it
          * - write_fn should return number of bytes written
          */
-        template<class Fn>
-        Result< void > Send( Fn&& write_fn, UInt8 channel_id = kInvalidChannelID,
-                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept
-        {
-            static_assert(std::is_invocable_r_v<Size, Fn, Byte*, Size>,
-                      "Fn must be callable like Size(Byte*, Size)");
+        Result< void > Send( _WriteFunc write_fn,
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
 
-            auto sample_result = Loan();
-            if ( !sample_result ) {
-                return Result< void >( sample_result.Error() );
-            }
+        /**
+         * @brief Send sample to specific channel
+         * @param sample Sample to send (moved)
+         * @param channel_id Channel ID to send to
+         * @param policy Queue full policy
+         * @return Result
+         * 
+         * @details
+         * - Transitions chunk state to kSent
+         * - Enqueues chunk index to specified subscriber queue
+         * - Increments ref count for that subscriber
+         */ 
+        Result< void > SendTo( Sample&& sample, UInt8 channel_id,
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
+        
+        /**
+         * @brief Send message to specific channel
+         * @param buffer Data buffer to send
+         * @param size Size of data buffer
+         * @param channel_id Channel ID to send to
+         * @param policy Publish policy
+         * @return Result
+         * 
+         * @details
+         * - Loans a sample, copies data into it
+         * - Sends to specified channel
+         */
+        Result< void > SendTo( Byte* buffer, Size size, UInt8 channel_id,
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
 
-            auto sample = std::move( sample_result ).Value();
-
-            // Call fill function to populate chunk
-            Byte* chunk_ptr = sample.RawData();
-            Size chunk_size = sample.RawDataSize();
-            Size written_size = write_fn( chunk_ptr, chunk_size );
-
-            if ( written_size > chunk_size ) {
-                // Fill function wrote more than chunk size
-                return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
-            }
-            return Send( std::move( sample ), channel_id, policy );
-        }
-
+        /**
+         * @brief Send message to specific channel
+         * @param write_fn Function to fill data into chunk
+         * @param channel_id Channel ID to send to
+         * @param policy Publish policy
+         * @return Result
+         * 
+         * @details
+         * - Loans a sample, calls write_fn to populate it
+         */
+        Result< void > SendTo( _WriteFunc write_fn, UInt8 channel_id,
+                         PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
+        
         /**
          * @brief Start internal channel scanner thread
          * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)

@@ -178,13 +178,6 @@ if(ENABLE_BUILD_UNITTEST AND TARGET lap_core)
     message(STATUS "[Core] Building unit tests...")
     
     lap_add_ipc_test(
-        NAME test_ipc_normal
-        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_ipc_normal.cpp
-        LINK_LIBRARIES lap_core Threads::Threads rt
-        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
-    )
-    
-    lap_add_ipc_test(
         NAME test_controlblock_size
         SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc/test_controlblock_size.cpp
         LINK_LIBRARIES lap_core Threads::Threads rt
@@ -211,7 +204,7 @@ if(ENABLE_BUILD_EXAMPLES AND TARGET lap_core)
     # NORMAL mode examples (batch processing)
     lap_add_examples_batch(
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test/ipc
-        SOURCES camera_fusion_example.cpp
+        SOURCES camera_fusion_spmc_example.cpp camera_fusion_mpsc_example.cpp camera_fusion_spsc_example.cpp camera_fusion_mpmc_example.cpp ipc_service_example.cpp property_board_example.cpp
         LINK_LIBRARIES lap_core Threads::Threads rt
         INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
         ENABLE_LOGGING

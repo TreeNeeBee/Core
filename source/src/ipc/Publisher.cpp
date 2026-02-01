@@ -35,7 +35,7 @@ namespace ipc
         shm_config.chunk_size   = config.chunk_size;  // Payload size only
         shm_config.ipc_type     = config.ipc_type;
         
-        auto result = shm->Create( shmPath, shm_config );
+        auto result = shm->Open( shmPath, shm_config );
         if ( !result ) {
             return Result< Publisher >( result.Error() );
         }
@@ -66,7 +66,6 @@ namespace ipc
                 }
             } else {
                 config_.channel_id = publisher_id_result.Value();
-                INNER_CORE_LOG( "Publisher::Create - Allocated publisher ID: %u\n", config_.channel_id );
                 break;
             }
         }
@@ -84,13 +83,13 @@ namespace ipc
 
         if ( chunk_index == kInvalidChunkIndex ) {
             // Trigger hook: Loan failed
-            if ( event_hooks_ ) {
-                event_hooks_->OnLoanFailed(
-                    config_.loan_policy,
-                    allocator_->GetAllocatedCount(),
-                    allocator_->GetMaxChunks()
-                );
-            }
+            // if ( event_hooks_ ) {
+            //     event_hooks_->OnLoanFailed(
+            //         config_.loan_policy,
+            //         allocator_->GetAllocatedCount(),
+            //         allocator_->GetMaxChunks()
+            //     );
+            // }
             
             // Pool exhausted - handle based on policy
             if (config_.loan_policy == LoanPolicy::kError) {
@@ -136,12 +135,14 @@ namespace ipc
             }
         }
         Sample sample{ allocator_.get(), chunk_index };
+
+        sample.SetChannelID( config_.channel_id );
         sample.TransitionState( ChunkState::kLoaned );
         
         return Result< Sample >( std::move(sample) );
     }
     
-    Result<void> Publisher::Send( Sample&& sample, UInt8 channel_id,
+    Result<void> Publisher::Send( Sample&& sample,
                                         PublishPolicy policy ) noexcept
     {
         if ( DEF_LAP_IF_UNLIKELY( !sample.IsValid() ) ) {
@@ -151,7 +152,6 @@ namespace ipc
         DEF_LAP_ASSERT( sample.GetState() == ChunkState::kLoaned || sample.GetState() == ChunkState::kSent, 
                         "Sending chunk must be in Loaned or Sent state" );
         sample.TransitionState( ChunkState::kSent );
-        sample.SetChannelID( channel_id );
         sample.IncrementRef();  // For publisher's own reference
 
         // Get snapshot of subscribers from shared memory registry
@@ -163,91 +163,52 @@ namespace ipc
         }
 
         auto now = SteadyClock::now();
+        
+        // Set initial reference count to number of subscribers
+        sample.FetchAdd( snapshot.size() );
 
-        if ( channel_id != kInvalidChannelID ) {
-            sample.FetchAdd( 1 );  // For specific subscriber
-
-            // Send to specific channel only
-            auto it = snapshot.find( channel_id );
-            if ( it != snapshot.end() ) {
-                auto& channel = it->second;
-
-                if ( !channel || !channel->IsActive() || !channel->IsValid() ) {
-                    // Queue not available, decrement ref count
-                    sample.DecrementRef();
-                    
-                    return Result< void >( MakeErrorCode( CoreErrc::kChannelInvalid ) );
-                }
-
-                auto interval = std::chrono::milliseconds( channel->GetSTMin() );
-                if ( ( now - last_send_[channel_id] ) < interval ) {
-                    // Skip sending to this subscriber due to STmin
-                    sample.DecrementRef();
-                    
-                    return Result< void >( MakeErrorCode( CoreErrc::kIPCRetry ) );
-                }
-
-                // Prepare value to write
-                ChannelQueueValue value{ 0, sample.GetChunkIndex() };  // sequence can be used for message ordering if needed
-
-                // Write using Channel API with policy
-                auto write_result = channel->WriteWithPolicy( value, policy, config_.publish_timeout );
-                
-                if ( !write_result ) {
-                    // Write failed, decrement ref count
-                    sample.DecrementRef();
-
-                    return Result< void >::FromError( write_result.Error() );
-                }
-
-                // Update last send time for STmin enforcement
-                last_send_[channel_id] = SteadyClock::now();
-            } else {
-                // Channel ID not found, decrement ref count
+        for ( auto& [channel_id, channel] : snapshot ) {
+            if ( !channel || !channel->IsActive() || !channel->IsValid() ) {
+                // Queue not available, decrement ref count
                 sample.DecrementRef();
-
-                return Result< void >( MakeErrorCode( CoreErrc::kChannelNotFound ) );
+                continue;
             }
-        } else {
-            // Set initial reference count to number of subscribers
-            sample.FetchAdd( snapshot.size() );
 
-            for ( auto& [channel_id, channel] : snapshot ) {
-                if ( !channel || !channel->IsActive() || !channel->IsValid() ) {
-                    // Queue not available, decrement ref count
-                    sample.DecrementRef();
-                    continue;
-                }
-
-                auto interval = std::chrono::milliseconds( channel->GetSTMin() );
-                if ( ( now - last_send_[channel_id] ) < interval ) {
-                    // Skip sending to this subscriber due to STmin
-                    sample.DecrementRef();
-                    continue;
-                }
-
-                // Prepare value to write
-                ChannelQueueValue value{ 0, sample.GetChunkIndex() };  // sequence can be used for message ordering if needed
-
-                // Write using Channel API with policy
-                auto write_result = channel->WriteWithPolicy( value, policy, config_.publish_timeout );
-                
-                if ( !write_result ) {
-                    // Write failed, decrement ref count
-                    sample.DecrementRef();
-                    continue;
-                }
-
-                // Update last send time for STmin enforcement
-                last_send_[channel_id] = now;
+            auto interval = std::chrono::milliseconds( channel->GetSTMin() );
+            if ( ( now - last_send_[channel_id] ) < interval ) {
+                // Skip sending to this subscriber due to STmin
+                sample.DecrementRef();
+                continue;
             }
+
+            while( !channel->TryLock() ) {
+                // Busy-wait until lock acquired
+                std::this_thread::yield();
+            }
+
+            // Prepare value to write
+            ChannelQueueValue value{ 0, sample.GetChunkIndex() };  // sequence can be used for message ordering if needed
+
+            // Write using Channel API with policy
+            auto write_result = channel->WriteWithPolicy( value, policy, config_.publish_timeout );
+            
+            channel->Unlock();
+
+            if ( !write_result ) {
+                // Write failed, decrement ref count
+                sample.DecrementRef();
+                continue;
+            }
+
+            // Update last send time for STmin enforcement
+            last_send_[channel_id] = now;
         }
 
         // sample.DecrementRef();  // Release publisher's own reference
         return {};       
     }
 
-    Result< void > Publisher::Send( Byte* buffer, Size size, UInt8 channel_id,
+    Result< void > Publisher::Send( Byte* buffer, Size size,
                          PublishPolicy policy ) noexcept
     {
         auto sample_result = Loan();
@@ -259,10 +220,156 @@ namespace ipc
    
         // Copy data to chunk
         sample.Write( buffer, size );
+ 
+        return Send( std::move( sample ), policy );
+    }
+
+    Result< void > Publisher::Send( _WriteFunc write_fn,
+                         PublishPolicy policy ) noexcept
+    {
+
+        auto sample_result = Loan();
+        if ( !sample_result ) {
+            return Result< void >( sample_result.Error() );
+        }
+
+        auto sample = std::move( sample_result ).Value();
+
+        // Call fill function to populate chunk
+        Byte* chunk_ptr = sample.RawData();
+        Size chunk_size = sample.RawDataSize();
+        Size written_size = write_fn( kInvalidChannelID, chunk_ptr, chunk_size );
+
+        if ( written_size > chunk_size ) {
+            // Fill function wrote more than chunk size
+            return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+        return Send( std::move( sample ), policy );
+    }
+
+    Result< void > Publisher::SendTo( Sample&& sample, UInt8 channel_id,
+                         PublishPolicy policy ) noexcept
+    {
+        if ( !sample.IsValid() ) {
+            return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+
+        DEF_LAP_ASSERT( channel_id < kMaxChannels, "channel_id must be valid" );
+        DEF_LAP_ASSERT( sample.GetState() == ChunkState::kLoaned || sample.GetState() == ChunkState::kSent, 
+                        "Sending chunk must be in Loaned or Sent state" );
+        sample.TransitionState( ChunkState::kSent );
+
+        sample.IncrementRef();  // For publisher's own reference
+
+        // Get snapshot of subscribers from shared memory registry
+        auto& snapshot = write_channels_[ active_channel_index_.load( std::memory_order_acquire ) ];
+
+        if ( snapshot.size() == 0 ) {
+            //sample.DecrementRef();  // No subscribers, release chunk
+            return {};
+        }
         
-        return Send( std::move( sample ), channel_id, policy );
+        auto now = SteadyClock::now();
+        sample.FetchAdd( 1 );  // For specific subscriber
+
+        // Send to specific channel only
+        auto it = snapshot.find( channel_id );
+        if ( it != snapshot.end() ) {
+            auto& channel = it->second;
+
+            if ( !channel || !channel->IsActive() || !channel->IsValid() ) {
+                // Queue not available, decrement ref count
+                sample.DecrementRef();
+                
+                return Result< void >( MakeErrorCode( CoreErrc::kChannelInvalid ) );
+            }
+
+            auto interval = std::chrono::milliseconds( channel->GetSTMin() );
+            if ( ( now - last_send_[channel_id] ) < interval ) {
+                // Skip sending to this subscriber due to STmin
+                sample.DecrementRef();
+                
+                return Result< void >( MakeErrorCode( CoreErrc::kIPCRetry ) );
+            }
+
+            while( !channel->TryLock() ) {
+                // Busy-wait until lock acquired
+                std::this_thread::yield();
+            }
+
+            // Prepare value to write
+            ChannelQueueValue value{ 0, sample.GetChunkIndex() };  // sequence can be used for message ordering if needed
+
+            // Write using Channel API with policy
+            auto write_result = channel->WriteWithPolicy( value, policy, config_.publish_timeout );
+            
+            channel->Unlock();
+
+            if ( !write_result ) {
+                // Write failed, decrement ref count
+                sample.DecrementRef();
+
+                return Result< void >::FromError( write_result.Error() );
+            }
+
+            // Update last send time for STmin enforcement
+            last_send_[channel_id] = SteadyClock::now();
+        } else {
+            // Channel ID not found, decrement ref count
+            sample.DecrementRef();
+
+            return Result< void >( MakeErrorCode( CoreErrc::kChannelNotFound ) );
+        }
+
+        return {};
     }
         
+    Result< void > Publisher::SendTo( Byte* buffer, Size size, UInt8 channel_id,
+                         PublishPolicy policy ) noexcept
+    {
+        if ( channel_id >= kMaxChannels ) {
+            return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+
+        auto sample_result = Loan();
+        if ( !sample_result ) {
+            return Result< void >( sample_result.Error() );
+        }
+        
+        auto sample = std::move( sample_result ).Value();
+
+        // Copy data to chunk
+        sample.Write( buffer, size );
+        
+        return SendTo( std::move( sample ), channel_id, policy );
+    }
+
+    Result< void > Publisher::SendTo( _WriteFunc write_fn, UInt8 channel_id,
+                        PublishPolicy policy ) noexcept
+    {
+        if ( channel_id >= kMaxChannels ) {
+            return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+
+        auto sample_result = Loan();
+        if ( !sample_result ) {
+            return Result< void >( sample_result.Error() );
+        }
+
+        auto sample = std::move( sample_result ).Value();
+
+        // Call fill function to populate chunk
+        Byte* chunk_ptr = sample.RawData();
+        Size chunk_size = sample.RawDataSize();
+        Size written_size = write_fn( channel_id, chunk_ptr, chunk_size );
+
+        if ( written_size > chunk_size ) {
+            // Fill function wrote more than chunk size
+            return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
+        }
+        return SendTo( std::move( sample ), channel_id, policy );
+    }
+
     UInt32 Publisher::GetAllocatedCount() const noexcept
     {
         return allocator_->GetAllocatedCount();
@@ -299,16 +406,23 @@ namespace ipc
                             config_.channel_id, 
                             static_cast<int>(ctrl->header.type),
                             shm_path_.c_str() );
-        StartScanner( 1000, 10000 ); // 10ms interval
+
+        if ( ctrl->header.type == IPCType::kMPSC ) {
+            // write to own channel only
+            write_channels_[0].emplace( config_.channel_id,
+                ChannelFactory<ChannelQueueValue>::CreateWriteChannelFromQueue(
+                    shm_->GetChannelQueue( config_.channel_id )
+                )
+            );
+        } else {
+            StartScanner( 1000, 10000 ); // 10ms interval
+        }
     }
 
     Publisher::Publisher(Publisher&& other) noexcept
     {
-        INNER_CORE_LOG( "Publisher::Publisher - Move publisher111\n" );
         // Transfer ownership of scanner thread
         other.StopScanner();
-
-        INNER_CORE_LOG( "Publisher::Publisher - Move publisher222\n" );
 
         shm_path_ = std::move(other.shm_path_);
         config_ = std::move(other.config_);
@@ -329,7 +443,16 @@ namespace ipc
                             static_cast<int>(ctrl->header.type),
                             shm_path_.c_str() );
 
-        StartScanner( 1000, 10000 ); // 10ms interval
+        if ( ctrl->header.type == IPCType::kMPSC ) {
+            // write to own channel only
+            write_channels_[0].emplace( config_.channel_id,
+                ChannelFactory<ChannelQueueValue>::CreateWriteChannelFromQueue(
+                    shm_->GetChannelQueue( config_.channel_id )
+                )
+            );
+        } else {
+            StartScanner( 1000, 10000 ); // 10ms interval
+        }
     }
 
     Publisher::~Publisher() noexcept
@@ -425,17 +548,6 @@ namespace ipc
         }
         active_channel_index_.store( updateIndex, std::memory_order_release );
     }
-
-    // Result< void > Publisher::InnerSend( Sample&& sample, UInt8 channel_id,
-    //                                     PublishPolicy policy ) noexcept
-    // {
-    //     if ( channel_id >= kMaxChannels ) {
-    //         return Result< void >( MakeErrorCode( CoreErrc::kIPCInvalidChannelIndex ) );
-    //     }
-
-
-    // }
-
 }  // namespace ipc
 }  // namespace core
 }  // namespace lap

@@ -49,15 +49,15 @@ namespace ipc
     Result<void> SharedMemoryManager::Create(const String& shmPath,
                                              const SharedMemoryConfig& config) noexcept
     {
+        INNER_CORE_LOG("[DEBUG] Creating shared memory segment: %s\n", shmPath.c_str() );
+
         shm_path_ = shmPath;
         config_ = config;
         
         // Try to create new shared memory (O_CREAT | O_EXCL)
         shm_fd_ = shm_open( shm_path_.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666 );
         
-        if ( shm_fd_ >= 0 ) {
-            // We are the creator (ref_count will determine cleanup)
-            
+        if ( shm_fd_ >= 0 ) { 
             // Calculate and align total size
             size_ = CalculateTotalSize( config );
 
@@ -86,58 +86,67 @@ namespace ipc
             if ( !result ) {
                 Cleanup();
                 return result;
-            }
+            }   
             
             return {};
         } else if ( errno == EEXIST ) {
-            // Shared memory already exists, open it
-            
-            shm_fd_ = shm_open(shm_path_.c_str(), O_RDWR, 0666);
-            if ( shm_fd_ < 0 ) {
-                return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
-            }
-            
-            // Get existing size
-            struct stat sb;
-            if ( fstat( shm_fd_, &sb ) != 0 ) {
-                close( shm_fd_ );
-                shm_fd_ = -1;
-                return Result< void >( MakeErrorCode( CoreErrc::kIPCShmStatFailed ) );
-            }
-            
-            size_ = static_cast< UInt64 >( sb.st_size );
-            
-            // Map memory
-            base_addr_ = mmap(nullptr, size_, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, shm_fd_, 0);
-            
-            if ( base_addr_ == MAP_FAILED ) {
-                close( shm_fd_ );
-                shm_fd_ = -1;
-                base_addr_ = nullptr;
-                return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
-            }
-
-            DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( base_addr_ ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
-            
-            // Validate control block
-            auto* ctrl = GetControlBlock();
-            if ( !ctrl || !ctrl->Validate() ) {
-                Cleanup();
-                return Result< void >( MakeErrorCode( CoreErrc::kIPCShmInvalidMagic ) );
-            }
-
-            ctrl->header.ref_count.fetch_add( 1, std::memory_order_release );
-            
-            return {};
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmAlreadyExists ) );
         } else {
-            // Other error
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmCreateFailed ) );
         }
+    }
+
+    Result<void> SharedMemoryManager::Open(const String& shmPath, 
+                           const SharedMemoryConfig& config) noexcept
+    {
+        INNER_CORE_LOG("[DEBUG] Opening shared memory segment: %s\n", shmPath.c_str() );
+
+        shm_path_ = shmPath;
+        config_ = config;
+
+        shm_fd_ = shm_open(shm_path_.c_str(), O_RDWR, 0666);
+        if ( shm_fd_ < 0 ) {
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
+        }
+        
+        // Get existing size
+        struct stat sb;
+        if ( fstat( shm_fd_, &sb ) != 0 ) {
+            close( shm_fd_ );
+            shm_fd_ = -1;
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmStatFailed ) );
+        }
+        
+        size_ = static_cast< Size >( sb.st_size );
+        
+        // Map memory
+        base_addr_ = mmap(nullptr, size_, PROT_READ | PROT_WRITE,
+                        MAP_SHARED, shm_fd_, 0);
+        
+        if ( base_addr_ == MAP_FAILED ) {
+            close( shm_fd_ );
+            shm_fd_ = -1;
+            base_addr_ = nullptr;
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
+        }
+
+        DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( base_addr_ ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
+        
+        // Validate control block
+        auto* ctrl = GetControlBlock();
+        if ( !ctrl || !ctrl->Ready() || ctrl->header.type != config.ipc_type ) {
+            Cleanup();
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmInvalidMagic ) );
+        }
+
+        ctrl->header.ref_count.fetch_add( 1, std::memory_order_release );
+        
+        return {};
     }
     
     Result<void> SharedMemoryManager::InitializeSharedMemory(const SharedMemoryConfig& config) noexcept
     {
+        INNER_CORE_LOG("[DEBUG] Initializing shared memory structures, size: %zu bytes\n", size_);
         // Zero out entire shared memory
         std::memset(base_addr_, 0, size_);
 
@@ -176,6 +185,8 @@ namespace ipc
         
         // ChunkPool initialization will be done in ChunkPoolAllocator
         ctrl->header.ref_count.store( 1, std::memory_order_release );
+
+        ctrl->header.ready.store( SHMState::kReady, std::memory_order_release );
         
         return {};
     }

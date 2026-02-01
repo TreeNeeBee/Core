@@ -48,15 +48,16 @@ namespace core
         kIPCShmMapFailed            = 202,  // Failed to map shared memory
         kIPCShmStatFailed           = 203,  // Failed to stat shared memory
         kIPCShmInvalidMagic         = 204,  // Invalid magic number in shared memory
-        kIPCChunkPoolExhausted      = 205,  // Chunk pool exhausted
-        kIPCQueueFull               = 206,  // Subscriber queue full
-        kIPCQueueEmpty              = 207,  // Subscriber queue empty
-        kIPCInvalidChannelIndex     = 208,  // Invalid queue index
-        kIPCChannelAlreadyInUse     = 209,  // Queue index already in use
-        kIPCRetry                   = 210,  // Retry operation
-        kIPCInvalidChunkIndex       = 211,  // Invalid chunk index
-        kIPCInvalidState            = 212,  // Invalid chunk state
-        kIPCReadOverflow            = 213,  // Read size exceeds chunk size
+        kIPCShmAlreadyExists        = 205,  // Shared memory segment already exists
+        kIPCChunkPoolExhausted      = 206,  // Chunk pool exhausted
+        kIPCQueueFull               = 207,  // Subscriber queue full
+        kIPCQueueEmpty              = 208,  // Subscriber queue empty
+        kIPCInvalidChannelIndex     = 209,  // Invalid queue index
+        kIPCChannelAlreadyInUse     = 210,  // Queue index already in use
+        kIPCRetry                   = 211,  // Retry operation
+        kIPCInvalidChunkIndex       = 212,  // Invalid chunk index
+        kIPCInvalidState            = 213,  // Invalid chunk state
+        kIPCReadOverflow            = 214,  // Read size exceeds chunk size
         
         // Channel Error Codes (400-599)
         kChannelInvalid             = 400,  // Channel is not initialized or invalid
@@ -104,6 +105,8 @@ namespace core
             return "Failed to stat shared memory";
         case CoreErrc::kIPCShmInvalidMagic:
             return "Invalid magic number in shared memory";
+        case CoreErrc::kIPCShmAlreadyExists:
+            return "Shared memory segment already exists";
         case CoreErrc::kIPCChunkPoolExhausted:
             return "Chunk pool exhausted";
         case CoreErrc::kIPCQueueFull:

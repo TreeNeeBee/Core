@@ -106,7 +106,7 @@ namespace ipc
         UInt64 mask = ctrl->registry.read_mask.load(std::memory_order_acquire);
         
         // Check MPSC constraint: only one subscriber allowed
-        if ( ( ctrl->GetIPCType() == IPCType::kMPSC ) && ( mask != 0 ) ) {
+        if ( ( ctrl->GetIPCType() == IPCType::kMPSC || ctrl->GetIPCType() == IPCType::kSPSC ) && ( mask != 0 ) ) {
             return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
         }
 
@@ -164,7 +164,7 @@ namespace ipc
         UInt64 mask = ctrl->registry.write_mask.load(std::memory_order_acquire);
         
         // Check SPMC constraint: only one publisher allowed
-        if ( ( ctrl->GetIPCType() == IPCType::kSPMC ) && ( mask != 0 ) ) {
+        if ( ( ctrl->GetIPCType() == IPCType::kSPMC || ctrl->GetIPCType() == IPCType::kSPSC ) && ( mask != 0 ) ) {
             return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCChannelAlreadyInUse ) );
         }
 

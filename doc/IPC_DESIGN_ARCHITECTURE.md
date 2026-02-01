@@ -1,8 +1,8 @@
 # LightAP Core IPC 设计架构
 
 > **参考**: iceoryx2 - Zero-Copy Lock-Free IPC with a Rust Core  
-> **版本**: 1.1  
-> **日期**: 2026-01-19  
+> **版本**: 1.2  
+> **日期**: 2026-02-01  
 > **状态**: 已实现并测试
 
 ---
@@ -15,6 +15,13 @@
 - IPC 是 SOA 层的**底层传输实现**
 - 服务发现、服务注册等功能由 **SOA 层**负责
 - IPC 层只负责高性能的数据传输
+
+### 近期实现更新 (2026-02-01)
+
+- **共享内存生命周期**: 引用计数完整实现，只有最后一个进程才会执行 `shm_unlink`。  
+- **订阅者退出**: 析构时先断开并清空队列，避免阻塞退出。  
+- **STmin 单位**: 全链路统一为 **微秒**。  
+- **通道扫描参数**: 超时与扫描间隔统一为具名常量，减少魔法数。  
 
 ### 文档结构
 
@@ -130,24 +137,35 @@ namespace com {
 **直接使用共享内存路径创建**（无需服务发现）：
 
 ```cpp
+using namespace lap::core::ipc;
+
 // 创建 Publisher（指定共享内存路径）
-auto publisher = Publisher<SensorData>::Create(
-    "/dev/shm/lightap_ipc_sensor_data",
-    PublisherConfig{
-        .max_chunks = 128,
-        .chunk_size = 4096
-    }
-).Value();
+PublisherConfig pub_config;
+pub_config.max_chunks = 16;              // NORMAL模式默认
+pub_config.chunk_size = 1920 * 720 * 4;  // 图像大小: 5.3MB
+pub_config.loan_policy = LoanPolicy::kWait;
+pub_config.policy = PublishPolicy::kOverwrite;
+
+auto publisher_result = Publisher::Create("/cam0_stream", pub_config);
+if (!publisher_result.HasValue()) {
+    // 处理错误
+}
+auto publisher = std::move(publisher_result.Value());
 
 // 创建 Subscriber（使用相同的共享内存路径）
-auto subscriber = Subscriber<SensorData>::Create(
-    "/dev/shm/lightap_ipc_sensor_data",
-    SubscriberConfig{
-        .channel_capacity = 256  // 每个 Subscriber 队列容量，默认 256
-    }
-).Value();
+SubscriberConfig sub_config;
+sub_config.channel_capacity = 256;       // NORMAL模式默认
+sub_config.STmin = 10000;                // 最小接收间隔10ms（微秒）
+sub_config.empty_policy = SubscribePolicy::kBlock;
+
+auto subscriber_result = Subscriber::Create("/cam0_stream", sub_config);
+if (!subscriber_result.HasValue()) {
+    // 处理错误
+}
+auto subscriber = std::move(subscriber_result.Value());
 
 // 说明：
+// - Publisher 和 Subscriber 是非模板类，使用基类指针管理消息
 // - SOA 层负责从服务注册表查询服务并获取 shm 路径
 // - IPC 层只需要明确的 shm 路径即可创建 Publisher/Subscriber
 // - 首个启动者（Pub 或 Sub）创建共享内存，后续启动者打开已存在的共享内存
@@ -158,27 +176,62 @@ auto subscriber = Subscriber<SensorData>::Create(
 ```cpp
 // Publisher API (非模板类，使用Message基类)
 class Publisher {
-    // 方式1: Loan + 手动写入 + Send
-    Result<Sample> Loan();                    // 从ChunkPool借出Chunk
-    Result<void> Send(Sample&& sample);       // 广播到所有Subscriber
+public:
+    // 创建Publisher
+    static Result<Publisher> Create(const String& shmPath,
+                                   const PublisherConfig& config = {}) noexcept;
     
-    // 方式2: Send with Lambda (推荐)
-    template<typename Fn>
-    Result<void> Send(Fn&& write_fn);         // Lambda直接写入共享内存
+    // 方式1: Loan + 手动写入 + Send
+    Result<Sample> Loan() noexcept;                     // 从ChunkPool借出Chunk
+    Result<void> Send(Sample&& sample) noexcept;        // 广播到所有Subscriber
+    
+    // 方式2: Send with Lambda（推荐，一步完成loan+write+send）
+    Result<void> Send(Function<Size(Byte*, Size)> write_fn) noexcept;
+    
+    // 方式3: Send with Buffer（拷贝模式）
+    Result<void> Send(Byte* buffer, Size size) noexcept;
+    
+    // 定向发送到指定通道
+    Result<void> SendTo(Sample&& sample, UInt8 channel_id) noexcept;
     
     // 统计接口
-    UInt32 GetAllocatedCount() const;         // 获取已分配Chunk数
-    Bool IsChunkPoolExhausted() const;        // 检查ChunkPool是否耗尽
+    UInt32 GetAllocatedCount() const noexcept;          // 获取已分配Chunk数
+    Bool IsChunkPoolExhausted() const noexcept;         // 检查ChunkPool是否耗尽
+    const String& GetShmPath() const noexcept;          // 获取共享内存路径
 };
 
 // Subscriber API (非模板类)
 class Subscriber {
-    Result<Sample> Receive();                           // 非阻塞接收
-    Result<Sample> ReceiveWithTimeout(UInt64 timeout);  // 超时接收(ns)
+public:
+    // 创建Subscriber
+    static Result<Subscriber> Create(const String& shmPath,
+                                    const SubscriberConfig& config = {}) noexcept;
+    
+    // 接收消息（返回多个Sample，支持批量接收）
+    Result<Vector<Sample>> Receive(SubscribePolicy policy = SubscribePolicy::kBlock) noexcept;
+    
+    // 接收带超时
+    Result<Vector<Sample>> ReceiveWithTimeout(UInt64 timeout_ns,
+                                             SubscribePolicy policy = SubscribePolicy::kBlock) noexcept;
+    
+    // 使用Lambda接收（推荐，零拷贝读取）
+    Result<Size> Receive(Function<Size(UInt8, Byte*, Size)> read_fn,
+                        SubscribePolicy policy = SubscribePolicy::kBlock) noexcept;
+    
+    // 从指定通道接收
+    Result<Sample> ReceiveFrom(UInt8 channel_id, SubscribePolicy policy = SubscribePolicy::kBlock) noexcept;
+    
+    // 连接/断开
+    Result<void> Connect() noexcept;                    // 激活接收通道
+    Result<void> Disconnect() noexcept;                 // 断开并清理
     
     // 队列状态查询
-    UInt32 GetQueueSize() const;              // 获取当前队列大小
-    Bool IsEmpty() const;                     // 检查队列是否为空
+    UInt32 GetQueueSize() const noexcept;               // 获取当前队列大小
+    Bool IsEmpty() const noexcept;                      // 检查队列是否为空
+    const String& GetShmPath() const noexcept;          // 获取共享内存路径
+    
+    // STmin更新
+    void UpdateSTMin(UInt16 stmin) noexcept;            // 更新最小接收间隔（微秒）
 };
 ```
 

@@ -547,8 +547,8 @@ More examples in [test/examples/](test/examples/) and [test/ipc/](test/ipc/) dir
 
 ## 📄 Documentation
 
-- **[API Reference](doc/INDEX.md)** - Complete API documentation
-- **[IPC Design Architecture](doc/IPC_DESIGN_ARCHITECTURE.md)** - Zero-copy IPC design
+- **[Documentation Index](doc/INDEX.md)** - Core documentation hub
+- **[IPC Design Architecture](doc/IPC_DESIGN_ARCHITECTURE.md)** - Zero-copy IPC design and lifecycle
 - **[Build Guide](BUILDING.md)** - Detailed build instructions
 - **[Release Notes](RELEASE_NOTES.md)** - Version history
 

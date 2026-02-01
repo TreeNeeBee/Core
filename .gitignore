@@ -1,6 +1,5 @@
 output/*
 build/
-BuildTemplate/
 *.pyc
 *.so
 *.sw*
@@ -82,6 +81,3 @@ compile_commands.json
 
 # Core module local build dirs
 _build_standalone/
-
-# BuildTemplate submodule local artifacts
-BuildTemplate/

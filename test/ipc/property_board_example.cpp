@@ -230,7 +230,8 @@ void RunServer(UInt32 duration_sec)
             ack.magic = 0xDCBA4321;
             ack.client_id = req.client_id;
             ack.request_id = req.request_id;
-            std::strncpy(ack.key, req.key, kKeyMaxLen - 1);
+            std::memcpy(ack.key, req.key, kKeyMaxLen - 1);
+            ack.key[kKeyMaxLen - 1] = '\0';
 
             int idx = FindEntry(db, req.key);
             if (idx < 0) {
@@ -238,7 +239,8 @@ void RunServer(UInt32 duration_sec)
                 if (idx < 0) {
                     ack.status = 2;
                 } else {
-                    std::strncpy(db->entries[idx].key, req.key, kKeyMaxLen - 1);
+                    std::memcpy(db->entries[idx].key, req.key, kKeyMaxLen - 1);
+                    db->entries[idx].key[kKeyMaxLen - 1] = '\0';
                     db->entries[idx].in_use = 1;
                     db->entries[idx].value = req.value;
                     db->count++;
@@ -352,7 +354,8 @@ void RunClient(UInt8 client_id, const char* key, Int32 value, UInt32 duration_se
     req.type = static_cast<UInt8>(ReqType::kSet);
     req.client_id = client_id;
     req.request_id = req_id;
-    std::strncpy(req.key, key, kKeyMaxLen - 1);
+    std::memcpy(req.key, key, kKeyMaxLen - 1);
+    req.key[kKeyMaxLen - 1] = '\0';
     req.value = value;
 
     bool got_ack = false;

@@ -37,6 +37,7 @@
 #include <chrono>
 
 #include "CMacroDefine.hpp"
+#include "CRawAtomic.hpp"
 
 namespace lap
 {
@@ -145,38 +146,64 @@ namespace core
     /**
      * @brief Unique ownership smart pointer
      */
-    template <typename T>
+    template < typename T >
+    using Atomic                = std::atomic< T >;
+
+    /**
+     * @brief Unique ownership smart pointer
+     */
+    template < typename T >
     using UniqueHandle          = ::std::unique_ptr< T >;
 
     /**
      * @brief Shared ownership smart pointer
      */
-    template <typename T>
+    template < typename T >
     using SharedHandle          = ::std::shared_ptr< T >;
 
     /**
      * @brief Weak reference to shared ownership smart pointer
      */
-    template <typename T>
+    template < typename T >
     using WeakHandle            = ::std::weak_ptr< T >;
 
     /**
      * @brief Create unique pointer (wrapper for std::make_unique)
      */
-    template <typename T, typename... Args>
-    inline UniqueHandle<T> MakeUnique(Args&&... args)
+    template < typename T, typename... Args >
+    inline UniqueHandle< T > MakeUnique( Args&&... args )
     {
-        return ::std::make_unique<T>(::std::forward<Args>(args)...);
+        return ::std::make_unique< T >(::std::forward< Args >( args )...);
     }
 
     /**
      * @brief Create shared pointer (wrapper for std::make_shared)
      */
-    template <typename T, typename... Args>
-    inline SharedHandle<T> MakeShared(Args&&... args)
+    template < typename T, typename... Args >
+    inline SharedHandle< T > MakeShared( Args&&... args )
     {
-        return ::std::make_shared<T>(::std::forward<Args>(args)...);
+        return ::std::make_shared< T >(::std::forward< Args >( args )...);
     }
+
+    /// Target shared memory size for 4K alignment
+    constexpr UInt32 kShmAlignment_4K = 4 * 1024;
+
+    /// Target shared memory size for 2M alignment
+    constexpr UInt32 kShmAlignment_2M = 2 * 1024 * 1024;
+
+    constexpr UInt32 kShmAlignment = kShmAlignment_4K;
+    
+    /// Cache line size for alignment
+    constexpr UInt32 kCacheLineSize = 64;
+
+#if __x86_64__ || __ppc64__ || __aarch64__
+    constexpr UInt32 kSystemWordSize = 8;   ///< 64-bit system
+#else
+    constexpr UInt32 kSystemWordSize = 4;   ///< 32-bit system
+#endif 
+    
+    /// Page size
+    constexpr UInt32 kPageSize = 4096;
 
 } // core
 } // lap

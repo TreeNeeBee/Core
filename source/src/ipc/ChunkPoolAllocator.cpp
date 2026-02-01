@@ -37,14 +37,13 @@ namespace ipc
             // ChunkPool starts at 1MB offset (after ControlBlock + Queue + Reserved regions)
             // chunk_pool_start_ is set in constructor, verify it's at correct offset
             INNER_CORE_LOG("[DEBUG] ChunkPoolAllocator::Initialize\n");
-            INNER_CORE_LOG("  - Pool starts at offset: 0x%lX\n", 
-                        static_cast<unsigned long>(kChunkPoolOffset));
+            INNER_CORE_LOG("  - Pool starts at offset: 0x%lX\n", static_cast<unsigned long>(kChunkPoolOffset));
             INNER_CORE_LOG("  - Chunk size: %lu bytes\n", static_cast<unsigned long>(control_->header.chunk_size));
             INNER_CORE_LOG("  - Chunk stride: %lu bytes (aligned)\n", static_cast<unsigned long>(chunk_stride_));
             INNER_CORE_LOG("  - Max chunks: %lu\n", static_cast<unsigned long>(control_->header.max_chunks));
             
             // Initialize each chunk and build free list
-            for ( UInt32 i = 0; i < control_->header.max_chunks; ++i ) {
+            for ( UInt16 i = 0; i < control_->header.max_chunks; ++i ) {
                 auto* header = GetChunkAt( i );
                 header->Initialize(i, control_->header.chunk_size);
                 
@@ -67,11 +66,11 @@ namespace ipc
         return {};
     }
     
-    UInt32 ChunkPoolAllocator::Allocate() noexcept
+    UInt16 ChunkPoolAllocator::Allocate() noexcept
     {
         // Lock-free allocation using CAS loop
         while ( true ) {
-            UInt32 head = control_->pool_state.free_list_head.load(std::memory_order_acquire);
+            UInt16 head = control_->pool_state.free_list_head.load(std::memory_order_acquire);
             
             // Pool exhausted
             if ( head == kInvalidChunkIndex ) {
@@ -83,8 +82,8 @@ namespace ipc
                 // }
                 return kInvalidChunkIndex;
             } else {
-                auto* header = GetChunkAt(head);
-                UInt32 next = header->next_free_index.load(std::memory_order_acquire);
+                auto* header = GetChunkAt( head );
+                UInt16 next = header->next_free_index.load(std::memory_order_acquire);
                 
                 // Try to update head to next
                 if ( control_->pool_state.free_list_head.compare_exchange_weak(
@@ -110,7 +109,7 @@ namespace ipc
         }
     }
     
-    void ChunkPoolAllocator::Deallocate(UInt32 chunk_index) noexcept
+    void ChunkPoolAllocator::Deallocate(UInt16 chunk_index) noexcept
     {
         assert ( chunk_index < control_->header.max_chunks );
 
@@ -124,7 +123,7 @@ namespace ipc
         
         // Lock-free insertion to free list
         while ( true ) {
-            UInt32 head = control_->pool_state.free_list_head.load(std::memory_order_acquire);
+            UInt16 head = control_->pool_state.free_list_head.load(std::memory_order_acquire);
             
             // Set next to current head
             header->next_free_index.store(head, std::memory_order_release);
@@ -144,14 +143,14 @@ namespace ipc
         }
     }
     
-    ChunkHeader* ChunkPoolAllocator::GetChunkHeader(UInt32 chunk_index) const noexcept
+    ChunkHeader* ChunkPoolAllocator::GetChunkHeader(UInt16 chunk_index) const noexcept
     {
         assert( chunk_index < control_->header.max_chunks );
 
         return GetChunkAt( chunk_index );
     }
     
-    void* ChunkPoolAllocator::GetChunkPayload(UInt32 chunk_index) const noexcept
+    void* ChunkPoolAllocator::GetChunkPayload(UInt16 chunk_index) const noexcept
     {
         auto* header = GetChunkHeader(chunk_index);
         if ( DEF_LAP_IF_LIKELY( header ) ) {
@@ -161,7 +160,7 @@ namespace ipc
         }
     }
     
-    ChunkHeader* ChunkPoolAllocator::GetChunkAt(UInt32 index) const noexcept
+    ChunkHeader* ChunkPoolAllocator::GetChunkAt(UInt16 index) const noexcept
     {
         // Use pre-calculated aligned chunk stride (calculated once in Initialize)
         UInt8* addr = reinterpret_cast<UInt8*>(chunk_pool_start_);

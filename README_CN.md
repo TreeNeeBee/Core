@@ -358,7 +358,7 @@ Failed:       1  (仅类名注册辅助功能，不影响核心功能)
 ```bash
 ./simple_init_test               # AUTOSAR 初始化示例
 ./config_example                 # 配置管理演示
-./camera_fusion_example          # IPC 零拷贝图像传输
+./camera_fusion_spmc_example     # IPC 零拷贝图像传输
 ./test_refcount_simple           # IPC 引用计数测试
 ./abort_example                  # 中止处理演示
 ```
@@ -366,7 +366,7 @@ Failed:       1  (仅类名注册辅助功能，不影响核心功能)
 ### 运行基准测试
 
 ```bash
-./camera_fusion_example          # IPC 高速图像传输测试
+./camera_fusion_spmc_example     # IPC 高速图像传输测试
 ./run_4h_stress_test.sh          # 4 小时稳定性测试
 ./run_8h_stress_test.sh          # 8 小时极限压测
 ```
@@ -430,7 +430,7 @@ Core/
 │   │   ├── simple_init_test.cpp
 │   │   ├── initialization_example.cpp
 │   │   ├── config_example.cpp
-│   │   ├── camera_fusion_example.cpp  # IPC 零拷贝示例
+│   │   ├── camera_fusion_spmc_example.cpp  # IPC 零拷贝示例
 │   │   ├── test_refcount_simple.cpp
 │   │   ├── abort_example.cpp
 │   │   └── ...
@@ -516,7 +516,7 @@ Core/
     "mode": "NORMAL",
     "chunk_size": 2097152,
     "chunk_count": 128,
-    "queue_capacity": 128
+    "channel_capacity": 128
   },
   "logging": {
     "level": "info",

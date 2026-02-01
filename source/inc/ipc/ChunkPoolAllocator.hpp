@@ -13,8 +13,8 @@
 #include "IPCTypes.hpp"
 #include "ChunkHeader.hpp"
 #include "ControlBlock.hpp"
+#include "SharedMemoryManager.hpp"
 #include "CResult.hpp"
-#include "COptional.hpp"
 
 namespace lap
 {
@@ -65,27 +65,27 @@ namespace ipc
          * @brief Allocate a chunk (lock-free)
          * @return Optional chunk index (empty if pool exhausted)
          */
-        UInt32 Allocate() noexcept;
+        UInt16 Allocate() noexcept;
         
         /**
          * @brief Deallocate a chunk (lock-free)
          * @param chunk_index Chunk index to free
          */
-        void Deallocate(UInt32 chunk_index) noexcept;
+        void Deallocate( UInt16 chunk_index ) noexcept;
         
         /**
          * @brief Get chunk header by index
          * @param chunk_index Chunk index
          * @return Chunk header pointer
          */
-        ChunkHeader* GetChunkHeader(UInt32 chunk_index) const noexcept;
+        ChunkHeader* GetChunkHeader( UInt16 chunk_index ) const noexcept;
         
         /**
          * @brief Get chunk payload by index
          * @param chunk_index Chunk index
          * @return Payload pointer
          */
-        void* GetChunkPayload(UInt32 chunk_index) const noexcept;
+        void* GetChunkPayload( UInt16 chunk_index ) const noexcept;
         
         /**
          * @brief Check if pool is exhausted
@@ -100,7 +100,7 @@ namespace ipc
          * @brief Get allocated chunk count
          * @return Number of allocated chunks
          */
-        inline UInt32 GetAllocatedCount() const noexcept
+        inline UInt16 GetAllocatedCount() const noexcept
         {
             return control_->header.max_chunks - control_->pool_state.remain_count.load(std::memory_order_acquire);
         }
@@ -109,7 +109,7 @@ namespace ipc
          * @brief Get maximum chunks
          * @return Maximum number of chunks
          */
-        inline UInt32 GetMaxChunks() const noexcept
+        inline UInt16 GetMaxChunks() const noexcept
         {
             return control_->header.max_chunks;
         }
@@ -120,7 +120,7 @@ namespace ipc
          * @param index Chunk index
          * @return Chunk header address
          */
-        inline ChunkHeader* GetChunkAt(UInt32 index) const noexcept;
+        inline ChunkHeader* GetChunkAt(UInt16 index) const noexcept;
         
         void* base_addr_;              ///< Shared memory base address
         ControlBlock* control_;        ///< Control block

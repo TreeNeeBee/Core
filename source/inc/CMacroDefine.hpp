@@ -28,7 +28,7 @@
 #include <cstdio>
 // Accept one or more arguments and forward directly to fprintf.
 // Using a single variadic pack avoids warnings when no extra args are provided.
-#define INNER_CORE_LOG(...) do { std::fprintf(stderr, __VA_ARGS__); } while(0)
+#define INNER_CORE_LOG(...) do { (void)std::fprintf(stderr, __VA_ARGS__); } while(0)
 #else
 #define INNER_CORE_LOG(...) do { } while(0)
 #endif
@@ -76,7 +76,6 @@ namespace core
     #endif
 
     #define DEF_LAP_STATIC_ASSERT( x, msg )         static_assert( x, msg )
-
 
     #define DEF_LAP_STATIC_ASSERT_CACHELINE( x ) \
         DEF_LAP_STATIC_ASSERT( sizeof( x ) % 64 == 0, "Size of " #x " must be multiple of cache line size (64 bytes)" )

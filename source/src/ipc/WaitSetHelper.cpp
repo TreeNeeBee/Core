@@ -20,7 +20,7 @@ namespace ipc
 {
     Result< void > WaitSetHelper::WaitForFlags( std::atomic< UInt32 >* flags,
                                             UInt32 mask,
-                                            Duration timeout ) noexcept
+                                            std::chrono::nanoseconds timeout ) noexcept
     {
         if ( DEF_LAP_IF_UNLIKELY( !flags ) ) {
             return Result< void >( MakeErrorCode( CoreErrc::kInvalidArgument ) );
@@ -41,7 +41,7 @@ namespace ipc
             UInt64 remaining_ns = timeout_ns;
             if ( DEF_LAP_IF_LIKELY( has_timeout ) ) {
                 auto elapsed = std::chrono::steady_clock::now() - start_time;
-                auto elapsed_ns = std::chrono::duration_cast< Duration >( elapsed ).count();
+                auto elapsed_ns = std::chrono::duration_cast< std::chrono::nanoseconds >( elapsed ).count();
                 
                 if ( static_cast< UInt64 >( elapsed_ns ) >= timeout_ns ) {
                     return Result< void >( MakeErrorCode( CoreErrc::kWouldBlock ) );  // Timeout
@@ -71,13 +71,11 @@ namespace ipc
     
     Bool WaitSetHelper::PollForFlags(std::atomic<UInt32>* flags,
                                     UInt32 mask,
-                                    Duration timeout) noexcept
+                                    std::chrono::nanoseconds timeout) noexcept
     {
-        if ( DEF_LAP_IF_UNLIKELY( !flags ) ) {
-            return false;
-        }
+        DEF_LAP_ASSERT( flags != nullptr, "Flags pointer is null" );
         
-        auto start_time = std::chrono::steady_clock::now();
+        auto start_time = SteadyClock::now();
         UInt64 timeout_ns = timeout.count();
         
         // Busy-wait loop
@@ -89,22 +87,14 @@ namespace ipc
             }
             
             // Check timeout
-            if ( DEF_LAP_IF_LIKELY( timeout_ns > 0 ) ) {
-                auto elapsed = std::chrono::steady_clock::now() - start_time;
-                auto elapsed_ns = std::chrono::duration_cast< Duration >( elapsed ).count();
-                
-                if ( static_cast< UInt64 >( elapsed_ns ) >= timeout_ns ) {
-                    return false;  // Timeout
-                }
+            auto elapsed = SteadyClock::now() - start_time;
+            auto elapsed_ns = std::chrono::duration_cast< std::chrono::nanoseconds >( elapsed ).count();
+            
+            if ( static_cast< UInt64 >( elapsed_ns ) >= timeout_ns ) {
+                return false;  // Timeout
             }
             
-            // Brief pause to reduce CPU contention
-            // Use CPU pause instruction (x86) or yield
-            #if defined(__x86_64__) || defined(__i386__)
-                __builtin_ia32_pause();
-            #else
-                std::this_thread::yield();
-            #endif
+            std::this_thread::yield();
         }
     }
     
@@ -150,13 +140,11 @@ namespace ipc
                                 UInt32 expected,
                                 UInt64 timeout_ns) noexcept
     {
-        struct timespec ts;
-        struct timespec* timeout_ptr = nullptr;
+        struct timespec ts = { 0, 0 };
         
         if ( timeout_ns > 0 ) {
             ts.tv_sec = timeout_ns / 1000000000ULL;
             ts.tv_nsec = timeout_ns % 1000000000ULL;
-            timeout_ptr = &ts;
         }
         
         // FUTEX_WAIT_PRIVATE: More efficient for process-private futexes
@@ -165,7 +153,7 @@ namespace ipc
                       uaddr,
                       FUTEX_WAIT,
                       expected,
-                      timeout_ptr,
+                      &ts,
                       nullptr,
                       0);
     }

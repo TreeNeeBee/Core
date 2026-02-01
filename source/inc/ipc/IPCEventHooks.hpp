@@ -97,7 +97,7 @@ namespace ipc
          * @param chunk_index Chunk index
          * @param subscriber_count Number of subscribers
          */
-        virtual void OnMessageSent(void* /*chunk payload*/) noexcept
+        virtual void OnMessageSent( UInt8 /* channel_id */, void* /*chunk payload*/, Size /* size */) noexcept
         {
             // Default: no-op
         }
@@ -122,8 +122,8 @@ namespace ipc
          * @param topic Service/topic name
          * @param chunk_index Chunk index
          */
-        virtual void OnMessageReceived( UInt32 /* subscriber_id */,
-                                      void* /*chunk payload*/ ) noexcept
+        virtual void OnMessageReceived( UInt8 /* channel_id */,
+                                      void* /*chunk payload*/, Size /* size */) noexcept
         {
             // Default: no-op
         }

@@ -1,7 +1,7 @@
 /**
- * @file        camera_fusion_example.cpp
+ * @file        camera_fusion_spmc_example.cpp
  * @brief       三摄像头融合示例 - 演示零拷贝图像传输与双缓存合成
- * @details     使用NORMAL模式演示多Publisher图像采集、拼接和保存
+ * @details     使用SPMC模式演示多Publisher图像采集、拼接和保存
  * @author      LightAP Core Team
  * @date        2026-01-17
  *
@@ -21,7 +21,7 @@
  * 
  *   [Camera-0 Publisher]        [Camera-1 Publisher]        [Camera-2 Publisher]
  *   1920x720 @ 100FPS           1920x720 @ 100FPS           1920x720 @ 100FPS
- *   STMin=10ms                  STMin=10ms                  STMin=10ms
+ *   STMin=10000us               STMin=10000us               STMin=10000us
  *         |                           |                           |
  *         v                           v                           v
  *    /cam0_stream               /cam1_stream               /cam2_stream
@@ -44,7 +44,7 @@
  *                              每5秒切换前后缓存
  *                                     |
  *                            [前缓存写入BMP文件]
- *                         fusion_00000.bmp ~ fusion_00009.bmp
+ *                         fusion_spmc_00000.bmp ~ fusion_spmc_00009.bmp
  * 
  * ============================================================================
  * 图像布局 (3840x1440)
@@ -64,7 +64,7 @@
  * 技术特性
  * ============================================================================
  * 
- * 1. NORMAL模式配置:
+ * 1. SPMC模式配置:
  *    - 每个摄像头: 1920x720x4 = 5,529,600 bytes (~5.3MB)
  *    - ChunkPool: 16 chunks (考虑3个Publisher)
  *    - 队列容量: 64 (单个Publisher高速发送缓冲)
@@ -80,7 +80,7 @@
  *    - 原子交换指针实现快速切换
  * 
  * 4. 极限FPS性能测试:
- *    - STMin=10ms (100 FPS理论上限)
+ *    - STMin=10000us (10ms, 100 FPS理论上限)
  *    - 实测可达90+ FPS (受CPU调度和零拷贝传输影响)
  *    - Overwrite策略保证最新帧可用，丢帧不阻塞
  *    - 多线程并发接收，充分利用零拷贝优势
@@ -88,27 +88,27 @@
  * 5. BMP文件保存:
  *    - 最多保存10张图片，循环覆盖
  *    - 标准BMP格式，支持图像查看器打开
- *    - 文件名: fusion_00000.bmp ~ fusion_00009.bmp
+ *    - 文件名: fusion_spmc_00000.bmp ~ fusion_spmc_00009.bmp
  * 
  * ============================================================================
  * 运行方式
  * ============================================================================
  * 
  * cd /workspace/LightAP/build/modules/Core
- * make camera_fusion_example
- * ./camera_fusion_example [duration_sec]
+ * make camera_fusion_spmc_example
+ * ./camera_fusion_spmc_example [duration_sec]
  * 
  * 预期输出文件:
- * - fusion_00000.bmp (3840x1440, 24位真彩色)
- * - fusion_00001.bmp
+ * - fusion_spmc_00000.bmp (3840x1440, 24位真彩色)
+ * - fusion_spmc_00001.bmp
  * - ... (max 10 images)
  * 
  * ============================================================================
- * 预期性能（STMin=10ms极限测试配置）
+ * 预期性能（STMin=10000us极限测试配置）
  * ============================================================================
  * 
  * - 单摄像头吞吐: 90+ FPS (实测，理论上限100 FPS)
- *   * STMin=10ms限流机制保证最小发送间隔
+ *   * STMin=10000us限流机制保证最小发送间隔
  *   * 零拷贝传输减少CPU占用，提升吞吐量
  *   * 实际FPS受进程调度和内存带宽影响
  * 
@@ -123,8 +123,8 @@
  * 
  * 1. 共享内存 (per camera stream):
  *    - 每个摄像头独立共享内存: /cam0_stream, /cam1_stream, /cam2_stream
- *    - ControlBlock: 128 bytes (NORMAL模式)
- *    - SubscriberQueue[30]: ~256KB (30个队列 × 8KB)
+ *    - ControlBlock: 128 bytes (SPMC模式)
+ *    - ChannelQueue[30]: ~256KB (30个队列 × 8KB)
  *    - ChunkPool: 3 chunks × 5.3MB = ~16MB
  *    - 总计单stream: ~16.3MB
  *    - 3个stream总计: ~49MB
@@ -160,9 +160,7 @@
  * - 实际生产环境建议根据业务需求调整STMin值
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
-#include "ipc/IPCConfig.hpp"
+#include "IPCFactory.hpp"
 #include "CInitialization.hpp"
 #include "CString.hpp"
 #include <cstdio>
@@ -193,7 +191,7 @@ constexpr UInt32 kFusionSize = kFusionWidth * kFusionHeight * kBytesPerPixel;
 
 // 性能配置
 constexpr UInt32 kTargetFPS = 60;
-constexpr UInt32 kSTMinMs = 10;  // 10ms限流，理论100 FPS，实测90+ FPS
+constexpr UInt32 kSTMinUs = 10000;  // 10ms (100 FPS)
 constexpr UInt32 kSavePeriodSec = 5;
 constexpr UInt32 kMaxSavedImages = 10;
 constexpr UInt32 kMaxLatencySamples = 300000;
@@ -495,8 +493,21 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
     config.chunk_size = kImageSize;
     config.max_chunks = 3;  // 减少到3以适应64MB /dev/shm限制 (3×5.53MB×3=50MB)
     config.policy = PublishPolicy::kOverwrite;
+    config.ipc_type = IPCType::kSPMC;
+
+    SharedMemoryConfig shm_config{};
+    shm_config.max_chunks   = 3;           
+    shm_config.chunk_size   = kImageSize;   // Payload size only
+    shm_config.ipc_type     = IPCType::kSPMC;
     
-    auto pub_result = Publisher::Create(shm_path, config);
+    auto shm_res = IPCFactory::CreateSHM( shm_path, shm_config );
+
+    if ( !shm_res ) {
+        INNER_CORE_LOG("[ERROR] Failed to create shared memory segment for SPMC channel, error code: %d\n", shm_res.Error().Value() );
+        return;
+    }
+    
+    auto pub_result = IPCFactory::CreatePublisher(shm_path, config);
     if (!pub_result.HasValue()) {
         fprintf(stderr, "[Camera-%u] Failed to create Publisher\n", camera_id);
         return;
@@ -524,7 +535,7 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
         // INNER_CORE_LOG("[Camera-%u] Generating frame %u\n", camera_id, codec.GetFrameCount());
         // 使用Send(write_fn)直接在共享内存中生成图像
         auto send_start = std::chrono::high_resolution_clock::now();
-        auto result = publisher.Send([&codec, camera_id](Byte* chunk_ptr, Size chunk_size) -> Size {
+        auto result = publisher->Send([&codec, camera_id](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
             // INNER_CORE_LOG("[Camera-%u] write_fn called, chunk_ptr=%p, size=%lu\n", 
                         //   camera_id, (void*)chunk_ptr, (unsigned long)chunk_size);
             codec.GenerateFrame(chunk_ptr, chunk_size);
@@ -638,14 +649,15 @@ private:
         SubscriberConfig config;
         config.chunk_size = kImageSize;
         config.max_chunks = 3;  // 匹配Publisher配置
-        config.STmin = 10;  // 10ms限流，保证100FPS
+        config.STmin = kSTMinUs;
         config.empty_policy = SubscribePolicy::kSkip;
+        config.ipc_type = IPCType::kSPMC;
         
         std::unique_ptr<Subscriber> subscriber;
         for (int retry = 0; retry < 5; ++retry) {
-            auto sub_result = Subscriber::Create(shm_path, config);
+            auto sub_result = IPCFactory::CreateSubscriber(shm_path, config);
             if (sub_result.HasValue()) {
-                subscriber = std::make_unique<Subscriber>(std::move(sub_result).Value());
+                subscriber = std::move(sub_result).Value();
                 break;
             }
             INNER_CORE_LOG("[SubThread-%d] Retry %d to create Subscriber for %s\n", 
@@ -678,10 +690,10 @@ private:
             auto recv_end = std::chrono::high_resolution_clock::now();
 
             // std::cerr << "[SubThread-" << camera_id << "] count: " << subscriber->allocator_->GetAllocatedCount() 
-                        // << ", queue: " << static_cast<UInt32>(subscriber->shm_->GetSubscriberQueue(camera_id)->STmin.load(std::memory_order_acquire)) << std::endl;
-            if (sample_result.HasValue()) {
-                auto sample = std::move(sample_result).Value();
-                
+                        // << ", queue: " << static_cast<UInt32>(subscriber->shm_->GetChannelQueue(camera_id)->STmin.load(std::memory_order_acquire)) << std::endl;
+            if (sample_result.HasValue() && !sample_result.Value().empty()) {
+                auto& samples = sample_result.Value();
+                auto& sample = samples[0];
                 
                 UInt64 recv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     recv_end - recv_start).count();
@@ -704,7 +716,7 @@ private:
                     }
                 }
             } else {
-                // std::cout << "[SubThread-" << camera_id << "] Receive failed " << sample_result.Error().Message() << std::endl;
+                // INNER_CORE_LOG( "[SubThread-%d] Receive failed %d\n", camera_id, sample_result.Error().Value() );
                 stats_->fusion.receive_failures[camera_id].fetch_add(1, std::memory_order_relaxed);
             }
         }
@@ -753,7 +765,7 @@ private:
             // 生成文件名（循环覆盖）
             UInt32 file_idx = save_count % kMaxSavedImages;
             char filename_buf[64];
-            snprintf(filename_buf, sizeof(filename_buf), "fusion_%05u.bmp", file_idx);
+            snprintf(filename_buf, sizeof(filename_buf), "fusion_spmc_%05u.bmp", file_idx);
             String filename(filename_buf);
             
             // 保存BMP文件
@@ -869,7 +881,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec) {
     // Subscriber统计
     printf("[ Fusion Subscriber ]\n");
     printf("┌─────────┬────────────┬─────────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬─────────────┐\n");
-    printf("│ Stream  │ Frames Recv│ Recv Errors │ FPS      │ STMin(ms)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
+    printf("│ Stream  │ Frames Recv│ Recv Errors │ FPS      │ STMin(us)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
     printf("├─────────┼────────────┼─────────────┼──────────┼──────────┼─────────────┼─────────────┼─────────────┼─────────────┤\n");
     
     for (int i = 0; i < 3; ++i) {
@@ -899,7 +911,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec) {
         }
         
         printf("│ Cam-%d   │ %10lu │ %11lu │ %8.1f │ %9d │ %11lu │ %11lu │ %11lu │ %11lu │\n",
-               i, frames, errors, fps, kSTMinMs, avg_us,
+               i, frames, errors, fps, kSTMinUs, avg_us,
                lat_stats.p50_us, lat_stats.p99_us, lat_stats.max_us);
     }
     
@@ -921,7 +933,7 @@ int main(int argc, char* argv[]) {
     }
     
     INNER_CORE_LOG("========================================\n");
-    INNER_CORE_LOG("三摄像头融合示例 - NORMAL模式\n");
+    INNER_CORE_LOG("三摄像头融合示例 - SPMC模式\n");
     INNER_CORE_LOG("========================================\n");
     INNER_CORE_LOG("摄像头配置: %ux%u @ %u FPS\n", kCameraWidth, kCameraHeight, kTargetFPS);
     INNER_CORE_LOG("融合图尺寸: %ux%u\n", kFusionWidth, kFusionHeight);
@@ -1022,7 +1034,7 @@ int main(int argc, char* argv[]) {
     // 打印统计汇总
     PrintStatsSummary(stats, duration_sec);
     
-    INNER_CORE_LOG("\n请检查生成的BMP文件: fusion_00000.bmp ~ fusion_%05d.bmp\n", kMaxSavedImages - 1);
+    INNER_CORE_LOG("\n请检查生成的BMP文件: fusion_spmc_00000.bmp ~ fusion_spmc_%05d.bmp\n", kMaxSavedImages - 1);
     
     // 清理共享内存
     munmap(stats, sizeof(SharedStats));

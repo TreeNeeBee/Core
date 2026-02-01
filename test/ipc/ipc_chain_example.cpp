@@ -40,7 +40,7 @@
  *    └─────────────────────────────────────────────────────────────┘
  *         |                                  |
  *         | [Proc3: SubB2]                   | [Proc7: Monitor SubA2]
- *         | STMin=10ms                       | STMin=0ms (无限流)
+ *         | STMin=10000us                    | STMin=0us (无限流)
  *         | Block策略                        | Block策略
  *         v                                  v
  *    [Pub3转发]                         (观测接收间隔~10ms)
@@ -132,7 +132,7 @@
  * Monitor-0 (上游STMin=0ms):   接收间隔 ~1.1ms  (观测Proc0发送速率，受SubB0限流影响)
  * Monitor-1 (上游STMin=1ms):   接收间隔 ~1.8ms  (观测SubB0转发速率，STMin=1ms)
  * Monitor-2 (上游STMin=5ms):   接收间隔 ~6.2ms  (观测SubB1转发速率，STMin=5ms)
- * Monitor-3 (上游STMin=10ms):  接收间隔 ~11.4ms (观测SubB2转发速率，STMin=10ms)
+ * Monitor-3 (上游STMin=10000us):  接收间隔 ~11.4ms (观测SubB2转发速率，STMin=10000us)
  * Monitor-4 (上游STMin=20ms):  接收间隔 ~22ms   (观测SubB3转发速率，STMin=20ms)
  * 
  * 【延时统计】(30秒测试)
@@ -162,9 +162,7 @@
  * 7. 上游监控: 每个Monitor显示的STMin是其监控的上游发布者配置
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
-#include "ipc/IPCConfig.hpp"
+#include "IPCFactory.hpp"
 #include "CInitialization.hpp"
 #include <iostream>
 #include <thread>
@@ -177,6 +175,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 
 using namespace lap::core;
 using namespace lap::core::ipc;
@@ -236,7 +235,7 @@ void RunInitialPublisher() {
     config.max_chunks = 16;
     config.policy = PublishPolicy::kOverwrite;  // 使用Overwrite策略，覆盖老数据
     
-    auto pub_result = Publisher::Create(GetShmPath(0), config);
+    auto pub_result = IPCFactory::CreatePublisher(GetShmPath(0), config);
     if (!pub_result.HasValue()) {
         std::cerr << "[Proc0] 创建Publisher失败" << std::endl;
         return;
@@ -245,35 +244,37 @@ void RunInitialPublisher() {
     
     std::cout << "[Proc0] Publisher创建成功: " << GetShmPath(0) << std::endl;
     
-    // 发送100条消息，无延迟连续发送，让STMin控制订阅者接收速度
+    // 等待订阅者就绪
+    std::cout << "[Proc0] 等待订阅者就绪..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // 持续发送消息30秒，间隔0.1ms
     UInt32 send_fail_count = 0;
-    for (UInt32 i = 0; i < 100; ++i) {
+    UInt32 sequence = 0;
+    auto start_time = std::chrono::steady_clock::now();
+    
+    while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
         ChainMessage msg;
-        msg.sequence_id = i;
+        msg.sequence_id = sequence++;
         msg.region_id = 0;
         msg.timestamp_us = GetTimestampUs();
         std::snprintf(msg.payload, sizeof(msg.payload), 
-                     "Message#%u from Region0", i);
+                     "Message#%u from Region0", msg.sequence_id);
         
-        auto result = publisher.Send(reinterpret_cast<Byte*>(&msg), sizeof(msg));
+        auto result = publisher->Send(reinterpret_cast<Byte*>(&msg), sizeof(msg));
         if (!result.HasValue()) {
             send_fail_count++;
             if (send_fail_count <= 5) {  // 只打印前5次失败
-                std::cout << "[Proc0 WARN] 发送失败 seq=" << i << ", 累计失败=" << send_fail_count << std::endl;
+                std::cout << "[Proc0 WARN] 发送失败 seq=" << msg.sequence_id << ", 累计失败=" << send_fail_count << std::endl;
             }
         }
-        // if (result.HasValue()) {
-        //     std::cout << "[Proc0] 发送消息 #" << i 
-        //              << " -> Region0" << std::endl;
-        // }
         
-        // 无延迟连续发送，STMin将控制订阅者的接收速度
-        std::this_thread::sleep_for(std::chrono::microseconds(100)); // 仅0.1ms防止CPU占满
+        // 0.1ms间隔发送
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
-    
-    std::cout << "[Proc0] 发送完成，总失败次数=" << send_fail_count << "/100" << std::endl;
-    std::cout << "[Proc0] 等待链式传递..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    UInt32 total_sent = sequence;
+    std::cout << "[Proc0] 发送完成: " << total_sent << " 条消息, 失败=" << send_fail_count << std::endl;
 }
 
 //=============================================================================
@@ -288,16 +289,17 @@ void RunForwarderNode(int region_id) {
     SubscriberConfig sub_config;
     sub_config.chunk_size = sizeof(ChainMessage);
     sub_config.max_chunks = 16;
-    sub_config.STmin = kForwarderSTMin[region_id];
-    sub_config.empty_policy = SubscribePolicy::kBlock;  // 使用阻塞策略
+    sub_config.STmin = kForwarderSTMin[region_id] * 1000;
+    sub_config.empty_policy = SubscribePolicy::kSkip;   // 使用跳过策略
+    sub_config.timeout = 10ULL * 1000 * 1000;           // 10ms (ns)
     
-    auto sub_result = Subscriber::Create(GetShmPath(region_id), sub_config);
+    auto sub_result = IPCFactory::CreateSubscriber(GetShmPath(region_id), sub_config);
     if (!sub_result.HasValue()) {
         std::cerr << "[Forwarder-" << region_id << "] 创建Subscriber失败" << std::endl;
         return;
     }
     auto subscriber = std::move(sub_result).Value();
-    subscriber.Connect();
+    subscriber->Connect();
     
     std::cout << "[Forwarder-" << region_id << "] SubB" << region_id 
              << " 创建成功，使用Block策略" << std::endl;
@@ -315,12 +317,12 @@ void RunForwarderNode(int region_id) {
         pub_config.max_chunks = 16;
         pub_config.policy = PublishPolicy::kOverwrite;  // 使用Overwrite策略
         
-        auto pub_result = Publisher::Create(GetShmPath(region_id + 1), pub_config);
+        auto pub_result = IPCFactory::CreatePublisher(GetShmPath(region_id + 1), pub_config);
         if (!pub_result.HasValue()) {
             std::cerr << "[Forwarder-" << region_id << "] 创建Publisher失败" << std::endl;
             return;
         }
-        publisher_ptr = std::make_shared<Publisher>(std::move(pub_result).Value());
+        publisher_ptr = std::shared_ptr<Publisher>(std::move(pub_result).Value());
         std::cout << "[Forwarder-" << region_id << "] Pub" << (region_id + 1) 
                  << " 创建成功" << std::endl;
     }
@@ -331,30 +333,47 @@ void RunForwarderNode(int region_id) {
     UInt32 msg_count = 0;
     UInt32 send_fail_count = 0;
     auto start_time = std::chrono::steady_clock::now();
+    auto last_log = start_time;
     
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_log >= std::chrono::seconds(5)) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+            std::cout << "[Monitor-" << region_id << "] heartbeat t=" << elapsed
+                      << "s, msg=" << msg_count << std::endl;
+            last_log = now;
+        }
         // Block策略会根据STMin自动控制接收频率
-        auto sample_result = subscriber.Receive(SubscribePolicy::kBlock);
+        auto sample_result = subscriber->Receive(SubscribePolicy::kSkip);
+        if ( !sample_result.HasValue() || sample_result.Value().empty() ) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+        ChainMessage msg;
+        auto& samples = sample_result.Value();
+        samples[0].Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
+        msg_count++;
         
-        if (sample_result.HasValue()) {
-            ChainMessage msg;
-            sample_result.Value().Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
-            msg_count++;
-            
-            // 直接路由到下一个区域
-            if (!is_last_region && publisher_ptr) {
-                msg.region_id++;
-                msg.timestamp_us = GetTimestampUs();
-                auto send_result = publisher_ptr->Send(reinterpret_cast<Byte*>(&msg), sizeof(msg));
-                if (!send_result.HasValue()) {
-                    send_fail_count++;
-                    if (send_fail_count <= 5) {
-                        std::cout << "[Forwarder-" << region_id << " WARN] 转发失败 seq=" << msg.sequence_id 
-                                 << ", 累计=" << send_fail_count << std::endl;
-                    }
+        // 直接路由到下一个区域
+        if (!is_last_region && publisher_ptr) {
+            msg.region_id++;
+            msg.timestamp_us = GetTimestampUs();
+            auto send_result = publisher_ptr->Send(reinterpret_cast<Byte*>(&msg), sizeof(msg));
+            if (!send_result.HasValue()) {
+                send_fail_count++;
+                if (send_fail_count <= 5) {
+                    std::cout << "[Forwarder-" << region_id << " WARN] 转发失败 seq=" << msg.sequence_id 
+                             << ", 累计=" << send_fail_count << std::endl;
                 }
             }
         }
+    }
+
+    if (region_id == 0) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::steady_clock::now() - start_time).count();
+        std::cout << "[Forwarder-0] loop ended, elapsed=" << elapsed
+                  << "s, msg=" << msg_count << std::endl;
     }
     
     std::cout << "[Forwarder-" << region_id << "] 完成，共处理 " 
@@ -370,23 +389,24 @@ void RunMonitorNode(int region_id) {
              << ", STMin=" << kMonitorSTMin[region_id] << "ms)" << std::endl;
     
     // 创建监控Subscriber
-    SubscriberConfig config;
-    config.chunk_size = sizeof(ChainMessage);
-    config.max_chunks = 16;
-    config.STmin = kMonitorSTMin[region_id];
-    config.empty_policy = SubscribePolicy::kBlock;
-    
-    auto sub_result = Subscriber::Create(GetShmPath(region_id), config);
+    SubscriberConfig sub_config;
+    sub_config.chunk_size = sizeof(ChainMessage);
+    sub_config.max_chunks = 16;
+    sub_config.STmin = kMonitorSTMin[region_id] * 1000;
+    sub_config.empty_policy = SubscribePolicy::kSkip;
+    sub_config.timeout = 10ULL * 1000 * 1000;           // 10ms (ns)
+
+    auto sub_result = IPCFactory::CreateSubscriber(GetShmPath(region_id), sub_config);
     if (!sub_result.HasValue()) {
         std::cerr << "[Monitor-" << region_id << "] 创建Subscriber失败" << std::endl;
         return;
     }
     
     auto subscriber = std::move(sub_result).Value();
-    subscriber.Connect();
+    subscriber->Connect();
     
-    std::cout << "[Monitor-" << region_id << "] SubA" << region_id 
-             << " 创建成功 (STMin=" << kMonitorSTMin[region_id] << "ms)" << std::endl;
+    std::cout << "[Monitor-" << region_id << "] SubA" << region_id
+              << " 创建成功 (STMin=" << kMonitorSTMin[region_id] << "ms)" << std::endl;
     
     // 监控循环
     UInt32 msg_count = 0;
@@ -400,41 +420,37 @@ void RunMonitorNode(int region_id) {
     intervals.reserve(1000);
     
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(30)) {
-        auto sample_result = subscriber.Receive(SubscribePolicy::kBlock);
-        
-        if (sample_result.HasValue()) {
-            ChainMessage msg;
-            sample_result.Value().Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
-            
-            UInt64 recv_timestamp = GetTimestampUs();
-            UInt64 latency_us = recv_timestamp - msg.timestamp_us;
-            UInt64 interval_us = (last_receive_time > 0) ? (recv_timestamp - last_receive_time) : 0;
-            msg_count++;
-            
-            // 记录延时数据
-            latencies.push_back(latency_us);
-            if (interval_us > 0) {
-                intervals.push_back(interval_us);
-            }
-            
-            // 详细调试日志 - 显示上游发布者的STMin
-            UInt32 upstream_stmin = (region_id == 0) ? 0 : kForwarderSTMin[region_id - 1];
-            if (region_id == 0 && msg_count <= 10) {  // Monitor-0打印前10条以调查间隔问题
-                std::cout << "[Monitor-" << region_id << " DEBUG] seq=" << msg.sequence_id
-                         << ", recv_time=" << recv_timestamp
-                         << ", last_time=" << last_receive_time
-                         << ", interval=" << (interval_us / 1000.0) << "ms"
-                         << ", Upstream-STMin=" << upstream_stmin << "ms" << std::endl;
-            } else if (region_id != 0 && msg_count <= 5) {
-                std::cout << "[Monitor-" << region_id << " DEBUG] seq=" << msg.sequence_id
-                         << ", recv_time=" << recv_timestamp
-                         << ", last_time=" << last_receive_time
-                         << ", interval=" << interval_us << "us"
-                         << ", Upstream-STMin=" << upstream_stmin << "ms" << std::endl;
-            }
-            
-            last_receive_time = recv_timestamp;
+        auto sample_result = subscriber->Receive(SubscribePolicy::kSkip);
+        if ( !sample_result.HasValue() || sample_result.Value().empty() ) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
         }
+        
+        ChainMessage msg;
+        auto& samples = sample_result.Value();
+        samples[0].Read(reinterpret_cast<Byte*>(&msg), sizeof(msg));
+        
+        UInt64 recv_timestamp = GetTimestampUs();
+        UInt64 interval_us = (last_receive_time > 0) ? (recv_timestamp - last_receive_time) : 0;
+        UInt64 latency_us = (recv_timestamp >= msg.timestamp_us)
+                                ? (recv_timestamp - msg.timestamp_us)
+                                : 0;
+        msg_count++;
+        
+        // 记录延时数据
+        latencies.push_back(latency_us);
+        if (interval_us > 0) {
+            intervals.push_back(interval_us);
+        }
+        
+        last_receive_time = recv_timestamp;
+    }
+
+    if (region_id == 0) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::steady_clock::now() - start_time).count();
+        std::cout << "[Monitor-0] loop ended, elapsed=" << elapsed
+                  << "s, msg=" << msg_count << std::endl;
     }
     
     // 计算延时统计
@@ -584,8 +600,33 @@ int main() {
     }
     munmap(stats_array, sizeof(MonitorStats) * kNumRegions);
     close(stats_fd);
+
+    // 预创建链式共享内存区域（SPMC: 单发布者多订阅者）
+    std::vector< UniqueHandle<SharedMemoryManager> > shm_regions;
+    shm_regions.reserve(kNumRegions);
+    for (int region = 0; region < kNumRegions; ++region) {
+        SharedMemoryConfig shm_cfg{};
+        shm_cfg.max_chunks = 16;
+        shm_cfg.chunk_size = sizeof(ChainMessage);
+        shm_cfg.ipc_type = IPCType::kSPMC;
+        shm_cfg.max_channels = kMaxChannels;
+        shm_cfg.channel_capacity = kMaxChannelCapacity;
+
+        auto shm_res = IPCFactory::CreateSHM(GetShmPath(region), shm_cfg);
+        if (!shm_res.HasValue()) {
+            std::cerr << "创建共享内存失败: " << GetShmPath(region)
+                      << " err=" << shm_res.Error().Value() << std::endl;
+            return 1;
+        }
+        shm_regions.push_back(std::move(shm_res).Value());
+    }
     
-    std::vector<pid_t> child_pids;
+    struct ChildInfo {
+        pid_t pid;
+        std::string name;
+        bool exited;
+    };
+    std::vector<ChildInfo> child_infos;
     
     // Fork进程0: 初始发布者
     pid_t pid0 = fork();
@@ -594,7 +635,7 @@ int main() {
         RunInitialPublisher();
         exit(0);
     }
-    child_pids.push_back(pid0);
+    child_infos.push_back({pid0, "Proc0", false});
     
     // Fork进程1-4: 链式转发器 (每个区域独立进程)
     for (int region = 0; region < kNumRegions; ++region) {
@@ -604,7 +645,7 @@ int main() {
             RunForwarderNode(region);
             exit(0);
         }
-        child_pids.push_back(pid);
+        child_infos.push_back({pid, std::string("Forwarder-") + std::to_string(region), false});
     }
     
     // Fork进程5-8: 监控订阅者 (每个区域独立进程)
@@ -615,17 +656,53 @@ int main() {
             RunMonitorNode(region);
             exit(0);
         }
-        child_pids.push_back(pid);
+        child_infos.push_back({pid, std::string("Monitor-") + std::to_string(region), false});
     }
     
     // 主进程等待所有子进程
-    std::cout << "[Main] 已启动 " << child_pids.size() << " 个子进程" << std::endl;
+    std::cout << "[Main] 已启动 " << child_infos.size() << " 个子进程" << std::endl;
     std::cout << "[Main] 等待所有子进程完成..." << std::endl;
-    
-    // 等待所有子进程
-    int status;
-    for (auto pid : child_pids) {
-        waitpid(pid, &status, 0);
+
+    std::size_t remaining = child_infos.size();
+    auto last_report = std::chrono::steady_clock::now();
+
+    while (remaining > 0) {
+        int status = 0;
+        pid_t pid = waitpid(-1, &status, WNOHANG);
+        if (pid > 0) {
+            for (std::size_t i = 0; i < child_infos.size(); ++i) {
+                if (child_infos[i].pid == pid && !child_infos[i].exited) {
+                    child_infos[i].exited = true;
+                    --remaining;
+                    std::cout << "[Main] Child exited: pid=" << pid
+                              << " name=" << child_infos[i].name << std::endl;
+                    break;
+                }
+            }
+        } else if (pid == 0) {
+            auto now = std::chrono::steady_clock::now();
+            if (now - last_report >= std::chrono::seconds(5)) {
+                std::cout << "[Main] Waiting for child processes, remaining=" << remaining << ": ";
+                bool first = true;
+                for (std::size_t i = 0; i < child_infos.size(); ++i) {
+                    if (!child_infos[i].exited) {
+                        if (!first) {
+                            std::cout << ", ";
+                        }
+                        std::cout << child_infos[i].name << "(" << child_infos[i].pid << ")";
+                        first = false;
+                    }
+                }
+                std::cout << std::endl;
+                last_report = now;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        } else {
+            if (errno == ECHILD) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
     }
     
     std::cout << "\n========================================" << std::endl;

@@ -55,7 +55,7 @@ namespace ipc
          */
         static Result<void> WaitForFlags(std::atomic<UInt32>* flags,
                                         UInt32 mask,
-                                        Duration timeout = Duration::zero()) noexcept;
+                                        std::chrono::nanoseconds timeout = std::chrono::nanoseconds::zero()) noexcept;
         
         /**
          * @brief Poll for flags with busy-wait (for kWait policy)
@@ -71,7 +71,7 @@ namespace ipc
          */
         static Bool PollForFlags(std::atomic<UInt32>* flags,
                                 UInt32 mask,
-                                Duration timeout) noexcept;
+                                std::chrono::nanoseconds timeout) noexcept;
         
         /**
          * @brief Set flags and optionally wake waiters
@@ -104,8 +104,7 @@ namespace ipc
          */
         static Bool CheckFlags(const std::atomic<UInt32>* flags,
                               UInt32 mask) noexcept;
-        
-    private:
+
         /**
          * @brief Low-level futex wait wrapper
          * @param uaddr Address of futex variable

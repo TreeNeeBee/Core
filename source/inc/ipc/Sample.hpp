@@ -34,7 +34,9 @@ namespace ipc
      * - Releases chunk on destruction
      * - Provides safe access to payload
      */
-    class Sample
+    class Publisher;
+    class Subscriber;
+    class Sample final
     {
     public:
         /**
@@ -52,7 +54,7 @@ namespace ipc
             DEF_LAP_ASSERT( chunk_index_ != kInvalidChunkIndex, "Chunk index must be valid" );
 
             if ( allocator_ && chunk_index_ != kInvalidChunkIndex ) {
-                header_ = allocator_->GetChunkHeader(chunk_index_);
+                header_ = allocator_->GetChunkHeader( chunk_index_ );
                 if ( header_ ) {
                     // header_->ref_count.fetch_add( 1, std::memory_order_acq_rel );
                     payload_ = static_cast< Byte* >( header_->GetPayload() );
@@ -160,6 +162,22 @@ namespace ipc
                 return 0;
             }
         }
+
+        inline UInt8 ChannelID() const noexcept
+        {
+            if ( header_ ) {
+                return header_->channel_id.load(std::memory_order_acquire);
+            } else {
+                return kInvalidChannelID;
+            }
+        }
+
+        inline void SetChannelID( UInt8 channel_id ) const noexcept
+        {
+            if ( header_ ) {
+                header_->channel_id.store(channel_id, std::memory_order_release);
+            }
+        }
         
         /**
          * @brief Dereference operator
@@ -256,8 +274,11 @@ namespace ipc
          */
         inline Bool IsValid() const noexcept
         {
-            return ( chunk_index_ != kInvalidChunkIndex )
-                   && ( allocator_ != nullptr ) 
+            // return ( chunk_index_ != kInvalidChunkIndex )
+            //        && ( allocator_ != nullptr ) 
+            //        && ( header_ != nullptr ) 
+            //        && ( payload_ != nullptr );
+            return ( allocator_ != nullptr ) 
                    && ( header_ != nullptr ) 
                    && ( payload_ != nullptr );
         }
@@ -274,7 +295,7 @@ namespace ipc
          * @brief Get chunk index
          * @return Chunk index
          */
-        inline UInt32 GetChunkIndex() const noexcept
+        inline UInt16 GetChunkIndex() const noexcept
         {
             return chunk_index_;
         }
@@ -291,6 +312,20 @@ namespace ipc
             chunk_index_ = kInvalidChunkIndex;
             allocator_ = nullptr;
         }
+
+        /**
+         * @brief Get current state
+         * @return Current chunk state
+         */
+        inline ChunkState GetState() const noexcept
+        {
+            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
+            return static_cast< ChunkState >( header_->state.load( std::memory_order_acquire ) );
+        }
+
+    protected:
+        friend class Publisher;
+        friend class Subscriber;
 
         inline UInt8 FetchAdd( UInt8 delta ) noexcept
         {
@@ -313,16 +348,6 @@ namespace ipc
             return header_->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
         }
 
-        /**
-         * @brief Get current state
-         * @return Current chunk state
-         */
-        inline ChunkState GetState() const noexcept
-        {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
-            return static_cast< ChunkState >( header_->state.load( std::memory_order_acquire ) );
-        }
-        
         /**
          * @brief Transition state atomically
          * @param expected Expected current state
@@ -367,10 +392,10 @@ namespace ipc
         }
         
     private:
-        UInt32 chunk_index_;             ///< Chunk index
-        ChunkPoolAllocator* allocator_;  ///< Allocator reference
-        ChunkHeader* header_;            ///< Chunk header
-        Byte* payload_;                  ///< Typed payload pointer
+        UInt16                  chunk_index_;   ///< Chunk index
+        ChunkPoolAllocator*     allocator_;     ///< Allocator reference
+        ChunkHeader*            header_;        ///< Chunk header
+        Byte*                   payload_;       ///< Typed payload pointer
     };
     
 }  // namespace ipc

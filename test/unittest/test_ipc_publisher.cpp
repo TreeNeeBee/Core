@@ -6,8 +6,10 @@
 
 #include <gtest/gtest.h>
 #include "ipc/Publisher.hpp"
+#include "IPCFactory.hpp"
 #include "CInitialization.hpp"
 #include <cstring>
+#include <unistd.h>
 
 using namespace lap::core;
 using namespace lap::core::ipc;
@@ -30,12 +32,29 @@ protected:
     String shm_path_;
 };
 
+static UniqueHandle< SharedMemoryManager > CreateShmForPublisher(
+    const String& shm_path,
+    const PublisherConfig& config)
+{
+    SharedMemoryConfig shm_config{};
+    shm_config.max_chunks = config.max_chunks;
+    shm_config.chunk_size = config.chunk_size;
+    shm_config.ipc_type = config.ipc_type;
+    auto shm_result = IPCFactory::CreateSHM(shm_path, shm_config);
+    EXPECT_TRUE(shm_result.HasValue());
+    if (!shm_result.HasValue()) {
+        return nullptr;
+    }
+    return std::move(shm_result).Value();
+}
+
 TEST_F(PublisherTest, CreateAndDestroy)
 {
     PublisherConfig config;
     config.chunk_size = 256;
     config.max_chunks = 64;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue()) << "Failed to create Publisher";
     
@@ -49,6 +68,7 @@ TEST_F(PublisherTest, LoanSample)
     config.chunk_size = 512;
     config.max_chunks = 32;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -67,6 +87,7 @@ TEST_F(PublisherTest, SendWithLambda)
     config.chunk_size = 256;
     config.max_chunks = 16;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -80,7 +101,7 @@ TEST_F(PublisherTest, SendWithLambda)
     TestData data{42, 123456789, "Lambda Test"};
     
     // Send using lambda
-    auto result = publisher.Send([&data](Byte* ptr, Size size) -> Size {
+    auto result = publisher.Send([&data](UInt8 /*channel*/, Byte* ptr, Size size) -> Size {
         if (size < sizeof(TestData)) {
             return 0;
         }
@@ -97,6 +118,7 @@ TEST_F(PublisherTest, SendWithBuffer)
     config.chunk_size = 512;
     config.max_chunks = 16;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -113,6 +135,7 @@ TEST_F(PublisherTest, RapidSend)
     config.chunk_size = 256;
     config.max_chunks = 64;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -140,6 +163,7 @@ TEST_F(PublisherTest, ModeSpecificConfiguration)
     config.chunk_size = 1024;
     config.max_chunks = 128;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     
@@ -155,6 +179,7 @@ TEST_F(PublisherTest, GetShmPath)
     PublisherConfig config;
     config.chunk_size = 256;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     
@@ -168,6 +193,7 @@ TEST_F(PublisherTest, MultipleLoan)
     config.chunk_size = 128;
     config.max_chunks = 8;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -191,6 +217,7 @@ TEST_F(PublisherTest, LoanExhaustion)
     config.max_chunks = 4;  // Small pool
     config.loan_policy = LoanPolicy::kError;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -221,6 +248,7 @@ TEST_F(PublisherTest, PublishPolicyOverwrite)
     config.max_chunks = 32;
     config.policy = PublishPolicy::kOverwrite;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -239,6 +267,7 @@ TEST_F(PublisherTest, SendToNoSubscribers)
     config.chunk_size = 256;
     config.max_chunks = 16;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -255,6 +284,7 @@ TEST_F(PublisherTest, GetAllocatedCount)
     config.chunk_size = 256;
     config.max_chunks = 16;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();
@@ -286,6 +316,7 @@ TEST_F(PublisherTest, LargeSend)
     config.chunk_size = 4096;
     config.max_chunks = 16;
     
+    auto shm = CreateShmForPublisher(shm_path_, config);
     auto pub_result = Publisher::Create(shm_path_, config);
     ASSERT_TRUE(pub_result.HasValue());
     auto publisher = std::move(pub_result).Value();

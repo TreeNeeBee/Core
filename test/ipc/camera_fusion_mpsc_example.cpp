@@ -85,8 +85,7 @@
  * - 性能统计（每个camera独立FPS）
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
+#include "IPCFactory.hpp"
 #include "CInitialization.hpp"
 #include "CString.hpp"
 #include <cstdio>
@@ -116,7 +115,7 @@ constexpr UInt32 kFusionHeight = 1440;
 constexpr UInt32 kFusionSize = kFusionWidth * kFusionHeight * kBytesPerPixel;
 
 constexpr UInt32 kTargetFPS = 60;
-constexpr UInt32 kSTMinMs = 10;  // 60 FPS
+constexpr UInt32 kSTMinUs = 10000;  // 10ms (100 FPS)
 constexpr UInt32 kSavePeriodSec = 5;
 constexpr UInt32 kMaxSavedImages = 10;
 constexpr UInt32 kMaxLatencySamples = 10000;
@@ -336,7 +335,7 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
     config.ipc_type = IPCType::kMPSC;
     config.channel_id = 0xFF;  // 自动分配
     
-    auto pub_result = Publisher::Create(kSharedMemoryPath, config);
+    auto pub_result = IPCFactory::CreatePublisher(kSharedMemoryPath, config);
     if (!pub_result.HasValue()) {
         fprintf(stderr, "[Camera-%u] Failed to create Publisher, error code: %d\n", 
                 camera_id, pub_result.Error().Value());
@@ -360,7 +359,7 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
         auto send_start = std::chrono::high_resolution_clock::now();
         
         // Send到自己的channel（自动分配的channel_id）
-        auto result = publisher.Send([&codec](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
+        auto result = publisher->Send([&codec](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
             codec.GenerateFrame(chunk_ptr, chunk_size);
             return kImageSize;
         });
@@ -437,20 +436,20 @@ public:
         SubscriberConfig config;
         config.chunk_size = kImageSize;
         config.max_chunks = 9;
-        config.STmin = kSTMinMs;
+        config.STmin = kSTMinUs;
         config.empty_policy = SubscribePolicy::kSkip;
         config.ipc_type = IPCType::kMPSC;
         
         // 等待Publishers启动
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         
-        auto sub_result = Subscriber::Create(kSharedMemoryPath, config);
+        auto sub_result = IPCFactory::CreateSubscriber(kSharedMemoryPath, config);
         if (!sub_result.HasValue()) {
             fprintf(stderr, "[Fusion] Failed to create Subscriber, error code: %d\n",
                     sub_result.Error().Value());
             return;
         }
-        auto subscriber = std::make_unique<Subscriber>(std::move(sub_result).Value());
+        auto subscriber = std::move(sub_result).Value();
         
         subscriber->Connect();
         printf("[Fusion] MPSC Subscriber connected to %s\n", kSharedMemoryPath);
@@ -486,21 +485,20 @@ public:
                     UInt64 recv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
                         recv_end - recv_start).count();
                     
-                    // NOTE: 为了验证FPS瓶颈，暂时跳过拼接处理
                     // 计算拼接位置
-                    // UInt32 offset_x = 0, offset_y = 0;
-                    // if (channel_id == 0) {
-                    //     offset_x = 0; offset_y = 0;
-                    // } else if (channel_id == 1) {
-                    //     offset_x = kCameraWidth; offset_y = 0;
-                    // } else {
-                    //     offset_x = 960; offset_y = kCameraHeight;
-                    // }
-                    // 
+                    UInt32 offset_x = 0, offset_y = 0;
+                    if (channel_id == 0) {
+                        offset_x = 0; offset_y = 0;
+                    } else if (channel_id == 1) {
+                        offset_x = kCameraWidth; offset_y = 0;
+                    } else {
+                        offset_x = 960; offset_y = kCameraHeight;
+                    }
+                    
                     // 拼接到后缓存（零拷贝，直接读取共享内存）
-                    // UInt32 back_idx = current_back_buffer_.load(std::memory_order_acquire);
-                    // Byte* back_buffer = buffers_[back_idx];
-                    // CopyImageToBuffer(data, back_buffer, offset_x, offset_y);
+                    UInt32 back_idx = current_back_buffer_.load(std::memory_order_acquire);
+                    Byte* back_buffer = buffers_[back_idx];
+                    CopyImageToBuffer(data, back_buffer, offset_x, offset_y);
                     
                     UInt64 frame_num = stats_->fusion.frames_received[channel_id].fetch_add(1, std::memory_order_relaxed);
                     frame_counters_[channel_id].store(frame_num + 1, std::memory_order_relaxed);
@@ -658,7 +656,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec)
     
     printf("[ Fusion Subscriber ]\n");
     printf("┌─────────┬────────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬─────────────┐\n");
-    printf("│ Stream  │ Frames Recv│ FPS      │ STMin(ms)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
+    printf("│ Stream  │ Frames Recv│ FPS      │ STMin(us)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
     printf("├─────────┼────────────┼──────────┼──────────┼─────────────┼─────────────┼─────────────┼─────────────┤\n");
     
     for (int i = 0; i < 3; ++i) {
@@ -669,7 +667,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec)
         auto lat_stats = CalculateLatencyStats(stats->fusion.latencies_us[i], lat_count);
         
         printf("│ Cam-%d   │ %10lu │ %8.1f │ %9u │ %11lu │ %11lu │ %11lu │ %11lu │\n",
-               i, frames, fps, kSTMinMs,
+               i, frames, fps, kSTMinUs,
                lat_stats.avg_us, lat_stats.p50_us, lat_stats.p99_us, lat_stats.max_us);
     }
     
@@ -746,12 +744,11 @@ int main(int argc, char* argv[])
     shm_config.chunk_size   = kImageSize;   // Payload size only
     shm_config.ipc_type     = IPCType::kMPSC;
     
-    auto shm = std::make_unique<SharedMemoryManager>(); 
-    auto result = shm->Create( kSharedMemoryPath, shm_config );
+    auto shm_res = IPCFactory::CreateSHM( kSharedMemoryPath, shm_config );
 
-    if ( !result )
+    if ( !shm_res )
     {
-        INNER_CORE_LOG("[ERROR] Failed to create shared memory segment for MPSC channel, error code: %d\n", result.Error().Value() );
+        INNER_CORE_LOG("[ERROR] Failed to create shared memory segment for MPSC channel, error code: %d\n", shm_res.Error().Value() );
         munmap(stats, sizeof(SharedStats));
         close(shm_fd);
         shm_unlink(stats_shm_name);

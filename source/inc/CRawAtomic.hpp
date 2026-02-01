@@ -1,5 +1,5 @@
 #ifndef DEF_LAP_CORE_ATOMIC_HPP
-#define DEF_LAP_CORE_IATOMIC_HPP
+#define DEF_LAP_CORE_ATOMIC_HPP
 
 #include <atomic>
 #include <type_traits>

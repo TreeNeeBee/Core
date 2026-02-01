@@ -85,7 +85,11 @@ namespace ipc
         DEF_LAP_ASSERT( shm != nullptr, "SharedMemoryManager pointer is null" );
         DEF_LAP_ASSERT( index < kMaxChannels, "Queue index out of range" );
         
-        shm->GetChannelQueue( index )->active.store( true, std::memory_order_release );
+        auto* queue = shm->GetChannelQueue( index );
+        if ( queue == nullptr ) {
+            return false;
+        }
+        queue->active.store( true, std::memory_order_release );
         return true;
     }
 
@@ -94,7 +98,11 @@ namespace ipc
         DEF_LAP_ASSERT( shm != nullptr, "SharedMemoryManager pointer is null" );
         DEF_LAP_ASSERT( index < kMaxChannels, "Queue index out of range" );
 
-        shm->GetChannelQueue( index )->active.store( false, std::memory_order_release );
+        auto* queue = shm->GetChannelQueue( index );
+        if ( queue == nullptr ) {
+            return false;
+        }
+        queue->active.store( false, std::memory_order_release );
         return true;
     }
 

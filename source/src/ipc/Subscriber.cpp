@@ -23,6 +23,12 @@ namespace core
 {
 namespace ipc
 {
+    namespace
+    {
+        constexpr UInt16 kScannerTimeoutUs = 1000U;
+        constexpr UInt16 kScannerIntervalUs = 10000U;
+    }
+
     Result< Subscriber > Subscriber::Create(const String& shmPath,
                                                 const SubscriberConfig& config) noexcept
     {
@@ -123,10 +129,10 @@ namespace ipc
         return Result< Vector< Sample > >( std::move( samples ) );
     }
 
-    Result< UInt8 > Subscriber::Receive( _ReadFunc read_fn,
+    Result< Size > Subscriber::Receive( _ReadFunc read_fn,
                         SubscribePolicy policy ) noexcept
     {
-        UInt8 totalRead = 0;
+        Size totalRead = 0;
         for ( const auto& [_, read_channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
             auto read_result = read_channel->ReadWithPolicy( policy, config_.timeout );
             if ( !read_result )  {
@@ -139,24 +145,24 @@ namespace ipc
             // Create Sample wrapper
             Sample sample( allocator_.get(), chunk_index );
             if ( !sample.IsValid() ) {
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
+                return Result< Size >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
             }
 
             if ( sample.GetState() != ChunkState::kSent &&
                 sample.GetState() != ChunkState::kReceived ) {
-                return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
+                return Result< Size >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
             }
             sample.TransitionState( ChunkState::kReceived );
 
             Size readSize = read_fn( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
             if ( readSize > sample.RawDataSize() ) {
-                // return Result< UInt8 >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
+                // return Result< Size >( MakeErrorCode( CoreErrc::kIPCReadOverflow ) );
                 INNER_CORE_LOG( "Subscriber::Receive - Read overflow on channel %u", sample.ChannelID() );
             } else {
-                ++totalRead;
+                totalRead += readSize;
             }
         }
-        return Result< UInt8 >::FromValue( totalRead );
+        return Result< Size >::FromValue( totalRead );
     }
 
     Result< Sample > Subscriber::ReceiveFrom( UInt8 channel_id, SubscribePolicy policy ) noexcept
@@ -196,75 +202,7 @@ namespace ipc
         }   
     }
 
-    Result< Sample > Subscriber::ReceiveOnce( UInt8 channel_id, SubscribePolicy policy ) noexcept
-    {
-        if ( channel_id != kInvalidChannelID ) {
-            auto result = InnerReceive( channel_id, policy );
-
-            if ( !result ) {
-                return Result< Sample >::FromError( result.Error() );
-            }
-
-            return Result< Sample >( std::move( result ).Value() );
-        }
-
-        auto active = active_channel_index_.load( std::memory_order_acquire );
-
-        if ( read_channels_[ active ].empty() ) {
-            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCRetry ) );
-        }
-
-        auto it = read_channels_[ active ].begin();
-
-        auto read_result = it->second->ReadWithPolicy( policy, config_.timeout );
-        if ( !read_result )  {
-            return Result< Sample >( read_result.Error() );
-        }
-
-        // Extract chunk_index from ChannelQueueValue
-        UInt16 chunk_index = read_result.Value().chunk_index;
-
-        // Create Sample wrapper
-        Sample sample( allocator_.get(), chunk_index );
-        if ( !sample.IsValid() ) {
-            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidChunkIndex ) );
-        }
-
-        if ( sample.GetState() != ChunkState::kSent &&
-            sample.GetState() != ChunkState::kReceived ) {
-            return Result< Sample >( MakeErrorCode( CoreErrc::kIPCInvalidState ) );
-        }
-        sample.TransitionState( ChunkState::kReceived );
-
-        return Result< Sample >( std::move( sample ) );
-    }
-        
-    Bool Subscriber::IsQueueEmpty() const noexcept
-    {
-        auto* queue = shm_->GetChannelQueue( config_.channel_id );
-        DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
-        
-        UInt32 head = queue->head.load( std::memory_order_acquire );
-        UInt32 tail = queue->tail.load( std::memory_order_acquire );
-        return head == tail;
-    }
-    
-    UInt32 Subscriber::GetQueueSize() const noexcept
-    {
-        auto* queue = shm_->GetChannelQueue( config_.channel_id );
-        DEF_LAP_ASSERT( queue != nullptr, "Subscriber queue must not be nullptr" );
-        
-        UInt32 head = queue->head.load( std::memory_order_acquire );
-        UInt32 tail = queue->tail.load( std::memory_order_acquire );
-        
-        if ( tail >= head ) {
-            return tail - head;
-        } else {
-            return queue->capacity - head + tail;
-        }
-    }
-
-    void Subscriber::UpdateSTMin( UInt8 stmin ) noexcept
+    void Subscriber::UpdateSTMin( UInt16 stmin ) noexcept
     {
         config_.STmin = stmin;
 
@@ -297,7 +235,7 @@ namespace ipc
 
         is_connected_.store( false, std::memory_order_release );
 
-       for ( const auto& [channel_id, _] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+        for ( const auto& [channel_id, _] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
             ChannelRegistry::DeactiveChannel( shm_.get(), channel_id );
         }
 
@@ -327,7 +265,7 @@ namespace ipc
                             shm_path_.c_str() );
 
         if ( ctrl->header.type == IPCType::kMPSC ) {
-            StartScanner( 1000, 10000 ); // 10ms interval
+            StartScanner( kScannerTimeoutUs, kScannerIntervalUs );
         } else {
             // read from own channel only
             read_channels_[0].emplace( config_.channel_id,
@@ -360,7 +298,7 @@ namespace ipc
                             shm_path_.c_str() );
 
         if ( ctrl->header.type == IPCType::kMPSC ) {
-            StartScanner( 1000, 10000 ); // 10ms interval
+            StartScanner( kScannerTimeoutUs, kScannerIntervalUs );
         } else {
             // read from own channel only
             read_channels_[0].emplace( config_.channel_id,
@@ -374,9 +312,6 @@ namespace ipc
     Subscriber::~Subscriber() noexcept
     {
         StopScanner();
-        read_channels_[0].clear();
-        read_channels_[1].clear();
-
         if ( shm_ ) {
             // Step 1: Disconnect from service
             Disconnect();
@@ -386,19 +321,29 @@ namespace ipc
             
             // ====== Step 3: Consume remaining messages in queue ======
             // This ensures ref_count is properly decremented
-            auto* queue = shm_->GetChannelQueue( config_.channel_id );
             
-            if ( queue ) {
-                while ( !IsQueueEmpty() ) {
-                    auto sample_result = Receive();
+            for ( const auto& [channel_id, channel] : read_channels_[ active_channel_index_.load( std::memory_order_acquire ) ] ) {
+                while ( true ) {
+                    auto sample_result = ReceiveFrom( channel_id, SubscribePolicy::kSkip );
                     if ( sample_result.HasValue() ) {
                         // Sample destructor will decrement ref_count automatically
+                        if ( event_hooks_ ) {
+                            auto sample = std::move( sample_result ).Value();
+                            event_hooks_->OnMessageReceived( sample.ChannelID(), sample.RawData(), sample.RawDataSize() );
+                        }
+                    } else if ( sample_result.Error() == CoreErrc::kChannelEmpty ) {
+                        break;  // Queue empty
                     } else {
-                        break;  // Queue empty or error
+                        INNER_CORE_LOG( "Subscriber::~Subscriber - Error consuming remaining messages from channel %u, error: %d\n", 
+                                        channel_id, sample_result.Error().Value() );
+                        break;
                     }
                 }
             }
-        }    
+        }
+
+        read_channels_[0].clear();
+        read_channels_[1].clear();
     }
 
     void Subscriber::StartScanner( UInt16 timeout_microseconds, UInt16 interval_microseconds ) noexcept

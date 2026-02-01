@@ -21,7 +21,7 @@
  * 
  *   [Camera-0 Publisher]        [Camera-1 Publisher]        [Camera-2 Publisher]
  *   1920x720 @ 100FPS           1920x720 @ 100FPS           1920x720 @ 100FPS
- *   STMin=10ms                  STMin=10ms                  STMin=10ms
+ *   STMin=10000us               STMin=10000us               STMin=10000us
  *         |                           |                           |
  *         v                           v                           v
  *    /cam0_stream               /cam1_stream               /cam2_stream
@@ -80,7 +80,7 @@
  *    - 原子交换指针实现快速切换
  * 
  * 4. 极限FPS性能测试:
- *    - STMin=10ms (100 FPS理论上限)
+ *    - STMin=10000us (10ms, 100 FPS理论上限)
  *    - 实测可达90+ FPS (受CPU调度和零拷贝传输影响)
  *    - Overwrite策略保证最新帧可用，丢帧不阻塞
  *    - 多线程并发接收，充分利用零拷贝优势
@@ -104,11 +104,11 @@
  * - ... (max 10 images)
  * 
  * ============================================================================
- * 预期性能（STMin=10ms极限测试配置）
+ * 预期性能（STMin=10000us极限测试配置）
  * ============================================================================
  * 
  * - 单摄像头吞吐: 90+ FPS (实测，理论上限100 FPS)
- *   * STMin=10ms限流机制保证最小发送间隔
+ *   * STMin=10000us限流机制保证最小发送间隔
  *   * 零拷贝传输减少CPU占用，提升吞吐量
  *   * 实际FPS受进程调度和内存带宽影响
  * 
@@ -160,8 +160,7 @@
  * - 实际生产环境建议根据业务需求调整STMin值
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
+#include "IPCFactory.hpp"
 #include "CInitialization.hpp"
 #include "CString.hpp"
 #include <cstdio>
@@ -192,7 +191,7 @@ constexpr UInt32 kFusionSize = kFusionWidth * kFusionHeight * kBytesPerPixel;
 
 // 性能配置
 constexpr UInt32 kTargetFPS = 60;
-constexpr UInt32 kSTMinMs = 10;  // 10ms限流，理论100 FPS，实测90+ FPS
+constexpr UInt32 kSTMinUs = 10000;  // 10ms (100 FPS)
 constexpr UInt32 kSavePeriodSec = 5;
 constexpr UInt32 kMaxSavedImages = 10;
 constexpr UInt32 kMaxLatencySamples = 300000;
@@ -501,15 +500,14 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
     shm_config.chunk_size   = kImageSize;   // Payload size only
     shm_config.ipc_type     = IPCType::kSPMC;
     
-    auto shm = std::make_unique<SharedMemoryManager>(); 
-    auto result = shm->Create( shm_path, shm_config );
+    auto shm_res = IPCFactory::CreateSHM( shm_path, shm_config );
 
-    if ( !result ) {
-        INNER_CORE_LOG("[ERROR] Failed to create shared memory segment for SPMC channel, error code: %d\n", result.Error().Value() );
+    if ( !shm_res ) {
+        INNER_CORE_LOG("[ERROR] Failed to create shared memory segment for SPMC channel, error code: %d\n", shm_res.Error().Value() );
         return;
     }
     
-    auto pub_result = Publisher::Create(shm_path, config);
+    auto pub_result = IPCFactory::CreatePublisher(shm_path, config);
     if (!pub_result.HasValue()) {
         fprintf(stderr, "[Camera-%u] Failed to create Publisher\n", camera_id);
         return;
@@ -537,7 +535,7 @@ void RunCameraPublisher(UInt32 camera_id, SharedStats* stats, UInt32 duration_se
         // INNER_CORE_LOG("[Camera-%u] Generating frame %u\n", camera_id, codec.GetFrameCount());
         // 使用Send(write_fn)直接在共享内存中生成图像
         auto send_start = std::chrono::high_resolution_clock::now();
-        auto result = publisher.Send([&codec, camera_id](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
+        auto result = publisher->Send([&codec, camera_id](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
             // INNER_CORE_LOG("[Camera-%u] write_fn called, chunk_ptr=%p, size=%lu\n", 
                         //   camera_id, (void*)chunk_ptr, (unsigned long)chunk_size);
             codec.GenerateFrame(chunk_ptr, chunk_size);
@@ -651,15 +649,15 @@ private:
         SubscriberConfig config;
         config.chunk_size = kImageSize;
         config.max_chunks = 3;  // 匹配Publisher配置
-        config.STmin = 10;  // 10ms限流，保证100FPS
+        config.STmin = kSTMinUs;
         config.empty_policy = SubscribePolicy::kSkip;
         config.ipc_type = IPCType::kSPMC;
         
         std::unique_ptr<Subscriber> subscriber;
         for (int retry = 0; retry < 5; ++retry) {
-            auto sub_result = Subscriber::Create(shm_path, config);
+            auto sub_result = IPCFactory::CreateSubscriber(shm_path, config);
             if (sub_result.HasValue()) {
-                subscriber = std::make_unique<Subscriber>(std::move(sub_result).Value());
+                subscriber = std::move(sub_result).Value();
                 break;
             }
             INNER_CORE_LOG("[SubThread-%d] Retry %d to create Subscriber for %s\n", 
@@ -883,7 +881,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec) {
     // Subscriber统计
     printf("[ Fusion Subscriber ]\n");
     printf("┌─────────┬────────────┬─────────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬─────────────┐\n");
-    printf("│ Stream  │ Frames Recv│ Recv Errors │ FPS      │ STMin(ms)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
+    printf("│ Stream  │ Frames Recv│ Recv Errors │ FPS      │ STMin(us)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
     printf("├─────────┼────────────┼─────────────┼──────────┼──────────┼─────────────┼─────────────┼─────────────┼─────────────┤\n");
     
     for (int i = 0; i < 3; ++i) {
@@ -913,7 +911,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec) {
         }
         
         printf("│ Cam-%d   │ %10lu │ %11lu │ %8.1f │ %9d │ %11lu │ %11lu │ %11lu │ %11lu │\n",
-               i, frames, errors, fps, kSTMinMs, avg_us,
+               i, frames, errors, fps, kSTMinUs, avg_us,
                lat_stats.p50_us, lat_stats.p99_us, lat_stats.max_us);
     }
     

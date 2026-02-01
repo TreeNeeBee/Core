@@ -24,6 +24,12 @@ namespace core
 {
 namespace ipc
 {
+    namespace
+    {
+        constexpr UInt16 kScannerTimeoutUs = 1000U;
+        constexpr UInt16 kScannerIntervalUs = 10000U;
+    }
+
     Result< Publisher > Publisher::Create(const String& shmPath,
                                               const PublisherConfig& config) noexcept
     {
@@ -174,7 +180,7 @@ namespace ipc
                 continue;
             }
 
-            auto interval = std::chrono::milliseconds( channel->GetSTMin() );
+            auto interval = std::chrono::microseconds( channel->GetSTMin() );
             if ( ( now - last_send_[channel_id] ) < interval ) {
                 // Skip sending to this subscriber due to STmin
                 sample.DecrementRef();
@@ -415,7 +421,7 @@ namespace ipc
                 )
             );
         } else {
-            StartScanner( 1000, 10000 ); // 10ms interval
+            StartScanner( kScannerTimeoutUs, kScannerIntervalUs );
         }
     }
 
@@ -451,7 +457,7 @@ namespace ipc
                 )
             );
         } else {
-            StartScanner( 1000, 10000 ); // 10ms interval
+            StartScanner( kScannerTimeoutUs, kScannerIntervalUs );
         }
     }
 

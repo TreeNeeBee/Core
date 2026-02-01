@@ -28,7 +28,7 @@ namespace ipc
     constexpr UInt32 kIPCMagicNumber = 0xCE025250;
     
     /// IPC version number
-    constexpr UInt16 kIPCVersion = 0x0101;  // v1.0.1
+    constexpr UInt16 kIPCVersion = 0x0110;  // v1.1.0
     
     /// Invalid channel index
     constexpr UInt8 kInvalidChannelID = 0xFF;

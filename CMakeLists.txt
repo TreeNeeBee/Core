@@ -183,6 +183,27 @@ if(ENABLE_BUILD_UNITTEST AND TARGET lap_core)
         LINK_LIBRARIES lap_core Threads::Threads rt
         INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
     )
+
+    lap_add_ipc_test(
+        NAME test_ipc_publisher
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/unittest/test_ipc_publisher.cpp
+        LINK_LIBRARIES lap_core Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
+
+    lap_add_ipc_test(
+        NAME test_ipc_subscriber
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/unittest/test_ipc_subscriber.cpp
+        LINK_LIBRARIES lap_core Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
+
+    lap_add_ipc_test(
+        NAME test_ipc_factory
+        SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/test/unittest/test_ipc_factory.cpp
+        LINK_LIBRARIES lap_core Threads::Threads rt
+        INCLUDE_DIRS ${MODULE_SOURCE_CXX_DIR}/inc
+    )
 endif()
 
 # ==============================================================================

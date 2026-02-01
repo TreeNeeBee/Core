@@ -602,7 +602,7 @@ namespace ipc
          * @brief Read operation not supported in WriteChannel
          * @return Error indicating write-only channel
          */
-        Result<T> Read() noexcept
+        Result<T> Read() noexcept override
         {
             return Result<T>(MakeErrorCode(CoreErrc::kInvalidArgument));
         }
@@ -611,7 +611,7 @@ namespace ipc
          * @brief Read with policy not supported in WriteChannel
          * @return Error indicating write-only channel
          */
-        Result<T> ReadWithPolicy(SubscribePolicy /*policy*/, UInt64 /*timeout_ns*/ = 0) noexcept
+        Result<T> ReadWithPolicy(SubscribePolicy /*policy*/, UInt64 /*timeout_ns*/ = 0) noexcept override
         {
             return Result<T>(MakeErrorCode(CoreErrc::kInvalidArgument));
         }
@@ -705,7 +705,7 @@ namespace ipc
          * - kChannelInvalid: Channel not properly initialized
          * - kChannelEmpty: Queue is empty, no data available
          */
-        Result<T> Read() noexcept
+        Result<T> Read() noexcept override
         {
             if (!this->IsValid()) {
                 return Result<T>(MakeErrorCode(CoreErrc::kChannelInvalid));
@@ -759,7 +759,7 @@ namespace ipc
          * - kChannelWaitsetUnavailable: Waitset required but not available
          * - kChannelSpuriousWakeup: Wakeup occurred but queue still empty
          */
-        Result<T> ReadWithPolicy(SubscribePolicy policy, UInt64 timeout_ns = 0) noexcept
+        Result<T> ReadWithPolicy(SubscribePolicy policy, UInt64 timeout_ns = 0) noexcept override
         {
             if (!this->IsValid()) {
                 return Result<T>(MakeErrorCode(CoreErrc::kChannelInvalid));
@@ -867,7 +867,7 @@ namespace ipc
          * @brief Peek at next value without consuming
          * @return Optional value (empty if channel empty)
          */
-        Optional<T> Peek() const noexcept
+        Optional<T> Peek() const noexcept override
         {
             if (!this->IsValid()) {
                 return {};
@@ -887,7 +887,7 @@ namespace ipc
          * @brief Write operation not supported in ReadChannel
          * @return Error indicating read-only channel
          */
-        Result<void> Write(const T& /*value*/) noexcept
+        Result<void> Write(const T& /*value*/) noexcept override
         {
             return Result<void>(MakeErrorCode(CoreErrc::kInvalidArgument));
         }
@@ -896,7 +896,7 @@ namespace ipc
          * @brief Write with policy not supported in ReadChannel
          * @return Error indicating read-only channel
          */
-        Result<void> WriteWithPolicy(const T& /*value*/, PublishPolicy /*policy*/, UInt64 /*timeout_ns*/ = 0) noexcept
+        Result<void> WriteWithPolicy(const T& /*value*/, PublishPolicy /*policy*/, UInt64 /*timeout_ns*/ = 0) noexcept override
         {
             return Result<void>(MakeErrorCode(CoreErrc::kInvalidArgument));
         }

@@ -13,7 +13,6 @@
 #include "ControlBlock.hpp"
 #include "CCoreErrorDomain.hpp"
 #include "CResult.hpp"
-#include <atomic>
 
 namespace lap
 {

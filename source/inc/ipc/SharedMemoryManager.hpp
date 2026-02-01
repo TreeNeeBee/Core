@@ -15,9 +15,6 @@
 #include "CResult.hpp"
 #include "CString.hpp"
 #include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
 
 namespace lap
 {
@@ -70,6 +67,7 @@ namespace ipc
             : shm_fd_(-1)
             , base_addr_(nullptr)
             , size_(0)
+            , ref_count_acquired_(false)
         {
         }
         
@@ -80,7 +78,12 @@ namespace ipc
         {
             if ( base_addr_ != nullptr && base_addr_ != MAP_FAILED ) {
                 auto* ctrl = GetControlBlock();
-                ctrl->header.ready.store( SHMState::kClosing, std::memory_order_release );
+                if ( ref_count_acquired_ && ctrl && ctrl->Validate() ) {
+                    auto ref_count = ctrl->header.ref_count.load( std::memory_order_acquire );
+                    if ( ref_count <= 1 ) {
+                        ctrl->header.ready.store( SHMState::kClosing, std::memory_order_release );
+                    }
+                }
             }
 
             Cleanup();
@@ -139,7 +142,7 @@ namespace ipc
          */
         inline ChannelQueue* GetChannelQueue() const noexcept
         {
-            DEF_LAP_ASSERT( !base_addr_, "Shared memory not initialized" );
+            DEF_LAP_ASSERT( base_addr_, "Shared memory not initialized" );
 
             return reinterpret_cast< ChannelQueue* >( reinterpret_cast< UInt8* >( base_addr_ ) + kChannelRegionOffset );
         }
@@ -157,7 +160,7 @@ namespace ipc
          */
         ChannelQueue* GetChannelQueue( UInt32 queue_index ) const noexcept
         {
-            DEF_LAP_ASSERT( !base_addr_, "Shared memory not initialized" );
+            DEF_LAP_ASSERT( base_addr_, "Shared memory not initialized" );
             DEF_LAP_ASSERT( queue_index < kMaxChannels, "Queue index out of range" );
 
             return reinterpret_cast< ChannelQueue* >( reinterpret_cast< UInt8* >( GetChannelQueue() ) + kChannelQueueSize * queue_index );
@@ -169,7 +172,7 @@ namespace ipc
          */
         inline void* GetChunkPool() const noexcept
         {
-            DEF_LAP_ASSERT( !base_addr_, "Shared memory not initialized" );
+            DEF_LAP_ASSERT( base_addr_, "Shared memory not initialized" );
 
             return reinterpret_cast< void* >( reinterpret_cast< UInt8* >( base_addr_ ) + kChunkPoolOffset );
         }
@@ -209,6 +212,7 @@ namespace ipc
         Size size_;               ///< Total size of shared memory
         String shm_path_;           ///< Shared memory path
         SharedMemoryConfig config_; ///< Configuration
+        Bool ref_count_acquired_;    ///< Whether ref_count was acquired
     };
     
 }  // namespace ipc

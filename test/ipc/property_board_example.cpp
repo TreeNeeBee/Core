@@ -10,10 +10,9 @@
  *   Client: ./property_board_example --client <id> <key> <value> [duration_sec]
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
-#include "ipc/SharedMemoryManager.hpp"
+#include "IPCFactory.hpp"
 #include "CTypedef.hpp"
+#include "CCoreErrorDomain.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -38,8 +37,10 @@ constexpr const char* kReqShm  = "/property_req_mpsc"; // 修改请求
 constexpr const char* kAckShm  = "/property_ack_spmc"; // ACK回复
 
 constexpr UInt32 kMaxChunks = 128;
-constexpr UInt32 kSTMinMs = 10;
+constexpr UInt32 kSTMinUs = 10000;  // 10ms
 constexpr UInt32 kDurationDefaultSec = 30;
+constexpr UInt32 kRetryMax = 100;
+constexpr UInt32 kRetrySleepMs = 50;
 
 // ============================================================================
 // Property DB
@@ -114,6 +115,11 @@ PropertyDB* MapPropertyDB(int flags, int prot)
     return static_cast<PropertyDB*>(addr);
 }
 
+bool IsShmNotReady(const ErrorCode& err)
+{
+    return err == CoreErrc::kIPCShmNotFound || err == CoreErrc::kIPCShmInvalidMagic;
+}
+
 int FindEntry(PropertyDB* db, const char* key)
 {
     for (UInt32 i = 0; i < kMaxProperties; ++i) {
@@ -161,13 +167,12 @@ void RunServer(UInt32 duration_sec)
         cfg.max_chunks = kMaxChunks;
         cfg.chunk_size = kReqSize;
         cfg.ipc_type = IPCType::kMPSC;
-        auto shm = std::make_unique<SharedMemoryManager>();
-        auto res = shm->Create(kReqShm, cfg);
-        if (!res) {
-            fprintf(stderr, "[Server] Failed to create req shm: %d\n", res.Error().Value());
+        auto shm_res = IPCFactory::CreateSHM(kReqShm, cfg);
+        if (!shm_res) {
+            fprintf(stderr, "[Server] Failed to create req shm: %d\n", shm_res.Error().Value());
             return;
         }
-        shm_managers.push_back(std::move(shm));
+        shm_managers.push_back(std::move(shm_res).Value());
     }
 
     // Ack channel (SPMC)
@@ -176,13 +181,12 @@ void RunServer(UInt32 duration_sec)
         cfg.max_chunks = kMaxChunks;
         cfg.chunk_size = kAckSize;
         cfg.ipc_type = IPCType::kSPMC;
-        auto shm = std::make_unique<SharedMemoryManager>();
-        auto res = shm->Create(kAckShm, cfg);
-        if (!res) {
-            fprintf(stderr, "[Server] Failed to create ack shm: %d\n", res.Error().Value());
+        auto shm_res = IPCFactory::CreateSHM(kAckShm, cfg);
+        if (!shm_res) {
+            fprintf(stderr, "[Server] Failed to create ack shm: %d\n", shm_res.Error().Value());
             return;
         }
-        shm_managers.push_back(std::move(shm));
+        shm_managers.push_back(std::move(shm_res).Value());
     }
 
     PublisherConfig ack_pub_cfg{};
@@ -192,7 +196,7 @@ void RunServer(UInt32 duration_sec)
     ack_pub_cfg.channel_id = kInvalidChannelID;
     ack_pub_cfg.loan_policy = LoanPolicy::kError;
 
-    auto ack_pub_res = Publisher::Create(kAckShm, ack_pub_cfg);
+    auto ack_pub_res = IPCFactory::CreatePublisher(kAckShm, ack_pub_cfg);
     if (!ack_pub_res.HasValue()) {
         fprintf(stderr, "[Server] Failed to create ack publisher: %d\n", ack_pub_res.Error().Value());
         return;
@@ -203,20 +207,20 @@ void RunServer(UInt32 duration_sec)
     req_sub_cfg.max_chunks = kMaxChunks;
     req_sub_cfg.chunk_size = kReqSize;
     req_sub_cfg.ipc_type = IPCType::kMPSC;
-    req_sub_cfg.STmin = kSTMinMs;
+    req_sub_cfg.STmin = kSTMinUs;
     req_sub_cfg.empty_policy = SubscribePolicy::kSkip;
 
-    auto req_sub_res = Subscriber::Create(kReqShm, req_sub_cfg);
+    auto req_sub_res = IPCFactory::CreateSubscriber(kReqShm, req_sub_cfg);
     if (!req_sub_res.HasValue()) {
         fprintf(stderr, "[Server] Failed to create req subscriber: %d\n", req_sub_res.Error().Value());
         return;
     }
     auto req_sub = std::move(req_sub_res).Value();
-    req_sub.Connect();
+    req_sub->Connect();
 
     auto start = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - start < std::chrono::seconds(duration_sec)) {
-        auto result = req_sub.Receive([&](UInt8, Byte* data, Size size) -> Size {
+        auto result = req_sub->Receive([&](UInt8, Byte* data, Size size) -> Size {
             if (size < kReqSize) return 0;
             PropertyRequest req{};
             std::memcpy(&req, data, kReqSize);
@@ -247,7 +251,7 @@ void RunServer(UInt32 duration_sec)
 
             ack.value = req.value;
 
-            ack_pub.Send([&](UInt8, Byte* ptr, Size sz) -> Size {
+            ack_pub->Send([&](UInt8, Byte* ptr, Size sz) -> Size {
                 if (sz < kAckSize) return 0;
                 std::memcpy(ptr, &ack, kAckSize);
                 return kAckSize;
@@ -272,7 +276,12 @@ void RunClient(UInt8 client_id, const char* key, Int32 value, UInt32 duration_se
 {
     printf("[Client-%u] Starting...\n", client_id);
 
-    PropertyDB* db = MapPropertyDB(O_RDONLY, PROT_READ);
+    PropertyDB* db = nullptr;
+    for (UInt32 i = 0; i < kRetryMax; ++i) {
+        db = MapPropertyDB(O_RDONLY, PROT_READ);
+        if (db) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetrySleepMs));
+    }
     if (!db) {
         fprintf(stderr, "[Client-%u] Failed to open property DB\n", client_id);
         return;
@@ -285,31 +294,55 @@ void RunClient(UInt8 client_id, const char* key, Int32 value, UInt32 duration_se
     req_pub_cfg.channel_id = kInvalidChannelID;
     req_pub_cfg.loan_policy = LoanPolicy::kError;
 
-    auto req_pub_res = Publisher::Create(kReqShm, req_pub_cfg);
-    if (!req_pub_res.HasValue()) {
+    UniqueHandle<Publisher> req_pub;
+    Int32 req_pub_err = 0;
+    for (UInt32 i = 0; i < kRetryMax; ++i) {
+        auto res = IPCFactory::CreatePublisher(kReqShm, req_pub_cfg);
+        if (res.HasValue()) {
+            req_pub = std::move(res).Value();
+            break;
+        }
+        req_pub_err = res.Error().Value();
+        if (!IsShmNotReady(res.Error())) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetrySleepMs));
+    }
+    if (!req_pub) {
         fprintf(stderr, "[Client-%u] Failed to create req publisher: %d\n",
-                client_id, req_pub_res.Error().Value());
+                client_id, req_pub_err);
         munmap(db, sizeof(PropertyDB));
         return;
     }
-    auto req_pub = std::move(req_pub_res).Value();
 
     SubscriberConfig ack_sub_cfg{};
     ack_sub_cfg.max_chunks = kMaxChunks;
     ack_sub_cfg.chunk_size = kAckSize;
     ack_sub_cfg.ipc_type = IPCType::kSPMC;
-    ack_sub_cfg.STmin = kSTMinMs;
+    ack_sub_cfg.STmin = kSTMinUs;
     ack_sub_cfg.empty_policy = SubscribePolicy::kSkip;
 
-    auto ack_sub_res = Subscriber::Create(kAckShm, ack_sub_cfg);
-    if (!ack_sub_res.HasValue()) {
+    UniqueHandle<Subscriber> ack_sub;
+    Int32 ack_sub_err = 0;
+    for (UInt32 i = 0; i < kRetryMax; ++i) {
+        auto res = IPCFactory::CreateSubscriber(kAckShm, ack_sub_cfg);
+        if (res.HasValue()) {
+            ack_sub = std::move(res).Value();
+            break;
+        }
+        ack_sub_err = res.Error().Value();
+        if (!IsShmNotReady(res.Error())) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetrySleepMs));
+    }
+    if (!ack_sub) {
         fprintf(stderr, "[Client-%u] Failed to create ack subscriber: %d\n",
-                client_id, ack_sub_res.Error().Value());
+                client_id, ack_sub_err);
         munmap(db, sizeof(PropertyDB));
         return;
     }
-    auto ack_sub = std::move(ack_sub_res).Value();
-    ack_sub.Connect();
+    ack_sub->Connect();
 
     UInt32 req_id = 1;
     auto start = std::chrono::steady_clock::now();
@@ -327,7 +360,7 @@ void RunClient(UInt8 client_id, const char* key, Int32 value, UInt32 duration_se
 
     while (!got_ack && std::chrono::steady_clock::now() - start < std::chrono::seconds(duration_sec)) {
         if (std::chrono::steady_clock::now() - last_send >= std::chrono::milliseconds(100)) {
-            auto send_res = req_pub.Send([&](UInt8, Byte* ptr, Size sz) -> Size {
+            auto send_res = req_pub->Send([&](UInt8, Byte* ptr, Size sz) -> Size {
                 if (sz < kReqSize) return 0;
                 std::memcpy(ptr, &req, kReqSize);
                 return kReqSize;
@@ -338,7 +371,7 @@ void RunClient(UInt8 client_id, const char* key, Int32 value, UInt32 duration_se
             last_send = std::chrono::steady_clock::now();
         }
 
-        auto res = ack_sub.Receive([&](UInt8, Byte* data, Size size) -> Size {
+        auto res = ack_sub->Receive([&](UInt8, Byte* data, Size size) -> Size {
             if (size < kAckSize) return 0;
             PropertyAck ack{};
             std::memcpy(&ack, data, kAckSize);

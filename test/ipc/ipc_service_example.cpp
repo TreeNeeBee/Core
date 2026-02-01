@@ -35,9 +35,7 @@
  *    [Client-1] RPC-RSP id=10 val=20 payload=resp=20
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
-#include "ipc/SharedMemoryManager.hpp"
+#include "IPCFactory.hpp"
 #include "CTypedef.hpp"
 
 #include <atomic>
@@ -59,7 +57,7 @@ constexpr const char* kRequestShm = "/svc_req_mpsc";  // MPSC: clients -> server
 constexpr const char* kResponseShm = "/svc_rsp_spmc"; // SPMC: server -> clients
 
 constexpr UInt32 kMaxChunks = 128;
-constexpr UInt32 kSTMinMs = 10;
+constexpr UInt32 kSTMinUs = 10000;  // 10ms
 constexpr UInt32 kDurationDefaultSec = 30;
 
 // ============================================================================
@@ -114,26 +112,24 @@ void RunServer(UInt32 duration_sec)
         req_cfg.max_chunks = kMaxChunks;
         req_cfg.chunk_size = kMsgSize;
         req_cfg.ipc_type = IPCType::kMPSC;
-        auto req_shm = std::make_unique<SharedMemoryManager>();
-        auto req_res = req_shm->Create(kRequestShm, req_cfg);
-        if (!req_res) {
-            fprintf(stderr, "[Server] Failed to create request shm: %d\n", req_res.Error().Value());
+        auto req_shm_res = IPCFactory::CreateSHM(kRequestShm, req_cfg);
+        if (!req_shm_res) {
+            fprintf(stderr, "[Server] Failed to create request shm: %d\n", req_shm_res.Error().Value());
             return;
         }
-        shm_managers.push_back(std::move(req_shm));
+        shm_managers.push_back(std::move(req_shm_res).Value());
     }
     {
         SharedMemoryConfig rsp_cfg{};
         rsp_cfg.max_chunks = kMaxChunks;
         rsp_cfg.chunk_size = kMsgSize;
         rsp_cfg.ipc_type = IPCType::kSPMC;
-        auto rsp_shm = std::make_unique<SharedMemoryManager>();
-        auto rsp_res = rsp_shm->Create(kResponseShm, rsp_cfg);
-        if (!rsp_res) {
-            fprintf(stderr, "[Server] Failed to create response shm: %d\n", rsp_res.Error().Value());
+        auto rsp_shm_res = IPCFactory::CreateSHM(kResponseShm, rsp_cfg);
+        if (!rsp_shm_res) {
+            fprintf(stderr, "[Server] Failed to create response shm: %d\n", rsp_shm_res.Error().Value());
             return;
         }
-        shm_managers.push_back(std::move(rsp_shm));
+        shm_managers.push_back(std::move(rsp_shm_res).Value());
     }
 
     PublisherConfig rsp_pub_cfg{};
@@ -143,7 +139,7 @@ void RunServer(UInt32 duration_sec)
     rsp_pub_cfg.channel_id = kInvalidChannelID;
     rsp_pub_cfg.loan_policy = LoanPolicy::kError;
 
-    auto rsp_pub_res = Publisher::Create(kResponseShm, rsp_pub_cfg);
+    auto rsp_pub_res = IPCFactory::CreatePublisher(kResponseShm, rsp_pub_cfg);
     if (!rsp_pub_res.HasValue()) {
         fprintf(stderr, "[Server] Failed to create response publisher: %d\n", rsp_pub_res.Error().Value());
         return;
@@ -154,16 +150,16 @@ void RunServer(UInt32 duration_sec)
     req_sub_cfg.max_chunks = kMaxChunks;
     req_sub_cfg.chunk_size = kMsgSize;
     req_sub_cfg.ipc_type = IPCType::kMPSC;
-    req_sub_cfg.STmin = kSTMinMs;
+    req_sub_cfg.STmin = kSTMinUs;
     req_sub_cfg.empty_policy = SubscribePolicy::kSkip;
 
-    auto req_sub_res = Subscriber::Create(kRequestShm, req_sub_cfg);
+    auto req_sub_res = IPCFactory::CreateSubscriber(kRequestShm, req_sub_cfg);
     if (!req_sub_res.HasValue()) {
         fprintf(stderr, "[Server] Failed to create request subscriber: %d\n", req_sub_res.Error().Value());
         return;
     }
     auto req_sub = std::move(req_sub_res).Value();
-    req_sub.Connect();
+    req_sub->Connect();
 
     std::atomic<bool> running{true};
 
@@ -185,7 +181,7 @@ void RunServer(UInt32 duration_sec)
             msg.value = static_cast<Int32>(field_value++);
             std::snprintf(msg.payload, sizeof(msg.payload), "field=%u", field_value);
 
-            rsp_pub.Send([&msg](UInt8, Byte* ptr, Size size) -> Size {
+            rsp_pub->Send([&msg](UInt8, Byte* ptr, Size size) -> Size {
                 if (size < kMsgSize) return 0;
                 std::memcpy(ptr, &msg, kMsgSize);
                 return kMsgSize;
@@ -200,7 +196,7 @@ void RunServer(UInt32 duration_sec)
                 ev.value = static_cast<Int32>(event_seq++);
                 std::snprintf(ev.payload, sizeof(ev.payload), "event=%u", event_seq);
 
-                rsp_pub.Send([&ev](UInt8, Byte* ptr, Size size) -> Size {
+                rsp_pub->Send([&ev](UInt8, Byte* ptr, Size size) -> Size {
                     if (size < kMsgSize) return 0;
                     std::memcpy(ptr, &ev, kMsgSize);
                     return kMsgSize;
@@ -214,7 +210,7 @@ void RunServer(UInt32 duration_sec)
     // Main receive loop
     auto start_time = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(duration_sec)) {
-        auto result = req_sub.Receive([&](UInt8, Byte* data, Size size) -> Size {
+        auto result = req_sub->Receive([&](UInt8, Byte* data, Size size) -> Size {
             if (size < kMsgSize) return 0;
             ServiceMessage req{};
             std::memcpy(&req, data, kMsgSize);
@@ -230,7 +226,7 @@ void RunServer(UInt32 duration_sec)
             ack.timestamp_us = NowUs();
             std::snprintf(ack.payload, sizeof(ack.payload), "ack=%u", req.request_id);
 
-            rsp_pub.Send([&ack](UInt8, Byte* ptr, Size sz) -> Size {
+            rsp_pub->Send([&ack](UInt8, Byte* ptr, Size sz) -> Size {
                 if (sz < kMsgSize) return 0;
                 std::memcpy(ptr, &ack, kMsgSize);
                 return kMsgSize;
@@ -245,7 +241,7 @@ void RunServer(UInt32 duration_sec)
             rsp.value = req.value * 2;  // 示例逻辑
             std::snprintf(rsp.payload, sizeof(rsp.payload), "resp=%d", rsp.value);
 
-            rsp_pub.Send([&rsp](UInt8, Byte* ptr, Size sz) -> Size {
+            rsp_pub->Send([&rsp](UInt8, Byte* ptr, Size sz) -> Size {
                 if (sz < kMsgSize) return 0;
                 std::memcpy(ptr, &rsp, kMsgSize);
                 return kMsgSize;
@@ -279,7 +275,7 @@ void RunClient(UInt8 client_id, UInt32 duration_sec)
     req_pub_cfg.channel_id = kInvalidChannelID;
     req_pub_cfg.loan_policy = LoanPolicy::kError;
 
-    auto req_pub_res = Publisher::Create(kRequestShm, req_pub_cfg);
+    auto req_pub_res = IPCFactory::CreatePublisher(kRequestShm, req_pub_cfg);
     if (!req_pub_res.HasValue()) {
         fprintf(stderr, "[Client-%u] Failed to create request publisher: %d\n",
                 client_id, req_pub_res.Error().Value());
@@ -291,17 +287,17 @@ void RunClient(UInt8 client_id, UInt32 duration_sec)
     rsp_sub_cfg.max_chunks = kMaxChunks;
     rsp_sub_cfg.chunk_size = kMsgSize;
     rsp_sub_cfg.ipc_type = IPCType::kSPMC;
-    rsp_sub_cfg.STmin = kSTMinMs;
+    rsp_sub_cfg.STmin = kSTMinUs;
     rsp_sub_cfg.empty_policy = SubscribePolicy::kSkip;
 
-    auto rsp_sub_res = Subscriber::Create(kResponseShm, rsp_sub_cfg);
+    auto rsp_sub_res = IPCFactory::CreateSubscriber(kResponseShm, rsp_sub_cfg);
     if (!rsp_sub_res.HasValue()) {
         fprintf(stderr, "[Client-%u] Failed to create response subscriber: %d\n",
                 client_id, rsp_sub_res.Error().Value());
         return;
     }
     auto rsp_sub = std::move(rsp_sub_res).Value();
-    rsp_sub.Connect();
+    rsp_sub->Connect();
 
     std::atomic<bool> running{true};
     std::thread rx_thread([&]() {
@@ -309,7 +305,7 @@ void RunClient(UInt8 client_id, UInt32 duration_sec)
         while (running.load()) {
             if (std::chrono::steady_clock::now() - start >= std::chrono::seconds(duration_sec)) break;
 
-            auto result = rsp_sub.Receive([&](UInt8, Byte* data, Size size) -> Size {
+            auto result = rsp_sub->Receive([&](UInt8, Byte* data, Size size) -> Size {
                 if (size < kMsgSize) return 0;
                 ServiceMessage msg{};
                 std::memcpy(&msg, data, kMsgSize);
@@ -345,7 +341,7 @@ void RunClient(UInt8 client_id, UInt32 duration_sec)
         req.value = static_cast<Int32>(req_id);
         std::snprintf(req.payload, sizeof(req.payload), "req=%u", req.request_id);
 
-        req_pub.Send([&req](UInt8, Byte* ptr, Size size) -> Size {
+        req_pub->Send([&req](UInt8, Byte* ptr, Size size) -> Size {
             if (size < kMsgSize) return 0;
             std::memcpy(ptr, &req, kMsgSize);
             return kMsgSize;

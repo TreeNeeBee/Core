@@ -14,7 +14,6 @@
 #include "Sample.hpp"
 #include "SharedMemoryManager.hpp"
 #include "ChunkPoolAllocator.hpp"
-#include "ChannelRegistry.hpp"
 #include "IPCEventHooks.hpp"
 #include "CResult.hpp"
 #include "CString.hpp"
@@ -62,8 +61,7 @@ namespace ipc
     public:
         using _MapChannel   = Map< UInt8, UniqueHandle< Channel< ChannelQueueValue > > >;
         using _WriteFunc    = Function< Size( UInt8, Byte*, Size ) >;
-    
-    public:
+
         /**
          * @brief Create publisher
          * @param service_name Service name
@@ -72,12 +70,12 @@ namespace ipc
          */
         static Result< Publisher > Create(const String& shmPath,
                                             const PublisherConfig& config = {}) noexcept;
-        
+
         /**
          * @brief Destructor
          */
         ~Publisher() noexcept;
-        
+
         // Delete copy - external users must use Create()
         Publisher(const Publisher&) = delete;
         Publisher& operator=(const Publisher&) = delete;
@@ -155,7 +153,14 @@ namespace ipc
          */
         Result< void > Send( Sample&& sample,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
-        
+
+        /**
+         * @brief Send message by copying a buffer into a loaned chunk
+         * @param buffer Data buffer to send
+         * @param size Size of data buffer
+         * @param policy Publish policy
+         * @return Result
+         */
         Result< void > Send( Byte* buffer, Size size,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
@@ -217,18 +222,6 @@ namespace ipc
         Result< void > SendTo( _WriteFunc write_fn, UInt8 channel_id,
                          PublishPolicy policy = PublishPolicy::kOverwrite ) noexcept;
         
-        /**
-         * @brief Start internal channel scanner thread
-         * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)
-         * @param interval_microseconds Scan interval in microseconds
-         */
-        void StartScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
-
-        /**
-         * @brief Stop internal channel scanner thread
-         */
-        void StopScanner() noexcept;
-
     private:
         /**
          * @brief Private constructor
@@ -250,6 +243,18 @@ namespace ipc
         * - Updates internal write_channels_ vector accordingly
         */
         void UpdateWriteChannel( UInt64 write_mask ) noexcept;
+
+        /**
+         * @brief Start internal channel scanner thread
+         * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)
+         * @param interval_microseconds Scan interval in microseconds
+         */
+        void StartScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+
+        /**
+         * @brief Stop internal channel scanner thread
+         */
+        void StopScanner() noexcept;
 
         // Result< void > InnerSend( Sample&& sample, UInt8 channel_id,
         //                                 PublishPolicy policy ) noexcept;

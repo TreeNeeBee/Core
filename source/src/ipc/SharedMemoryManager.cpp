@@ -10,6 +10,9 @@
 #include "ipc/ChunkPoolAllocator.hpp"
 #include "CCoreErrorDomain.hpp"
 #include <cstring>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace lap
 {
@@ -87,6 +90,8 @@ namespace ipc
                 Cleanup();
                 return result;
             }   
+
+            ref_count_acquired_ = true;
             
             return {};
         } else if ( errno == EEXIST ) {
@@ -139,7 +144,8 @@ namespace ipc
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmInvalidMagic ) );
         }
 
-        ctrl->header.ref_count.fetch_add( 1, std::memory_order_release );
+        ctrl->header.ref_count.fetch_add( 1, std::memory_order_acq_rel );
+        ref_count_acquired_ = true;
         
         return {};
     }
@@ -198,10 +204,11 @@ namespace ipc
         // Check if we should unlink the shared memory
         if ( base_addr_ != nullptr && base_addr_ != MAP_FAILED ) {
             auto* ctrl = GetControlBlock();
-            if ( ctrl && ctrl->Validate() && ( ctrl->header.ref_count.fetch_sub( 1, std::memory_order_acquire ) == 1 ) ) {
-                // Simplified: always unlink (no reference counting)
-                // TODO: Implement proper reference counting if multi-process support needed
-                should_unlink = true;
+            if ( ref_count_acquired_ && ctrl && ctrl->Validate() ) {
+                const UInt32 previous = ctrl->header.ref_count.fetch_sub( 1, std::memory_order_acq_rel );
+                if ( previous == 1U ) {
+                    should_unlink = true;
+                }
             }
             
             munmap(base_addr_, size_);
@@ -217,6 +224,8 @@ namespace ipc
         if ( should_unlink && !shm_path_.empty() ) {
             shm_unlink(shm_path_.c_str());
         }
+
+        ref_count_acquired_ = false;
     }
     
 }  // namespace ipc

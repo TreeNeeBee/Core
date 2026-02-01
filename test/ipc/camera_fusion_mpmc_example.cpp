@@ -4,9 +4,7 @@
  * @details     每个Camera独立通道，每个Subscriber独立进程带保存线程
  */
 
-#include "ipc/Publisher.hpp"
-#include "ipc/Subscriber.hpp"
-#include "ipc/SharedMemoryManager.hpp"
+#include "IPCFactory.hpp"
 #include "CTypedef.hpp"
 #include <cstdio>
 #include <cstring>
@@ -44,7 +42,7 @@ constexpr const char* kSharedMemoryPath[3] = {
 };
 
 constexpr UInt32 kMaxChunks = 3;
-constexpr UInt32 kSTMinMs = 10;
+constexpr UInt32 kSTMinUs = 10000;  // 10ms (100 FPS)
 constexpr UInt32 kMaxLatencySamples = 10000;
 constexpr UInt32 kSavePeriodSec = 5;
 constexpr UInt32 kMaxSavedImages = 10;
@@ -278,13 +276,13 @@ void CameraPublisherProcess(UInt8 camera_id, SharedStats* stats, UInt32 duration
     printf("\n========================================\n");
     printf("Camera-%u Publisher - MPMC模式\n", camera_id);
     printf("========================================\n");
-    printf("摄像头配置: %ux%u @ 100 FPS (STMin=10ms)\n", kCameraWidth, kCameraHeight);
+    printf("摄像头配置: %ux%u @ 100 FPS (STMin=10000us)\n", kCameraWidth, kCameraHeight);
     printf("MPMC共享通道: %s\n", kSharedMemoryPath[camera_id]);
     printf("测试时长: %u 秒\n", duration_sec);
     printf("========================================\n\n");
     
     // 创建3个Publisher，往3个通道广播
-    std::vector<Publisher> publishers;
+    std::vector<std::unique_ptr<Publisher>> publishers;
     for (int ch = 0; ch < 3; ++ch) {
         PublisherConfig config{};
         config.max_chunks = kMaxChunks;
@@ -293,7 +291,7 @@ void CameraPublisherProcess(UInt8 camera_id, SharedStats* stats, UInt32 duration
         config.channel_id = camera_id;  // 使用camera_id作为channel标识
         config.loan_policy = LoanPolicy::kError;
         
-        auto pub_result = Publisher::Create(kSharedMemoryPath[ch], config);
+        auto pub_result = IPCFactory::CreatePublisher(kSharedMemoryPath[ch], config);
         if (!pub_result.HasValue()) {
             fprintf(stderr, "[Camera-%u] Failed to create Publisher for channel %d, error: %d\n", 
                     camera_id, ch, pub_result.Error().Value());
@@ -325,7 +323,7 @@ void CameraPublisherProcess(UInt8 camera_id, SharedStats* stats, UInt32 duration
         // 广播到所有通道
         bool all_success = true;
         for (auto& publisher : publishers) {
-            auto result = publisher.Send([&frame_buffer](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
+            auto result = publisher->Send([&frame_buffer](UInt8 /*channel_id*/, Byte* chunk_ptr, Size chunk_size) -> Size {
                 UNUSED(chunk_size);
                 std::memcpy(chunk_ptr, frame_buffer, kImageSize);
                 return kImageSize;
@@ -375,17 +373,17 @@ void SubscriberProcess(UInt8 camera_id, SharedStats* stats, UInt32 duration_sec)
     config.max_chunks = kMaxChunks;
     config.chunk_size = kImageSize;
     config.ipc_type = IPCType::kMPMC;
-    config.STmin = kSTMinMs;
+    config.STmin = kSTMinUs;
     config.empty_policy = SubscribePolicy::kSkip;
     
-    auto sub_result = Subscriber::Create(kSharedMemoryPath[camera_id], config);
+    auto sub_result = IPCFactory::CreateSubscriber(kSharedMemoryPath[camera_id], config);
     if (!sub_result.HasValue()) {
         fprintf(stderr, "[Subscriber-%u] Failed to create Subscriber, error: %d\n",
                 camera_id, sub_result.Error().Value());
         return;
     }
     auto subscriber = std::move(sub_result).Value();
-    subscriber.Connect();
+    subscriber->Connect();
     
     printf("[Subscriber-%u] Connected\n", camera_id);
     
@@ -437,7 +435,7 @@ void SubscriberProcess(UInt8 camera_id, SharedStats* stats, UInt32 duration_sec)
     while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(duration_sec)) {
         auto recv_start = std::chrono::high_resolution_clock::now();
         
-        auto result = subscriber.Receive([&](UInt8 ch_id, Byte* data, Size size) -> Size {
+        auto result = subscriber->Receive([&](UInt8 ch_id, Byte* data, Size size) -> Size {
             if (size != kImageSize) return 0;
             
             auto recv_end = std::chrono::high_resolution_clock::now();
@@ -577,7 +575,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec)
     // Subscriber统计
     printf("[ Subscribers ]\n");
     printf("┌─────────┬──────────┬────────────┬──────────┬──────────┬─────────────┬─────────────┬─────────────┬─────────────┐\n");
-    printf("│ Stream  │ Pub-ID   │ Frames Recv│ FPS      │ STMin(ms)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
+    printf("│ Stream  │ Pub-ID   │ Frames Recv│ FPS      │ STMin(us)│   Avg (us)  │   P50 (us)  │   P99 (us)  │   Max (us)  │\n");
     printf("├─────────┼──────────┼────────────┼──────────┼──────────┼─────────────┼─────────────┼─────────────┼─────────────┤\n");
 
     for (int i = 0; i < 3; ++i) {
@@ -606,7 +604,7 @@ void PrintStatsSummary(SharedStats* stats, UInt32 duration_sec)
             UInt64 max_lat = latencies.empty() ? 0 : latencies.back();
             
             printf("│ Cam-%d   │ Pub-%d   │ %10lu │ %8.1f │ %8u │ %11lu │ %11lu │ %11lu │ %11lu │\n",
-                   i, p, frames, fps, kSTMinMs, avg, p50, p99, max_lat);
+                   i, p, frames, fps, kSTMinUs, avg, p50, p99, max_lat);
         }
     }
     
@@ -628,21 +626,19 @@ int main(int argc, char* argv[])
     std::vector<std::unique_ptr<SharedMemoryManager>> shm_managers;
     
     for (int i = 0; i < 3; ++i) {
-        auto shm = std::make_unique<SharedMemoryManager>();
-        
         SharedMemoryConfig shm_config{};
         shm_config.max_chunks = kMaxChunks;
         shm_config.chunk_size = kImageSize;
         shm_config.ipc_type = IPCType::kMPMC;
-        
-        auto result = shm->Create(kSharedMemoryPath[i], shm_config);
-        if (!result) {
+
+        auto shm_res = IPCFactory::CreateSHM(kSharedMemoryPath[i], shm_config);
+        if (!shm_res) {
             fprintf(stderr, "[Main] Failed to create shm %s, error: %d\n", 
-                    kSharedMemoryPath[i], result.Error().Value());
+                    kSharedMemoryPath[i], shm_res.Error().Value());
             return 1;
         }
         printf("[Main] Created shared memory: %s\n", kSharedMemoryPath[i]);
-        shm_managers.push_back(std::move(shm));
+        shm_managers.push_back(std::move(shm_res).Value());
     }
     
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

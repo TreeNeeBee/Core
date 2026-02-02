@@ -1,41 +1,44 @@
-output/*
-build/
-*.pyc
-*.so
+# =============================
+# General
+# =============================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*.swp
+*.swo
 *.sw*
 *.*~
-temp.txt
-deliveries/corba_idl/gen/*
-deliveries/project/*
 *.patch
-build/*/log
-*.bak
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Node/Python
+node_modules/
+dist/
+*.pyc
+
+# =============================
+# IDEs and Editors
+# =============================
 .vscode/
-.markdownlint.json
-toolchain/
+.idea/
 .repo/
-deliveries/project/*
-devices/.BoardConfig.mk
-devices/.BoardConfig.sh
-tools/build/*.pyc
-release/*
-prebuilts/
-sysroot/
-frameworks/
-apps/Utils/ProtocolGen/ota/spider_ota/code_gen
-apps/Utils/ProtocolGen/ota/spider_ota/cur_ota_verno_file
-apps/Utils/ProtocolGen/ota/zebra_ota/code_gen
-apps/Utils/ProtocolGen/ota/zebra_ota/cur_ota_verno_file
-tmp/
-external/TZDetector/shapelib-1.5.0/build/
-tools/quectel_QFirehose/FW_DIR
-log/
-apps/
-deploy/
 
 # =============================
 # CMake & build artifacts
 # =============================
+build/
+build_*/
 _build*/
 cmake-build-*/
 CMakeFiles/
@@ -61,23 +64,11 @@ compile_commands.json
 *.out
 *.app
 
-# Coverage & logs
+# Coverage
 *.gcno
 *.gcda
 *.gcov
-*.log
-
-# IDE/Editor
-.idea/
-.vscode/
-*.code-workspace
-*.swp
-*.swo
-*.*~
 
 # Local env/config
 .env
 .env.*
-
-# Core module local build dirs
-_build_standalone/

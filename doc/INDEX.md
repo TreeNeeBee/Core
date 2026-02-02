@@ -1,6 +1,6 @@
 # Core模块文档索引
 
-📚 **最后更新**: 2026-02-01
+📚 **最后更新**: 2026-02-02
 
 ---
 
@@ -9,43 +9,22 @@
 ### 主要指南
 - [README.md](../README.md) - 项目概览和特性
 - [README_CN.md](../README_CN.md) - 中文版README  
-- [BUILDING.md](../BUILDING.md) - 编译和构建指南
 - [CHANGES.md](../CHANGES.md) - 变更日志
-- [RELEASE_NOTES.md](../RELEASE_NOTES.md) - 发布说明
-- [RELEASE_NOTES_CN.md](../RELEASE_NOTES_CN.md) - 中文版发布说明
 
 ### 配置和使用
 - [HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md) - 配置文件安全加密
-- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) - IPC 零拷贝设计架构
+- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) - IPC 零拷贝设计架构 (331KB)
 
 ---
 
 ## 🔬 当前有效的技术文档
 
-### SharedMemory设计 (iceoryx2架构)
-- [LOCK_FREE_ICEORYX2_IMPLEMENTATION.md](LOCK_FREE_ICEORYX2_IMPLEMENTATION.md) - Lock-free iceoryx2实现
-- [ICEORYX2_COMPLETE_IMPLEMENTATION.md](ICEORYX2_COMPLETE_IMPLEMENTATION.md) - 完整实现文档
-- [SHARED_MEMORY_CONCURRENCY_ANALYSIS.md](SHARED_MEMORY_CONCURRENCY_ANALYSIS.md) - 并发分析
-- [SHM_ARCHITECTURE_ANALYSIS.md](SHM_ARCHITECTURE_ANALYSIS.md) - 架构分析
-
 ### 性能和优化
-- [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) - 性能基准测试报告
-- [ICEORYX2_VS_EPOLL.md](ICEORYX2_VS_EPOLL.md) - iceoryx2 vs epoll对比
-- [JEMALLOC_VS_MALLOC_COMPARISON.md](JEMALLOC_VS_MALLOC_COMPARISON.md) - jemalloc性能对比
-
-### IPC 设计
-- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) - IPC 零拷贝设计架构
-- [SHARED_MEMORY_CONCURRENCY_ANALYSIS.md](SHARED_MEMORY_CONCURRENCY_ANALYSIS.md) - 共享内存并发分析
-
-### Dual-Counter机制
-- [DUAL_COUNTER_ANALYSIS.md](DUAL_COUNTER_ANALYSIS.md) - Dual-counter分析
-- [DUAL_COUNTER_PROGRESS.md](DUAL_COUNTER_PROGRESS.md) - 实现进度
-- [DUAL_COUNTER_REFACTORING_PLAN.md](DUAL_COUNTER_REFACTORING_PLAN.md) - 重构计划
+- [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) - 性能基准测试报告 (6.7KB)
+- [ICEORYX2_VS_EPOLL.md](ICEORYX2_VS_EPOLL.md) - iceoryx2 vs epoll对比 (4.2KB)
 
 ### AUTOSAR合规
-- [AUTOSAR_REFACTORING_PLAN.md](AUTOSAR_REFACTORING_PLAN.md) - AUTOSAR重构计划
-- [R24_11_FEATURES_COMPLETION_REPORT.md](R24_11_FEATURES_COMPLETION_REPORT.md) - R24-11特性报告
-- [PHASE1_COMPLETION_REPORT.md](PHASE1_COMPLETION_REPORT.md) - Phase 1完成报告
+- [AUTOSAR_REFACTORING_PLAN.md](AUTOSAR_REFACTORING_PLAN.md) - AUTOSAR重构计划 (12.9KB)
 - [AUTOSAR_AP_SWS_Core.pdf](AUTOSAR_AP_SWS_Core.pdf) - AUTOSAR AP标准文档
 
 ---
@@ -54,49 +33,56 @@
 
 ### 最新报告 (2025-12-30)
 - [reports/CODE_CLEANUP_REPORT.md](reports/CODE_CLEANUP_REPORT.md) - 代码清理报告
-  - 删除902行冗余代码
-  - 移除4个重复测试文件
-  - 清理所有DEBUG输出
+  - 删除902行冗余代码，移除4个重复测试文件，清理所有DEBUG输出
 
 - [reports/ID_HANDLE_VALIDATION_SUMMARY.md](reports/ID_HANDLE_VALIDATION_SUMMARY.md) - ID-based Handle验证
-  - iceoryx2风格的Handle机制
-  - 100%测试通过率
-  - 解决了指针失效问题
+  - iceoryx2风格的Handle机制，100%测试通过率，解决指针失效问题
 
 - [reports/TEST_STRUCTURE_CLEANUP.md](reports/TEST_STRUCTURE_CLEANUP.md) - 测试结构梳理
-  - 8个核心测试保留
-  - 职责清晰分离
-
-### 运行状态
-- [current/OVERNIGHT_TEST_STATUS.md](current/OVERNIGHT_TEST_STATUS.md) - 长期稳定性测试状态
+  - 8个核心测试保留，职责清晰分离
 
 ---
 
-## 🗄️ 归档文档
+## 🗄️ 归档文档 (archive/)
 
-### 历史重构文档 (archive/old_refactoring/)
+### 历史重构文档 (old_refactoring/)
 
 已完成的重构项目（2024-2025）：
 
-#### Dual-Counter架构演进
-- [DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md](archive/old_refactoring/DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md)
-- [DUAL_COUNTER_REFACTORING_SUMMARY.md](archive/old_refactoring/DUAL_COUNTER_REFACTORING_SUMMARY.md)
+- [archive/old_refactoring/DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md](archive/old_refactoring/DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md) - Dual-Counter完成报告
+- [archive/old_refactoring/DUAL_COUNTER_REFACTORING_SUMMARY.md](archive/old_refactoring/DUAL_COUNTER_REFACTORING_SUMMARY.md) - Dual-Counter总结
+- [archive/old_refactoring/ICEORYX2_ARCHITECTURE_FIX.md](archive/old_refactoring/ICEORYX2_ARCHITECTURE_FIX.md) - iceoryx2架构修复
+- [archive/old_refactoring/ICEORYX2_REFACTORING_SUMMARY.md](archive/old_refactoring/ICEORYX2_REFACTORING_SUMMARY.md) - iceoryx2重构总结
+- [archive/old_refactoring/LOCKFREE_OPTIMIZATION_REPORT.md](archive/old_refactoring/LOCKFREE_OPTIMIZATION_REPORT.md) - Lock-Free优化报告
+- [archive/old_refactoring/MEMORY_REFACTORING.md](archive/old_refactoring/MEMORY_REFACTORING.md) - 内存管理重构
+- [archive/old_refactoring/CRITICAL_RESOURCE_ANALYSIS.md](archive/old_refactoring/CRITICAL_RESOURCE_ANALYSIS.md) - 关键资源分析
 
-#### iceoryx2迁移
-- [ICEORYX2_ARCHITECTURE_FIX.md](archive/old_refactoring/ICEORYX2_ARCHITECTURE_FIX.md)
-- [ICEORYX2_REFACTORING_SUMMARY.md](archive/old_refactoring/ICEORYX2_REFACTORING_SUMMARY.md)
+### 配置和内存管理
+- [archive/memory_alignment_audit.md](archive/memory_alignment_audit.md) - 内存对齐审计 (14KB)
+- [archive/alignment_optimization_summary.md](archive/alignment_optimization_summary.md) - 对齐优化总结 (7.1KB)
+- [archive/OLD_MEMORY_POOL_QUICK_START.md](archive/OLD_MEMORY_POOL_QUICK_START.md) - 旧版内存池快速指南
+- [archive/JEMALLOC_VERIFICATION.md](archive/JEMALLOC_VERIFICATION.md) - jemalloc验证
 
-#### Lock-Free优化
-- [LOCKFREE_OPTIMIZATION_REPORT.md](archive/old_refactoring/LOCKFREE_OPTIMIZATION_REPORT.md)
+### AUTOSAR与标准合规
+- [archive/ERRORDOMAIN_AUTOSAR_COMPLIANCE.md](archive/ERRORDOMAIN_AUTOSAR_COMPLIANCE.md) - ErrorDomain合规 (9.8KB)
+- [archive/ERROR_DOMAIN_LIFECYCLE_IMPROVEMENT.md](archive/ERROR_DOMAIN_LIFECYCLE_IMPROVEMENT.md) - ErrorDomain生命周期改进 (7.0KB)
+- [archive/AUTOSAR_UTILITIES_SUMMARY.md](archive/AUTOSAR_UTILITIES_SUMMARY.md) - AUTOSAR工具类总结 (4.6KB)
 
-#### 内存管理演进
-- [MEMORY_REFACTORING.md](archive/old_refactoring/MEMORY_REFACTORING.md)
-- [CRITICAL_RESOURCE_ANALYSIS.md](archive/old_refactoring/CRITICAL_RESOURCE_ANALYSIS.md)
+### 集成和测试
+- [archive/IMP_OPERATOR_NEW_TEST_REPORT.md](archive/IMP_OPERATOR_NEW_TEST_REPORT.md) - IMP_OPERATOR_NEW测试报告 (6.9KB)
+- [archive/IMP_OPERATOR_NEW_SUMMARY.md](archive/IMP_OPERATOR_NEW_SUMMARY.md) - IMP_OPERATOR_NEW集成总结 (5.6KB)
+- [archive/CAbort_Refactoring_Summary.md](archive/CAbort_Refactoring_Summary.md) - CAbort重构总结
 
-这些文档记录了SharedMemoryAllocator从最初的设计到当前**ID-based Handle机制**的完整演进过程。
+### 阶段完成和分析
+- [archive/Phase1_COMPLETION_REPORT.md](archive/Phase1_COMPLETION_REPORT.md) - Phase 1完成报告 (11KB)
+- [archive/IMPROVEMENT_PROPOSAL.md](archive/IMPROVEMENT_PROPOSAL.md) - 改进提案 (15KB)
 
-### 其他归档
-- [archive/](archive/) - 更多历史文档和设计草案
+### 当前状态监控
+- [archive/current/OVERNIGHT_TEST_STATUS.md](archive/current/OVERNIGHT_TEST_STATUS.md) - 长期稳定性测试状态
+- [archive/current/MEMORY_OPTIONS.md](archive/current/MEMORY_OPTIONS.md) - 内存选项配置
+
+### 归档说明
+完整的归档文档列表和管理规则请参见：[archive/README.md](archive/README.md)
 
 ---
 
@@ -105,34 +91,29 @@
 ```
 Core/
 ├── README.md                    # 主文档
-├── BUILDING.md                  # 编译指南
+├── README_CN.md                # 中文版
 ├── CHANGES.md                   # 变更日志
-├── RELEASE_NOTES.md            # 发布说明
 │
 └── doc/                         # 文档目录
-    ├── INDEX.md                 # 📍 本文档
+    ├── INDEX.md                 # 📍 本文档（文档导航入口）
     │
-    ├── current/                 # ✅ 当前有效配置和状态
-    │   └── OVERNIGHT_TEST_STATUS.md     # 测试状态
+    ├── *.md                     # 当前有效的技术文档
+    │   ├── AUTOSAR_REFACTORING_PLAN.md
+    │   ├── BENCHMARK_REPORT.md
+    │   ├── HMAC_SECRET_CONFIG.md
+    │   ├── ICEORYX2_VS_EPOLL.md
+    │   └── IPC_DESIGN_ARCHITECTURE.md
     │
-    ├── reports/                 # 📊 测试和清理报告 (2025-12-30)
+    ├── reports/                 # 📊 测试和清理报告
     │   ├── CODE_CLEANUP_REPORT.md
     │   ├── ID_HANDLE_VALIDATION_SUMMARY.md
     │   └── TEST_STRUCTURE_CLEANUP.md
     │
-    ├── archive/                 # 🗄️ 归档文档
-    │   └── old_refactoring/     # 历史重构记录
-    │       ├── DUAL_COUNTER_*.md
-    │       ├── ICEORYX2_*.md
-    │       ├── LOCKFREE_*.md
-    │       ├── MEMORY_*.md
-    │       └── CRITICAL_*.md
-    │
-    └── [设计文档]               # 当前有效的设计文档
-        ├── LOCK_FREE_ICEORYX2_IMPLEMENTATION.md
-        ├── SHARED_MEMORY_CONCURRENCY_ANALYSIS.md
-        ├── BENCHMARK_REPORT.md
-        └── ...
+    └── archive/                 # 🗄️ 归档文档
+        ├── README.md            # 归档说明
+        ├── current/             # 当前监控状态
+        ├── old_refactoring/     # 历史重构记录
+        └── *.md                 # 其他归档文档
 ```
 
 ---
@@ -142,31 +123,28 @@ Core/
 ### 我想...
 
 **了解Core模块的基本功能？**  
-→ [README.md](../README.md)
-
-**开始编译和使用？**  
-→ [BUILDING.md](../BUILDING.md) 和 [README.md](../README.md)
+→ [README.md](../README.md) / [README_CN.md](../README_CN.md)
 
 **了解IPC零拷贝设计？**  
 → [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md)
 
-**了解SharedMemory的设计？**  
-→ [LOCK_FREE_ICEORYX2_IMPLEMENTATION.md](LOCK_FREE_ICEORYX2_IMPLEMENTATION.md)
+**查看性能基准测试？**  
+→ [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md)
 
-**查看最新的代码变更？**  
+**了解最新代码清理？**  
 → [reports/CODE_CLEANUP_REPORT.md](reports/CODE_CLEANUP_REPORT.md)
 
 **了解ID-based Handle机制？**  
 → [reports/ID_HANDLE_VALIDATION_SUMMARY.md](reports/ID_HANDLE_VALIDATION_SUMMARY.md)
 
-**查看测试结构？**  
-→ [reports/TEST_STRUCTURE_CLEANUP.md](reports/TEST_STRUCTURE_CLEANUP.md)
+**了解配置文件加密？**  
+→ [HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md)
+
+**查看AUTOSAR重构计划？**  
+→ [AUTOSAR_REFACTORING_PLAN.md](AUTOSAR_REFACTORING_PLAN.md)
 
 **了解历史演进？**  
-→ [archive/old_refactoring/](archive/old_refactoring/)
-
-**查看长期测试状态？**  
-→ [current/OVERNIGHT_TEST_STATUS.md](current/OVERNIGHT_TEST_STATUS.md)
+→ [archive/old_refactoring/](archive/old_refactoring/) / [archive/README.md](archive/README.md)
 
 ---
 

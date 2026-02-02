@@ -11,11 +11,24 @@ Archived documents serve as:
 
 ## Archived Documents
 
+### Historical Refactoring (old_refactoring/)
+| File | Description |
+|------|-------------|
+| `DUAL_COUNTER_REFACTORING_COMPLETION_REPORT.md` | Dual-Counter重构完成报告 |
+| `DUAL_COUNTER_REFACTORING_SUMMARY.md` | Dual-Counter架构总结 |
+| `ICEORYX2_ARCHITECTURE_FIX.md` | iceoryx2架构修复 |
+| `ICEORYX2_REFACTORING_SUMMARY.md` | iceoryx2重构总结 |
+| `LOCKFREE_OPTIMIZATION_REPORT.md` | Lock-Free优化报告 |
+| `MEMORY_REFACTORING.md` | 内存管理重构 |
+| `CRITICAL_RESOURCE_ANALYSIS.md` | 关键资源分析 |
+
 ### Configuration & Memory Management
 | File | Size | Description |
 |------|------|-------------|
 | `memory_alignment_audit.md` | 14K | Comprehensive memory alignment analysis |
 | `alignment_optimization_summary.md` | 7.1K | Alignment optimization implementation |
+| `OLD_MEMORY_POOL_QUICK_START.md` | - | 旧版内存池快速指南 |
+| `JEMALLOC_VERIFICATION.md` | - | jemalloc验证 |
 
 ### AUTOSAR & Standards Compliance
 | File | Size | Description |
@@ -29,12 +42,19 @@ Archived documents serve as:
 |------|------|-------------|
 | `IMP_OPERATOR_NEW_TEST_REPORT.md` | 6.9K | Comprehensive test results and verification |
 | `IMP_OPERATOR_NEW_SUMMARY.md` | 5.6K | IMP_OPERATOR_NEW integration approach |
+| `CAbort_Refactoring_Summary.md` | - | CAbort重构总结 |
 
 ### Phase Completions & Analysis
 | File | Size | Description |
 |------|------|-------------|
 | `IMPROVEMENT_PROPOSAL.md` | 15K | Code analysis and optimization proposals |
 | `Phase1_COMPLETION_REPORT.md` | 11K | C++17 upgrade and Result optimization completion |
+
+### Current Monitoring (current/)
+| File | Description |
+|------|-------------|
+| `OVERNIGHT_TEST_STATUS.md` | 长期稳定性测试状态 |
+| `MEMORY_OPTIONS.md` | 内存选项配置 |
 
 ## Cleanup History
 
@@ -63,15 +83,15 @@ Documents are **deleted** when:
 ## Active Documentation
 
 For current documentation, see:
-- [../README.md](../README.md) - Core module overview
-- [../QUICK_START.md](../QUICK_START.md) - Quick start guide
-- [../HMAC_SECRET_CONFIG.md](../HMAC_SECRET_CONFIG.md) - Security configuration
-- [../INDEX.md](../INDEX.md) - Documentation index
-- [../../test/README.md](../../test/README.md) - Test organization
-- [../../tools/README.md](../../tools/README.md) - Configuration editor tool
+- [../INDEX.md](../INDEX.md) - 📍 文档导航入口
+- [../README.md](../../README.md) - Core模块概览
+- [../README_CN.md](../../README_CN.md) - 中文版README
+- [../HMAC_SECRET_CONFIG.md](../HMAC_SECRET_CONFIG.md) - 配置文件安全
+- [../IPC_DESIGN_ARCHITECTURE.md](../IPC_DESIGN_ARCHITECTURE.md) - IPC设计架构
+- [../reports/](../reports/) - 最新测试报告
 
 ---
 
-**Archive Statistics**: 9 documents (36.9K retained)  
-**Last Updated**: 2025-11-03  
-**Cleanup**: 6 files removed (~44K pruned)
+**Archive Statistics**: 20+ documents  
+**Last Updated**: 2026-02-02  
+**Purpose**: Historical reference and design evolution tracking

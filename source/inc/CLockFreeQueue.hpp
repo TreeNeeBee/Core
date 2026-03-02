@@ -59,46 +59,46 @@ namespace core {
         using Node = QueueNode<T>;  // 前文定义
         using NodeAlloc = typename AllocTraits::template rebind_alloc<Node>;
 
-        std::atomic<Node*> head_;
-        std::atomic<Node*> tail_;
-        NodeAlloc node_alloc_;  // Allocator instance
+        std::atomic<Node*> m_pHead;
+        std::atomic<Node*> m_pTail;
+        NodeAlloc m_nodeAlloc;  // Allocator instance
 
     public:
         explicit LockFreeQueue(const Alloc& alloc = Alloc())
-            : node_alloc_(alloc)
+            : m_nodeAlloc(alloc)
         {
-            Node* sentinel = node_alloc_.allocate(1);
+            Node* sentinel = m_nodeAlloc.allocate(1);
             new (sentinel) Node();  // Placement new to construct
             sentinel->next.store(nullptr, std::memory_order_relaxed);
             sentinel->version.store(0, std::memory_order_relaxed);
-            head_.store(sentinel, std::memory_order_release);
-            tail_.store(sentinel, std::memory_order_release);
+            m_pHead.store(sentinel, std::memory_order_release);
+            m_pTail.store(sentinel, std::memory_order_release);
         }
 
         ~LockFreeQueue()
         {
-            Node* cur = head_.load(std::memory_order_acquire);
+            Node* cur = m_pHead.load(std::memory_order_acquire);
             while (cur) {
                 Node* next = cur->next.load(std::memory_order_relaxed);
                 cur->~Node();  // Explicit destructor call
-                node_alloc_.deallocate(cur, 1);
+                m_nodeAlloc.deallocate(cur, 1);
                 cur = next;
             }
         }
 
-        void enqueue(const T& val)
+        void Enqueue(const T& val)
         {
-            Node* new_node = node_alloc_.allocate(1);
+            Node* new_node = m_nodeAlloc.allocate(1);
             new (new_node) Node(val);
             new_node->next.store(nullptr, std::memory_order_relaxed);
 
             int retry_count = 0;
             while (true) {
-                Node* old_tail = tail_.load(std::memory_order_acquire);
+                Node* old_tail = m_pTail.load(std::memory_order_acquire);
                 Node* old_next = old_tail->next.load(std::memory_order_acquire);
                 
                 // Check if tail is still consistent
-                if (old_tail == tail_.load(std::memory_order_acquire)) {
+                if (old_tail == m_pTail.load(std::memory_order_acquire)) {
                     // Was tail pointing to the last node?
                     if (old_next == nullptr) {
                         // Try to link new node at the end
@@ -108,14 +108,14 @@ namespace core {
                             // Successfully enqueued, try to swing tail
                             MagicType old_version = old_tail->version.load(std::memory_order_relaxed);
                             new_node->version.store(old_version + 1, std::memory_order_relaxed);
-                            tail_.compare_exchange_weak(old_tail, new_node,
+                            m_pTail.compare_exchange_weak(old_tail, new_node,
                                                        std::memory_order_release,
                                                        std::memory_order_relaxed);
                             return;
                         }
                     } else {
                         // Tail was not pointing to the last node, help advance it
-                        tail_.compare_exchange_weak(old_tail, old_next,
+                        m_pTail.compare_exchange_weak(old_tail, old_next,
                                                    std::memory_order_release,
                                                    std::memory_order_relaxed);
                     }
@@ -128,16 +128,16 @@ namespace core {
             }
         }
 
-        bool dequeue(T& val)
+        Bool Dequeue(T& val)
         {
             int retry_count = 0;
             while (true) {
-                Node* old_head = head_.load(std::memory_order_acquire);
-                Node* old_tail = tail_.load(std::memory_order_acquire);
+                Node* old_head = m_pHead.load(std::memory_order_acquire);
+                Node* old_tail = m_pTail.load(std::memory_order_acquire);
                 Node* next = old_head->next.load(std::memory_order_acquire);
                 
                 // Check if head is still consistent
-                if (old_head == head_.load(std::memory_order_acquire)) {
+                if (old_head == m_pHead.load(std::memory_order_acquire)) {
                     // Is queue empty or tail falling behind?
                     if (old_head == old_tail) {
                         // Is queue empty?
@@ -145,7 +145,7 @@ namespace core {
                             return false;  // Queue is empty
                         }
                         // Tail is falling behind, help advance it
-                        tail_.compare_exchange_weak(old_tail, next,
+                        m_pTail.compare_exchange_weak(old_tail, next,
                                                    std::memory_order_release,
                                                    std::memory_order_relaxed);
                     } else {
@@ -157,12 +157,12 @@ namespace core {
                         val = next->data;
                         
                         // Try to swing head to the next node
-                        if (head_.compare_exchange_weak(old_head, next,
+                        if (m_pHead.compare_exchange_weak(old_head, next,
                                                        std::memory_order_release,
                                                        std::memory_order_relaxed)) {
                             // Successfully dequeued, reclaim old dummy node
                             old_head->~Node();
-                            node_alloc_.deallocate(old_head, 1);
+                            m_nodeAlloc.deallocate(old_head, 1);
                             return true;
                         }
                     }
@@ -176,10 +176,10 @@ namespace core {
         }
         
         // Check if queue is empty (not thread-safe for precise state)
-        bool empty() const
+        Bool Empty() const
         {
-            Node* h = head_.load(std::memory_order_acquire);
-            Node* t = tail_.load(std::memory_order_acquire);
+            Node* h = m_pHead.load(std::memory_order_acquire);
+            Node* t = m_pTail.load(std::memory_order_acquire);
             return h == t && h->next.load(std::memory_order_relaxed) == nullptr;
         }
     };

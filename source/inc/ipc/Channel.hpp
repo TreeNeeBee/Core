@@ -47,14 +47,14 @@ namespace ipc
          * @brief Default constructor (invalid channel)
          */
         Channel() noexcept
-            : head_(nullptr)
-            , tail_(nullptr)
-            , waitset_(nullptr)
-            , buffer_(nullptr)
-            , capacity_(0)
-            , active_(nullptr)
-            , stmin_(nullptr)
-            , mutex_(nullptr)
+            : m_pHead(nullptr)
+            , m_pTail(nullptr)
+            , m_pWaitset(nullptr)
+            , m_pBuffer(nullptr)
+            , m_iCapacity(0)
+            , m_pActive(nullptr)
+            , m_pSTmin(nullptr)
+            , m_pMutex(nullptr)
         {
         }
         
@@ -77,14 +77,14 @@ namespace ipc
                 Atomic<Bool>* active = nullptr,
                 Atomic<UInt16>* stmin = nullptr,
                 Atomic<Bool>* mutex = nullptr) noexcept
-            : head_(head)
-            , tail_(tail)
-            , waitset_(waitset)
-            , buffer_(buffer)
-            , capacity_(capacity)
-            , active_(active)
-            , stmin_(stmin)
-            , mutex_(mutex)
+            : m_pHead(head)
+            , m_pTail(tail)
+            , m_pWaitset(waitset)
+            , m_pBuffer(buffer)
+            , m_iCapacity(capacity)
+            , m_pActive(active)
+            , m_pSTmin(stmin)
+            , m_pMutex(mutex)
         {
             ;
         }
@@ -102,14 +102,14 @@ namespace ipc
          * @brief Move constructor
          */
         Channel(Channel&& other) noexcept
-            : head_(other.head_)
-            , tail_(other.tail_)
-            , waitset_(other.waitset_)
-            , buffer_(other.buffer_)
-            , capacity_(other.capacity_)
-            , active_(other.active_)
-            , stmin_(other.stmin_)
-            , mutex_(other.mutex_)
+            : m_pHead(other.m_pHead)
+            , m_pTail(other.m_pTail)
+            , m_pWaitset(other.m_pWaitset)
+            , m_pBuffer(other.m_pBuffer)
+            , m_iCapacity(other.m_iCapacity)
+            , m_pActive(other.m_pActive)
+            , m_pSTmin(other.m_pSTmin)
+            , m_pMutex(other.m_pMutex)
         {
             other.Reset();
         }
@@ -120,14 +120,14 @@ namespace ipc
         Channel& operator=(Channel&& other) noexcept
         {
             if (this != &other) {
-                head_ = other.head_;
-                tail_ = other.tail_;
-                waitset_ = other.waitset_;
-                buffer_ = other.buffer_;
-                capacity_ = other.capacity_;
-                active_ = other.active_;
-                stmin_ = other.stmin_;
-                mutex_ = other.mutex_;
+                m_pHead = other.m_pHead;
+                m_pTail = other.m_pTail;
+                m_pWaitset = other.m_pWaitset;
+                m_pBuffer = other.m_pBuffer;
+                m_iCapacity = other.m_iCapacity;
+                m_pActive = other.m_pActive;
+                m_pSTmin = other.m_pSTmin;
+                m_pMutex = other.m_pMutex;
                 
                 other.Reset();
             }
@@ -136,14 +136,14 @@ namespace ipc
 
         void Reset() noexcept
         {
-            head_ = nullptr;
-            tail_ = nullptr;
-            waitset_ = nullptr;
-            buffer_ = nullptr;
-            capacity_ = 0;
-            active_ = nullptr;
-            stmin_ = nullptr;
-            mutex_ = nullptr;
+            m_pHead = nullptr;
+            m_pTail = nullptr;
+            m_pWaitset = nullptr;
+            m_pBuffer = nullptr;
+            m_iCapacity = 0;
+            m_pActive = nullptr;
+            m_pSTmin = nullptr;
+            m_pMutex = nullptr;
         }
         
         /**
@@ -152,10 +152,10 @@ namespace ipc
          */
         Bool IsValid() const noexcept
         {
-            return head_ != nullptr && 
-                   tail_ != nullptr && 
-                   buffer_ != nullptr &&
-                   capacity_ > 0;
+            return m_pHead != nullptr && 
+                   m_pTail != nullptr && 
+                   m_pBuffer != nullptr &&
+                   m_iCapacity > 0;
         }
         
         /**
@@ -168,8 +168,8 @@ namespace ipc
                 return true;
             }
             
-            UInt16 head = head_->load(std::memory_order_relaxed);
-            UInt16 tail = tail_->load(std::memory_order_acquire);
+            UInt16 head = m_pHead->load(std::memory_order_relaxed);
+            UInt16 tail = m_pTail->load(std::memory_order_acquire);
             
             return head == tail;
         }
@@ -184,9 +184,9 @@ namespace ipc
                 return true;
             }
             
-            UInt16 tail = tail_->load(std::memory_order_relaxed);
-            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (capacity_ - 1));
-            UInt16 head = head_->load(std::memory_order_acquire);
+            UInt16 tail = m_pTail->load(std::memory_order_relaxed);
+            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (m_iCapacity - 1));
+            UInt16 head = m_pHead->load(std::memory_order_acquire);
             
             return next_tail == head;
         }
@@ -202,10 +202,10 @@ namespace ipc
                 return 0;
             }
             
-            UInt16 head = head_->load(std::memory_order_relaxed);
-            UInt16 tail = tail_->load(std::memory_order_relaxed);
+            UInt16 head = m_pHead->load(std::memory_order_relaxed);
+            UInt16 tail = m_pTail->load(std::memory_order_relaxed);
             
-            return static_cast<UInt32>((tail - head) & (capacity_ - 1));
+            return static_cast<UInt32>((tail - head) & (m_iCapacity - 1));
         }
         
         /**
@@ -214,7 +214,7 @@ namespace ipc
          */
         UInt16 GetCapacity() const noexcept
         {
-            return capacity_;
+            return m_iCapacity;
         }
         
         /**
@@ -223,10 +223,10 @@ namespace ipc
          */
         UInt32 GetWaitsetFlags() const noexcept
         {
-            if (!IsValid() || waitset_ == nullptr) {
+            if (!IsValid() || m_pWaitset == nullptr) {
                 return EventFlag::kNone;
             }
-            return waitset_->load(std::memory_order_acquire);
+            return m_pWaitset->load(std::memory_order_acquire);
         }
         
         /**
@@ -235,8 +235,8 @@ namespace ipc
          */
         void SetWaitsetFlags(UInt32 flags) noexcept
         {
-            if (IsValid() && waitset_ != nullptr) {
-                waitset_->store(flags, std::memory_order_release);
+            if (IsValid() && m_pWaitset != nullptr) {
+                m_pWaitset->store(flags, std::memory_order_release);
             }
         }
         
@@ -286,9 +286,9 @@ namespace ipc
          */
         inline Bool IsActive() const noexcept
         {
-            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+            DEF_LAP_ASSERT( m_pActive != nullptr, "Active state pointer is null" );
 
-            return active_->load(std::memory_order_acquire);
+            return m_pActive->load(std::memory_order_acquire);
         }
         
         /**
@@ -297,9 +297,9 @@ namespace ipc
          */
         void SetActive(Bool active) noexcept
         {
-            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+            DEF_LAP_ASSERT( m_pActive != nullptr, "Active state pointer is null" );
 
-            active_->store(active, std::memory_order_release);
+            m_pActive->store(active, std::memory_order_release);
         }
         
         /**
@@ -308,9 +308,9 @@ namespace ipc
          */
         inline UInt16 GetSTMin() const noexcept
         {
-            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+            DEF_LAP_ASSERT( m_pActive != nullptr, "Active state pointer is null" );
 
-            return stmin_->load(std::memory_order_acquire);
+            return m_pSTmin->load(std::memory_order_acquire);
         }
         
         /**
@@ -319,9 +319,9 @@ namespace ipc
          */
         void SetSTMin(UInt16 stmin) noexcept
         {
-            DEF_LAP_ASSERT( active_ != nullptr, "Active state pointer is null" );
+            DEF_LAP_ASSERT( m_pActive != nullptr, "Active state pointer is null" );
 
-            stmin_->store(stmin, std::memory_order_release);
+            m_pSTmin->store(stmin, std::memory_order_release);
         }
         
         /**
@@ -331,10 +331,10 @@ namespace ipc
          */
         inline Bool TryLock() noexcept
         {
-            DEF_LAP_ASSERT( mutex_ != nullptr, "Mutex pointer is null" );
+            DEF_LAP_ASSERT( m_pMutex != nullptr, "Mutex pointer is null" );
             
             Bool expected = false;
-            return mutex_->compare_exchange_strong(expected, true, 
+            return m_pMutex->compare_exchange_strong(expected, true, 
                                                   std::memory_order_acquire,
                                                   std::memory_order_relaxed);
         }
@@ -345,20 +345,20 @@ namespace ipc
          */
         inline void Unlock() noexcept
         {
-            DEF_LAP_ASSERT( mutex_ != nullptr, "Mutex pointer is null" );
+            DEF_LAP_ASSERT( m_pMutex != nullptr, "Mutex pointer is null" );
             
-            mutex_->store(false, std::memory_order_release);
+            m_pMutex->store(false, std::memory_order_release);
         }
 
     protected:
-        Atomic<UInt16>*     head_;      ///< Consumer index pointer
-        Atomic<UInt16>*     tail_;      ///< Producer index pointer
-        Atomic<UInt32>*     waitset_;   ///< Event flags pointer
-        T*                  buffer_;    ///< Ring buffer storage pointer
-        UInt16              capacity_;  ///< Buffer capacity (power of 2)
-        Atomic<Bool>*       active_;    ///< Channel active state pointer (in shared memory)
-        Atomic<UInt16>*     stmin_;     ///< STMin pointer (minimum send interval in microseconds, in shared memory)
-        Atomic<Bool>*       mutex_;     ///< Mutex for channel synchronization (optional, in shared memory)
+        Atomic<UInt16>*     m_pHead;      ///< Consumer index pointer
+        Atomic<UInt16>*     m_pTail;      ///< Producer index pointer
+        Atomic<UInt32>*     m_pWaitset;   ///< Event flags pointer
+        T*                  m_pBuffer;    ///< Ring buffer storage pointer
+        UInt16              m_iCapacity;  ///< Buffer capacity (power of 2)
+        Atomic<Bool>*       m_pActive;    ///< Channel active state pointer (in shared memory)
+        Atomic<UInt16>*     m_pSTmin;     ///< STMin pointer (minimum send interval in microseconds, in shared memory)
+        Atomic<Bool>*       m_pMutex;     ///< Mutex for channel synchronization (optional, in shared memory)
     };
     
     /**
@@ -448,25 +448,25 @@ namespace ipc
                 return Result<void>(MakeErrorCode(CoreErrc::kChannelInvalid));
             }
             
-            UInt16 tail = this->tail_->load(std::memory_order_relaxed);
-            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (this->capacity_ - 1));
+            UInt16 tail = this->m_pTail->load(std::memory_order_relaxed);
+            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (this->m_iCapacity - 1));
             
             // Check if full
-            UInt16 head = this->head_->load(std::memory_order_acquire);
+            UInt16 head = this->m_pHead->load(std::memory_order_acquire);
             if (next_tail == head) {
                 return Result<void>(MakeErrorCode(CoreErrc::kChannelFull));
             }
             
             // Write data
-            this->buffer_[tail] = value;
+            this->m_pBuffer[tail] = value;
             
             // Update tail with release semantics (consumer visibility)
-            this->tail_->store(next_tail, std::memory_order_release);
+            this->m_pTail->store(next_tail, std::memory_order_release);
             
             // Set HasData flag for waitset
-            if (this->waitset_ != nullptr) {
-                UInt32 flags = this->waitset_->load(std::memory_order_relaxed);
-                this->waitset_->store(flags | EventFlag::kHasData, std::memory_order_release);
+            if (this->m_pWaitset != nullptr) {
+                UInt32 flags = this->m_pWaitset->load(std::memory_order_relaxed);
+                this->m_pWaitset->store(flags | EventFlag::kHasData, std::memory_order_release);
             }
             
             return Result<void>();
@@ -500,9 +500,9 @@ namespace ipc
             }
             
             // Try to write once first
-            UInt16 tail = this->tail_->load(std::memory_order_relaxed);
-            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (this->capacity_ - 1));
-            UInt16 head = this->head_->load(std::memory_order_acquire);
+            UInt16 tail = this->m_pTail->load(std::memory_order_relaxed);
+            UInt16 next_tail = static_cast<UInt16>((tail + 1) & (this->m_iCapacity - 1));
+            UInt16 head = this->m_pHead->load(std::memory_order_acquire);
             
             // Check if full
             if (next_tail == head) {
@@ -511,8 +511,8 @@ namespace ipc
                     case PublishPolicy::kOverwrite:
                         // Overwrite oldest: advance head by one
                         {
-                            UInt16 new_head = static_cast<UInt16>((head + 1) & (this->capacity_ - 1));
-                            this->head_->store(new_head, std::memory_order_release);
+                            UInt16 new_head = static_cast<UInt16>((head + 1) & (this->m_iCapacity - 1));
+                            this->m_pHead->store(new_head, std::memory_order_release);
                         }
                         break;
                         
@@ -522,7 +522,7 @@ namespace ipc
                         
                     case PublishPolicy::kBlock:
                         // Block on futex until kHasSpace flag is set
-                        if (this->waitset_ == nullptr) {
+                        if (this->m_pWaitset == nullptr) {
                             return Result<void>(MakeErrorCode(CoreErrc::kChannelWaitsetUnavailable));
                         }
                         
@@ -532,7 +532,7 @@ namespace ipc
                                 : std::chrono::nanoseconds::zero();  // 0 = infinite
                             
                             auto result = WaitSetHelper::WaitForFlags(
-                                this->waitset_,
+                                this->m_pWaitset,
                                 EventFlag::kHasSpace,
                                 timeout
                             );
@@ -542,9 +542,9 @@ namespace ipc
                             }
                             
                             // Retry write after wakeup
-                            tail = this->tail_->load(std::memory_order_relaxed);
-                            next_tail = static_cast<UInt16>((tail + 1) & (this->capacity_ - 1));
-                            head = this->head_->load(std::memory_order_acquire);
+                            tail = this->m_pTail->load(std::memory_order_relaxed);
+                            next_tail = static_cast<UInt16>((tail + 1) & (this->m_iCapacity - 1));
+                            head = this->m_pHead->load(std::memory_order_acquire);
                             
                             if (next_tail == head) {
                                 return Result<void>(MakeErrorCode(CoreErrc::kChannelFull));
@@ -554,7 +554,7 @@ namespace ipc
                         
                     case PublishPolicy::kWait:
                         // Busy-wait polling for kHasSpace flag
-                        if (this->waitset_ == nullptr) {
+                        if (this->m_pWaitset == nullptr) {
                             return Result<void>(MakeErrorCode(CoreErrc::kChannelWaitsetUnavailable));
                         }
                         
@@ -564,7 +564,7 @@ namespace ipc
                                 : std::chrono::nanoseconds(10000000);  // Default 10ms for polling
                             
                             Bool success = WaitSetHelper::PollForFlags(
-                                this->waitset_,
+                                this->m_pWaitset,
                                 EventFlag::kHasSpace,
                                 timeout
                             );
@@ -574,9 +574,9 @@ namespace ipc
                             }
                             
                             // Retry write after polling success
-                            tail = this->tail_->load(std::memory_order_relaxed);
-                            next_tail = static_cast<UInt16>((tail + 1) & (this->capacity_ - 1));
-                            head = this->head_->load(std::memory_order_acquire);
+                            tail = this->m_pTail->load(std::memory_order_relaxed);
+                            next_tail = static_cast<UInt16>((tail + 1) & (this->m_iCapacity - 1));
+                            head = this->m_pHead->load(std::memory_order_acquire);
                             
                             if (next_tail == head) {
                                 return Result<void>(MakeErrorCode(CoreErrc::kChannelFull));
@@ -587,12 +587,12 @@ namespace ipc
             }
             
             // Write data
-            this->buffer_[tail] = value;
-            this->tail_->store(next_tail, std::memory_order_release);
+            this->m_pBuffer[tail] = value;
+            this->m_pTail->store(next_tail, std::memory_order_release);
             
             // Set HasData flag and wake waiters
-            if (this->waitset_ != nullptr) {
-                WaitSetHelper::SetFlagsAndWake(this->waitset_, EventFlag::kHasData);
+            if (this->m_pWaitset != nullptr) {
+                WaitSetHelper::SetFlagsAndWake(this->m_pWaitset, EventFlag::kHasData);
             }
             
             return Result<void>();
@@ -711,30 +711,30 @@ namespace ipc
                 return Result<T>(MakeErrorCode(CoreErrc::kChannelInvalid));
             }
             
-            UInt16 head = this->head_->load(std::memory_order_relaxed);
+            UInt16 head = this->m_pHead->load(std::memory_order_relaxed);
             
             // Check if empty
-            UInt16 tail = this->tail_->load(std::memory_order_acquire);
+            UInt16 tail = this->m_pTail->load(std::memory_order_acquire);
             if (head == tail) {
                 // Clear HasData flag if empty
-                if (this->waitset_ != nullptr) {
-                    UInt32 flags = this->waitset_->load(std::memory_order_relaxed);
-                    this->waitset_->store(flags & ~EventFlag::kHasData, std::memory_order_release);
+                if (this->m_pWaitset != nullptr) {
+                    UInt32 flags = this->m_pWaitset->load(std::memory_order_relaxed);
+                    this->m_pWaitset->store(flags & ~EventFlag::kHasData, std::memory_order_release);
                 }
                 return Result<T>(MakeErrorCode(CoreErrc::kChannelEmpty));
             }
             
             // Read data
-            T value = this->buffer_[head];
+            T value = this->m_pBuffer[head];
             
             // Update head with release semantics (producer visibility)
-            UInt16 next_head = static_cast<UInt16>((head + 1) & (this->capacity_ - 1));
-            this->head_->store(next_head, std::memory_order_release);
+            UInt16 next_head = static_cast<UInt16>((head + 1) & (this->m_iCapacity - 1));
+            this->m_pHead->store(next_head, std::memory_order_release);
             
             // Set HasSpace flag for waitset
-            if (this->waitset_ != nullptr) {
-                UInt32 current_flags = this->waitset_->load(std::memory_order_relaxed);
-                this->waitset_->store(current_flags | EventFlag::kHasSpace, std::memory_order_release);
+            if (this->m_pWaitset != nullptr) {
+                UInt32 current_flags = this->m_pWaitset->load(std::memory_order_relaxed);
+                this->m_pWaitset->store(current_flags | EventFlag::kHasSpace, std::memory_order_release);
             }
             
             return Result<T>(std::move(value));
@@ -766,8 +766,8 @@ namespace ipc
             }
             
             // Try to read once first
-            UInt16 head = this->head_->load(std::memory_order_relaxed);
-            UInt16 tail = this->tail_->load(std::memory_order_acquire);
+            UInt16 head = this->m_pHead->load(std::memory_order_relaxed);
+            UInt16 tail = this->m_pTail->load(std::memory_order_acquire);
             
             // Check if empty
             if (head == tail) {
@@ -776,14 +776,14 @@ namespace ipc
                     case SubscribePolicy::kSkip:
                     case SubscribePolicy::kError:
                         // Clear HasData flag
-                        if (this->waitset_ != nullptr) {
-                            WaitSetHelper::ClearFlags(this->waitset_, EventFlag::kHasData);
+                        if (this->m_pWaitset != nullptr) {
+                            WaitSetHelper::ClearFlags(this->m_pWaitset, EventFlag::kHasData);
                         }
                         return Result<T>(MakeErrorCode(CoreErrc::kChannelEmpty));
                         
                     case SubscribePolicy::kBlock:
                         // Block on futex until kHasData flag is set
-                        if (this->waitset_ == nullptr) {
+                        if (this->m_pWaitset == nullptr) {
                             return Result<T>(MakeErrorCode(CoreErrc::kChannelWaitsetUnavailable));
                         }
                         
@@ -793,7 +793,7 @@ namespace ipc
                                 : std::chrono::nanoseconds::zero();  // 0 = infinite
                             
                             auto result = WaitSetHelper::WaitForFlags(
-                                this->waitset_,
+                                this->m_pWaitset,
                                 EventFlag::kHasData,
                                 timeout
                             );
@@ -803,8 +803,8 @@ namespace ipc
                             }
                             
                             // Retry read after wakeup
-                            head = this->head_->load(std::memory_order_relaxed);
-                            tail = this->tail_->load(std::memory_order_acquire);
+                            head = this->m_pHead->load(std::memory_order_relaxed);
+                            tail = this->m_pTail->load(std::memory_order_acquire);
                             
                             if (head == tail) {
                                 return Result<T>(MakeErrorCode(CoreErrc::kChannelEmpty));
@@ -814,7 +814,7 @@ namespace ipc
                         
                     case SubscribePolicy::kWait:
                         // Busy-wait polling for kHasData flag
-                        if (this->waitset_ == nullptr) {
+                        if (this->m_pWaitset == nullptr) {
                             return Result<T>(MakeErrorCode(CoreErrc::kChannelWaitsetUnavailable));
                         }
                         
@@ -824,7 +824,7 @@ namespace ipc
                                 : std::chrono::nanoseconds( 10000000 );  // Default 10ms for polling
                             
                             Bool success = WaitSetHelper::PollForFlags(
-                                this->waitset_,
+                                this->m_pWaitset,
                                 EventFlag::kHasData,
                                 timeout
                             );
@@ -834,8 +834,8 @@ namespace ipc
                             }
                             
                             // Retry read after polling success
-                            head = this->head_->load(std::memory_order_relaxed);
-                            tail = this->tail_->load(std::memory_order_acquire);
+                            head = this->m_pHead->load(std::memory_order_relaxed);
+                            tail = this->m_pTail->load(std::memory_order_acquire);
                             
                             if (head == tail) {
                                 return Result<T>(MakeErrorCode(CoreErrc::kChannelEmpty));
@@ -846,17 +846,17 @@ namespace ipc
             }
             
             // Read data
-            T value = this->buffer_[head];
-            UInt16 next_head = static_cast<UInt16>((head + 1) & (this->capacity_ - 1));
-            this->head_->store(next_head, std::memory_order_release);
+            T value = this->m_pBuffer[head];
+            UInt16 next_head = static_cast<UInt16>((head + 1) & (this->m_iCapacity - 1));
+            this->m_pHead->store(next_head, std::memory_order_release);
             
             // Set HasSpace flag and wake waiters
-            if (this->waitset_ != nullptr) {
-                WaitSetHelper::SetFlagsAndWake(this->waitset_, EventFlag::kHasSpace);
+            if (this->m_pWaitset != nullptr) {
+                WaitSetHelper::SetFlagsAndWake(this->m_pWaitset, EventFlag::kHasSpace);
                 
                 // Clear HasData if now empty
                 if (next_head == tail) {
-                    WaitSetHelper::ClearFlags(this->waitset_, EventFlag::kHasData);
+                    WaitSetHelper::ClearFlags(this->m_pWaitset, EventFlag::kHasData);
                 }
             }
             
@@ -873,14 +873,14 @@ namespace ipc
                 return {};
             }
             
-            UInt16 head = this->head_->load(std::memory_order_relaxed);
-            UInt16 tail = this->tail_->load(std::memory_order_acquire);
+            UInt16 head = this->m_pHead->load(std::memory_order_relaxed);
+            UInt16 tail = this->m_pTail->load(std::memory_order_acquire);
             
             if (head == tail) {
                 return {};  // Channel empty
             }
             
-            return this->buffer_[head];
+            return this->m_pBuffer[head];
         }
         
         /**

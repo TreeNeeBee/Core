@@ -15,22 +15,22 @@ int main() {
     // AUTOSAR-compliant initialization
     auto initResult = Initialize();
     if (!initResult.HasValue()) {
-        std::cerr << "Failed to initialize Core: " << initResult.Error().Message() << "\n";
+        std::cerr << "Failed to Initialize Core: " << initResult.Error().Message() << "\n";
         return 1;
     }
     
     std::cout << "\n=== ConfigManager Basic Usage Example ===\n\n";
     
     // Get ConfigManager singleton instance
-    ConfigManager& config = ConfigManager::getInstance();
+    ConfigManager& config = ConfigManager::GetInstance();
     
     // ========================================================================
     // 1. Initialize configuration
     // ========================================================================
     std::cout << "1. Initializing configuration...\n";
-    auto configInitResult = config.initialize("example_config.json", true);
+    auto configInitResult = config.Initialize("example_config.json", true);
     if (!configInitResult.HasValue()) {
-        std::cerr << "   Failed to initialize\n";
+        std::cerr << "   Failed to Initialize\n";
         return 1;
     }
     std::cout << "   ✓ Configuration initialized with security enabled\n";
@@ -40,23 +40,23 @@ int main() {
     // ========================================================================
     std::cout << "\n2. Setting configuration values...\n";
     
-    config.setVersion(1);
-    config.setDescription("Example Configuration");
+    config.SetVersion(1);
+    config.SetDescription("Example Configuration");
     
     // Basic types
-    config.setString("app.name", "MyApplication");
-    config.setInt("app.version", 100);
-    config.setBool("app.debug_mode", false);
-    config.setDouble("app.timeout", 30.5);
+    config.SetString("app.name", "MyApplication");
+    config.SetInt("app.version", 100);
+    config.SetBool("app.debug_mode", false);
+    config.SetDouble("app.timeout", 30.5);
     
     // Nested configuration
-    config.setString("database.host", "localhost");
-    config.setInt("database.port", 5432);
-    config.setString("database.name", "mydb");
+    config.SetString("database.host", "localhost");
+    config.SetInt("database.port", 5432);
+    config.SetString("database.name", "mydb");
     
     // Network settings
-    config.setInt("network.max_connections", 100);
-    config.setBool("network.ssl_enabled", true);
+    config.SetInt("network.max_connections", 100);
+    config.SetBool("network.ssl_enabled", true);
     
     std::cout << "   ✓ Configuration values set\n";
     
@@ -65,10 +65,10 @@ int main() {
     // ========================================================================
     std::cout << "\n3. Reading configuration values...\n";
     
-    String appName = config.getString("app.name");
-    Int64 appVersion = config.getInt("app.version");
-    Bool debugMode = config.getBool("app.debug_mode");
-    Double timeout = config.getDouble("app.timeout");
+    String appName = config.GetString("app.name");
+    Int64 appVersion = config.GetInt("app.version");
+    Bool debugMode = config.GetBool("app.debug_mode");
+    Double timeout = config.GetDouble("app.timeout");
     
     std::cout << "   App Name: " << appName << "\n";
     std::cout << "   App Version: " << appVersion << "\n";
@@ -86,11 +86,11 @@ int main() {
     logConfig["file_path"] = "/var/log/app.log";
     logConfig["max_size_mb"] = 100;
     
-    config.setModuleConfigJson("logging", logConfig);
+    config.SetModuleConfigJson("logging", logConfig);
     std::cout << "   ✓ Logging module configured\n";
     
     // Retrieve module config
-    nlohmann::json retrievedLogConfig = config.getModuleConfigJson("logging");
+    nlohmann::json retrievedLogConfig = config.GetModuleConfigJson("logging");
     std::cout << "   Log level: " << retrievedLogConfig["level"] << "\n";
     std::cout << "   Log output: " << retrievedLogConfig["output"] << "\n";
     
@@ -99,11 +99,11 @@ int main() {
     // ========================================================================
     std::cout << "\n5. Checking configuration keys...\n";
     
-    if (config.exists("database.host")) {
-        std::cout << "   ✓ database.host exists\n";
+    if (config.Exists("database.host")) {
+        std::cout << "   ✓ database.host Exists\n";
     }
     
-    if (!config.exists("nonexistent.key")) {
+    if (!config.Exists("nonexistent.key")) {
         std::cout << "   ✓ nonexistent.key does not exist\n";
     }
     
@@ -113,8 +113,8 @@ int main() {
     std::cout << "\n6. Setting update policies...\n";
     
     // Set different update policies for modules
-    config.setModuleUpdatePolicy("logging", ConfigManager::UpdatePolicy::kAlwaysUpdate);
-    config.setModuleUpdatePolicy("database", ConfigManager::UpdatePolicy::kOnChangeUpdate);
+    config.SetModuleUpdatePolicy("logging", ConfigManager::UpdatePolicy::kAlwaysUpdate);
+    config.SetModuleUpdatePolicy("database", ConfigManager::UpdatePolicy::kOnChangeUpdate);
     
     std::cout << "   ✓ Update policies configured\n";
     
@@ -123,7 +123,7 @@ int main() {
     // ========================================================================
     std::cout << "\n7. Exporting configuration...\n";
     
-    String jsonOutput = config.toJson(true);  // pretty print
+    String jsonOutput = config.ToJson(true);  // pretty print
     std::cout << "   Configuration exported (" << jsonOutput.length() << " bytes)\n";
     
     // ========================================================================

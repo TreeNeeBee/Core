@@ -74,6 +74,15 @@ namespace ipc
                                            const SubscriberConfig& config = {} ) noexcept;
         
         /**
+         * @brief Create subscriber from existing shared memory file descriptor
+         * @param shm_fd Shared memory file descriptor
+         * @param config Configuration
+         * @return Result with subscriber or error
+         */
+        static Result< Subscriber > Create( int shm_fd,
+                                           const SubscriberConfig& config = {} ) noexcept;
+         
+        /**
          * @brief Destructor - automatically disconnects
          */
         ~Subscriber() noexcept;
@@ -135,15 +144,6 @@ namespace ipc
          */
         Result< Size > ReceiveFrom( _ReadFunc read_fn, UInt8 channel_id, 
                          SubscribePolicy policy = SubscribePolicy::kBlock ) noexcept;
-
-        /**
-         * @brief Get service name
-         * @return Service name
-         */
-        inline const String& GetShmPath() const noexcept
-        {
-            return shm_path_;
-        }
         
         /**
          * @brief Set event hooks for monitoring
@@ -151,7 +151,7 @@ namespace ipc
          */
         inline void SetEventHooks( SharedHandle<IPCEventHooks> hooks ) noexcept
         {
-            event_hooks_ = std::move(hooks);
+            m_pEventHooks = std::move(hooks);
         }
         
         /**
@@ -160,7 +160,7 @@ namespace ipc
          */
         inline IPCEventHooks* GetEventHooks() const noexcept
         {
-            return event_hooks_.get();
+            return m_pEventHooks.get();
         }
 
         /**
@@ -188,10 +188,12 @@ namespace ipc
 
     private:
         /**
-         * @brief Protected constructor
+         * @brief Private constructor
+         * @param config Configuration
+         * @param shm Shared memory manager
+         * @param allocator Chunk pool allocator
          */
-        Subscriber( const String& shmPath,
-                  const SubscriberConfig& config,
+        Subscriber( const SubscriberConfig& config,
                   UniqueHandle<SharedMemoryManager> shm,
                   UniqueHandle<ChunkPoolAllocator> allocator) noexcept;
 
@@ -200,39 +202,38 @@ namespace ipc
          * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)
          * @param interval_microseconds Scan interval in microseconds
          */
-        void StartScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+        void startScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
         
         /**
          * @brief Stop internal channel scanner thread
          */
-        void StopScanner() noexcept;
+        void stopScanner() noexcept;
 
         /**
         * @brief Internal channel scanner thread
         * @details Periodically scans for active publishers and updates read channels
         */
-        void InnerChannelScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+        void innerChannelScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
 
         /* @brief Update read channels based on active publishers
         * @details Called periodically to refresh the list of active channels
         * - Scans ChannelRegistry for active publishers
-        * - Updates internal read_channels_ vector accordingly
+        * - Updates internal m_readChannels vector accordingly
         */
-        void UpdateReadChannel( UInt64 read_mask ) noexcept;
+        void updateReadChannel( UInt64 read_mask ) noexcept;
 
-        Result< Sample > InnerReceive( UInt8 channel_id, SubscribePolicy policy ) noexcept;
+        Result< Sample > innerReceive( UInt8 channel_id, SubscribePolicy policy ) noexcept;
     
     private:
-        String                              shm_path_;              ///< Shared memory path
-        SubscriberConfig                    config_;                ///< Configuration
-        UniqueHandle<SharedMemoryManager>   shm_;                   ///< Shared memory manager
-        UniqueHandle<ChunkPoolAllocator>    allocator_;             ///< Chunk allocator
-        SharedHandle<IPCEventHooks>         event_hooks_;           ///< Event hooks for monitoring
-        Atomic<Bool>                        is_connected_;          ///< Connection state
-        Atomic<Bool>                        is_running_;            ///< thread running flag
-        std::thread                         scanner_thread_;        ///< Channel scanner thread
-        Atomic<UInt8>                       active_channel_index_;  ///< Active read channel index
-        _MapChannel                         read_channels_[2];      ///< Read channels for this subscriber
+        SubscriberConfig                    m_config;                ///< Configuration
+        UniqueHandle<SharedMemoryManager>   m_pShm;                   ///< Shared memory manager
+        UniqueHandle<ChunkPoolAllocator>    m_pAllocator;             ///< Chunk allocator
+        SharedHandle<IPCEventHooks>         m_pEventHooks;           ///< Event hooks for monitoring
+        Atomic<Bool>                        m_bConnected;          ///< Connection state
+        Atomic<Bool>                        m_bRunning;            ///< thread running flag
+        std::thread                         m_scannerThread;        ///< Channel scanner thread
+        Atomic<UInt8>                       m_iActiveChannelIdx;  ///< Active read channel index
+        _MapChannel                         m_readChannels[2];      ///< Read channels for this subscriber
     };
     
 }  // namespace ipc

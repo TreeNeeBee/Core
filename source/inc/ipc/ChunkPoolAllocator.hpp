@@ -42,15 +42,15 @@ namespace ipc
          * @param control Control block pointer
          */
         ChunkPoolAllocator(void* base_addr, ControlBlock* control) noexcept
-            : base_addr_(base_addr)
-            , control_(control)
-            , chunk_pool_start_(nullptr)
-            , chunk_stride_(0)
+            : m_pBaseAddr(base_addr)
+            , m_pControl(control)
+            , m_pChunkPoolStart(nullptr)
+            , m_iChunkStride(0)
         {
-            if ( base_addr_ && control_ ) {
-                Byte* addr = reinterpret_cast< Byte* >( base_addr_ );
+            if ( m_pBaseAddr && m_pControl ) {
+                Byte* addr = reinterpret_cast< Byte* >( m_pBaseAddr );
                 addr += kChunkPoolOffset;
-                chunk_pool_start_ = reinterpret_cast< ChunkHeader* >(addr);
+                m_pChunkPoolStart = reinterpret_cast< ChunkHeader* >(addr);
             }
         }
         
@@ -93,7 +93,7 @@ namespace ipc
          */
         inline Bool IsExhausted() const noexcept
         {
-            return control_->pool_state.free_list_head.load(std::memory_order_acquire) == kInvalidChunkIndex;
+            return m_pControl->pool_state.free_list_head.load(std::memory_order_acquire) == kInvalidChunkIndex;
         }
         
         /**
@@ -102,7 +102,7 @@ namespace ipc
          */
         inline UInt16 GetAllocatedCount() const noexcept
         {
-            return control_->header.max_chunks - control_->pool_state.remain_count.load(std::memory_order_acquire);
+            return m_pControl->header.max_chunks - m_pControl->pool_state.remain_count.load(std::memory_order_acquire);
         }
         
         /**
@@ -111,7 +111,7 @@ namespace ipc
          */
         inline UInt16 GetMaxChunks() const noexcept
         {
-            return control_->header.max_chunks;
+            return m_pControl->header.max_chunks;
         }
         
     private:
@@ -120,12 +120,12 @@ namespace ipc
          * @param index Chunk index
          * @return Chunk header address
          */
-        inline ChunkHeader* GetChunkAt(UInt16 index) const noexcept;
+        inline ChunkHeader* getChunkAt(UInt16 index) const noexcept;
         
-        void* base_addr_;              ///< Shared memory base address
-        ControlBlock* control_;        ///< Control block
-        ChunkHeader* chunk_pool_start_; ///< First chunk header address
-        UInt64 chunk_stride_;          ///< Cached aligned stride between chunks
+        void* m_pBaseAddr;              ///< Shared memory base address
+        ControlBlock* m_pControl;        ///< Control block
+        ChunkHeader* m_pChunkPoolStart; ///< First chunk header address
+        UInt64 m_iChunkStride;          ///< Cached aligned stride between chunks
     };
     
 }  // namespace ipc

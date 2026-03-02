@@ -28,26 +28,26 @@ namespace lap
 {
 namespace core
 {
-    enum class future_errc : Int32
+    enum class FutureErrc : Int32
     {
-        broken_promise              = 101,
-        future_already_retrieved    = 102,
-        promise_already_satisfied   = 103,
-        no_state                    = 104 
+        kBrokenPromise              = 101,
+        kFutureAlreadyRetrieved     = 102,
+        kPromiseAlreadySatisfied    = 103,
+        kNoState                    = 104 
     };
 
-    inline constexpr const Char* FutureErrMessage( future_errc errCode )
+    inline constexpr const Char* FutureErrMessage( FutureErrc errCode )
     {
-        auto const code = static_cast<future_errc>( errCode );
+        auto const code = static_cast<FutureErrc>( errCode );
 
         switch ( code ) {
-        case future_errc::broken_promise:
+        case FutureErrc::kBrokenPromise:
             return "the asynchronous task abandoned its shared state";
-        case future_errc::future_already_retrieved:
+        case FutureErrc::kFutureAlreadyRetrieved:
             return "the contents of the shared state were already accessed";
-        case future_errc::promise_already_satisfied:
+        case FutureErrc::kPromiseAlreadySatisfied:
             return "attempt to store a value into the shared state twice";
-        case future_errc::no_state:
+        case FutureErrc::kNoState:
             return "attempt to access Promise or Future without an associated state";
         default:
             return "Unknown error";
@@ -65,14 +65,14 @@ namespace core
 
         const Char* what() const noexcept 
         {
-            return FutureErrMessage( static_cast< future_errc > ( Error().Value() ) );
+            return FutureErrMessage( static_cast< FutureErrc > ( Error().Value() ) );
         }
     };
 
     class FutureErrorDomain final : public ErrorDomain 
     {
     public:
-        using Errc          = future_errc;
+        using Errc          = FutureErrc;
         using Exception     = FutureException;
 
     public:
@@ -94,7 +94,7 @@ namespace core
         return g_coreFutureDomain;
     }
 
-    constexpr ErrorCode MakeErrorCode ( future_errc code, ErrorDomain::SupportDataType data = ErrorDomain::SupportDataType() ) noexcept
+    constexpr ErrorCode MakeErrorCode ( FutureErrc code, ErrorDomain::SupportDataType data = ErrorDomain::SupportDataType() ) noexcept
     {
         return { static_cast< ErrorDomain::CodeType >( code ), GetFutureErrorDomain(), data };
     }

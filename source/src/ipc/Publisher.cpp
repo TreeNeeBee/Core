@@ -16,7 +16,7 @@
 #include <cstring>
 #include <chrono>
 #include <thread>
-#include <time.h>
+#include <ctime>
 
 namespace lap
 {
@@ -34,7 +34,7 @@ namespace ipc
                                               const PublisherConfig& config) noexcept
     {
         // Create shared memory manager
-        auto shm = std::make_unique<SharedMemoryManager>();
+        auto shm = MakeUnique< SharedMemoryManager >();
         
         SharedMemoryConfig shm_config{};
         shm_config.max_chunks   = config.max_chunks;
@@ -58,10 +58,10 @@ namespace ipc
             return Result< Publisher >( init_result.Error() );
         }
 
-        auto config_ = config;
+        auto m_config = config;
         while ( true ) {
             // Allocate unique queue index from shared memory control block
-            auto publisher_id_result = ChannelRegistry::RegisterWriteChannel( shm->GetControlBlock(), config_.channel_id );
+            auto publisher_id_result = ChannelRegistry::RegisterWriteChannel( shm->GetControlBlock(), m_config.channel_id );
             if ( DEF_LAP_IF_UNLIKELY( !publisher_id_result ) ) {
                 if ( publisher_id_result.Error() == CoreErrc::kIPCRetry ) {
                     // Retry allocation
@@ -71,40 +71,93 @@ namespace ipc
                     return Result< Publisher >( MakeErrorCode( CoreErrc::kResourceExhausted ) );
                 }
             } else {
-                config_.channel_id = publisher_id_result.Value();
+                m_config.channel_id = publisher_id_result.Value();
                 break;
             }
         }
 
         // Create publisher
-        Publisher publisher( shmPath, config_, std::move(shm), std::move(allocator) );
+        Publisher publisher( m_config, std::move(shm), std::move(allocator) );
         
         return Result< Publisher >( std::move( publisher ) );
     }
 
+    Result< Publisher > Publisher::Create(int shm_fd,
+                                            const PublisherConfig& config) noexcept
+    {
+        // Create shared memory manager
+        auto shm = MakeUnique< SharedMemoryManager >();
+        
+        SharedMemoryConfig shm_config{};
+        shm_config.max_chunks   = config.max_chunks;
+        shm_config.chunk_size   = config.chunk_size;  // Payload size only
+        shm_config.ipc_type     = config.ipc_type;
+        
+        auto result = shm->Open( shm_fd, shm_config );
+        if ( !result ) {
+            return Result< Publisher >( result.Error() );
+        }
+        
+        // Create chunk pool allocator
+        auto allocator = std::make_unique< ChunkPoolAllocator >(
+            shm->GetBaseAddress(),
+            shm->GetControlBlock()
+        );
+        
+        // Initialize (idempotent - will skip if already initialized)
+        auto init_result = allocator->Initialize();
+        if ( !init_result ) {
+            return Result< Publisher >( init_result.Error() );
+        }
+
+        auto m_config = config;
+        while ( true ) {
+            // Allocate unique queue index from shared memory control block
+            auto publisher_id_result = ChannelRegistry::RegisterWriteChannel( shm->GetControlBlock(), m_config.channel_id );
+            if ( DEF_LAP_IF_UNLIKELY( !publisher_id_result ) ) {
+                if ( publisher_id_result.Error() == CoreErrc::kIPCRetry ) {
+                    // Retry allocation
+                    std::this_thread::yield();
+                    continue;
+                } else {
+                    return Result< Publisher >( MakeErrorCode( CoreErrc::kResourceExhausted ) );
+                }
+            } else {
+                m_config.channel_id = publisher_id_result.Value();
+                break;
+            }
+        }
+
+        // Create publisher
+        Publisher publisher( m_config, std::move(shm), std::move(allocator) );
+        
+        return Result< Publisher >( std::move( publisher ) );
+    }
+       
+
     Result< Sample > Publisher::Loan() noexcept
     {
         // Try to allocate chunk
-        auto chunk_index = allocator_->Allocate();
+        auto chunk_index = m_pAllocator->Allocate();
 
         if ( chunk_index == kInvalidChunkIndex ) {
             // Trigger hook: Loan failed
-            // if ( event_hooks_ ) {
-            //     event_hooks_->OnLoanFailed(
-            //         config_.loan_policy,
-            //         allocator_->GetAllocatedCount(),
-            //         allocator_->GetMaxChunks()
+            // if ( m_pEventHooks ) {
+            //     m_pEventHooks->OnLoanFailed(
+            //         m_config.loan_policy,
+            //         m_pAllocator->GetAllocatedCount(),
+            //         m_pAllocator->GetMaxChunks()
             //     );
             // }
             
             // Pool exhausted - handle based on policy
-            if (config_.loan_policy == LoanPolicy::kError) {
+            if (m_config.loan_policy == LoanPolicy::kError) {
                 return Result< Sample >( MakeErrorCode( CoreErrc::kIPCChunkPoolExhausted ) );
-            } else if ( config_.loan_policy == LoanPolicy::kWait ) {
+            } else if ( m_config.loan_policy == LoanPolicy::kWait ) {
                 // Busy-wait polling for free chunk
-                std::chrono::nanoseconds timeout = std::chrono::nanoseconds( config_.loan_timeout );  // 10ms default
+                std::chrono::nanoseconds timeout = std::chrono::nanoseconds( m_config.loan_timeout );  // 10ms default
                 Bool success = WaitSetHelper::PollForFlags(
-                    &shm_->GetControlBlock()->pool_state.remain_count,
+                    &m_pShm->GetControlBlock()->pool_state.remain_count,
                     0xFFFFFFFF,  // Any non-zero value
                     timeout
                 );
@@ -114,15 +167,15 @@ namespace ipc
                 }
 
                 // Retry allocation
-                chunk_index = allocator_->Allocate();
+                chunk_index = m_pAllocator->Allocate();
                 if ( chunk_index == kInvalidChunkIndex ) {
                     return Result< Sample >( MakeErrorCode( CoreErrc::kIPCChunkPoolExhausted ) );
                 }
-            } else if ( config_.loan_policy == LoanPolicy::kBlock ) {
+            } else if ( m_config.loan_policy == LoanPolicy::kBlock ) {
                 // Block on futex until chunk available
-                std::chrono::nanoseconds timeout = std::chrono::nanoseconds( config_.loan_timeout );  // 100ms default
+                std::chrono::nanoseconds timeout = std::chrono::nanoseconds( m_config.loan_timeout );  // 100ms default
                 auto wait_result = WaitSetHelper::WaitForFlags(
-                    &shm_->GetControlBlock()->pool_state.remain_count,
+                    &m_pShm->GetControlBlock()->pool_state.remain_count,
                     0xFFFFFFFF,  // Any non-zero value
                     timeout
                 );
@@ -132,7 +185,7 @@ namespace ipc
                 }
 
                 // Retry allocation
-                chunk_index = allocator_->Allocate();
+                chunk_index = m_pAllocator->Allocate();
                 if ( chunk_index == kInvalidChunkIndex ) {
                     return Result< Sample >( MakeErrorCode( CoreErrc::kIPCChunkPoolExhausted ) );
                 }
@@ -140,9 +193,9 @@ namespace ipc
                 return Result< Sample >( MakeErrorCode( CoreErrc::kIPCChunkPoolExhausted ) );
             }
         }
-        Sample sample{ allocator_.get(), chunk_index };
+        Sample sample{ m_pAllocator.get(), chunk_index };
 
-        sample.SetChannelID( config_.channel_id );
+        sample.SetChannelID( m_config.channel_id );
         sample.TransitionState( ChunkState::kLoaned );
         
         return Result< Sample >( std::move(sample) );
@@ -161,7 +214,7 @@ namespace ipc
         sample.IncrementRef();  // For publisher's own reference
 
         // Get snapshot of subscribers from shared memory registry
-        auto& snapshot = write_channels_[ active_channel_index_.load( std::memory_order_acquire ) ];
+        auto& snapshot = m_writeChannels[ m_iActiveChannelIdx.load( std::memory_order_acquire ) ];
 
         if ( snapshot.size() == 0 ) {
             //sample.DecrementRef();  // No subscribers, release chunk
@@ -181,7 +234,7 @@ namespace ipc
             }
 
             auto interval = std::chrono::microseconds( channel->GetSTMin() );
-            if ( ( now - last_send_[channel_id] ) < interval ) {
+            if ( ( now - m_lastSend[channel_id] ) < interval ) {
                 // Skip sending to this subscriber due to STmin
                 sample.DecrementRef();
                 continue;
@@ -196,7 +249,7 @@ namespace ipc
             ChannelQueueValue value{ 0, sample.GetChunkIndex() };  // sequence can be used for message ordering if needed
 
             // Write using Channel API with policy
-            auto write_result = channel->WriteWithPolicy( value, policy, config_.publish_timeout );
+            auto write_result = channel->WriteWithPolicy( value, policy, m_config.publish_timeout );
             
             channel->Unlock();
 
@@ -207,7 +260,7 @@ namespace ipc
             }
 
             // Update last send time for STmin enforcement
-            last_send_[channel_id] = now;
+            m_lastSend[channel_id] = now;
         }
 
         // sample.DecrementRef();  // Release publisher's own reference
@@ -268,7 +321,7 @@ namespace ipc
         sample.IncrementRef();  // For publisher's own reference
 
         // Get snapshot of subscribers from shared memory registry
-        auto& snapshot = write_channels_[ active_channel_index_.load( std::memory_order_acquire ) ];
+        auto& snapshot = m_writeChannels[ m_iActiveChannelIdx.load( std::memory_order_acquire ) ];
 
         if ( snapshot.size() == 0 ) {
             //sample.DecrementRef();  // No subscribers, release chunk
@@ -290,8 +343,8 @@ namespace ipc
                 return Result< void >( MakeErrorCode( CoreErrc::kChannelInvalid ) );
             }
 
-            auto interval = std::chrono::milliseconds( channel->GetSTMin() );
-            if ( ( now - last_send_[channel_id] ) < interval ) {
+            auto interval = std::chrono::microseconds( channel->GetSTMin() );
+            if ( ( now - m_lastSend[channel_id] ) < interval ) {
                 // Skip sending to this subscriber due to STmin
                 sample.DecrementRef();
                 
@@ -307,7 +360,7 @@ namespace ipc
             ChannelQueueValue value{ 0, sample.GetChunkIndex() };  // sequence can be used for message ordering if needed
 
             // Write using Channel API with policy
-            auto write_result = channel->WriteWithPolicy( value, policy, config_.publish_timeout );
+            auto write_result = channel->WriteWithPolicy( value, policy, m_config.publish_timeout );
             
             channel->Unlock();
 
@@ -319,7 +372,7 @@ namespace ipc
             }
 
             // Update last send time for STmin enforcement
-            last_send_[channel_id] = SteadyClock::now();
+            m_lastSend[channel_id] = SteadyClock::now();
         } else {
             // Channel ID not found, decrement ref count
             sample.DecrementRef();
@@ -378,163 +431,158 @@ namespace ipc
 
     UInt32 Publisher::GetAllocatedCount() const noexcept
     {
-        return allocator_->GetAllocatedCount();
+        return m_pAllocator->GetAllocatedCount();
     }
     
     Bool Publisher::IsChunkPoolExhausted() const noexcept
     {
-        return allocator_->IsExhausted();
+        return m_pAllocator->IsExhausted();
     }
     
-    Publisher::Publisher( const String& shmPath,
-                 const PublisherConfig& config,
+    Publisher::Publisher( const PublisherConfig& config,
                  UniqueHandle<SharedMemoryManager> shm,
                  UniqueHandle<ChunkPoolAllocator> allocator) noexcept
-            : shm_path_(shmPath)
-            , config_(config)
-            , shm_(std::move(shm))
-            , allocator_(std::move(allocator))
-            , event_hooks_(nullptr)
-            , write_channels_()
+            : m_config(config)
+            , m_pShm(std::move(shm))
+            , m_pAllocator(std::move(allocator))
+            , m_pEventHooks(nullptr)
+            , m_writeChannels()
     {
-        DEF_LAP_ASSERT( shm_ != nullptr, "SharedMemoryManager must not be null" );
-        DEF_LAP_ASSERT( allocator_ != nullptr, "ChunkPoolAllocator must not be null" );
+        DEF_LAP_ASSERT( m_pShm != nullptr, "SharedMemoryManager must not be null" );
+        DEF_LAP_ASSERT( m_pAllocator != nullptr, "ChunkPoolAllocator must not be null" );
 
-        // Initialize last_send_ to epoch (far past) to ensure first send is not skipped
+        // Initialize m_lastSend to epoch (far past) to ensure first send is not skipped
         for ( UInt8 i = 0; i < kMaxChannels; ++i ) {
-            last_send_[i] = SteadyClock::time_point{};
+            m_lastSend[i] = SteadyClock::time_point{};
         }
 
-        is_running_.store( false, std::memory_order_relaxed );
-        active_channel_index_.store( 0, std::memory_order_relaxed );
-        auto ctrl = shm_->GetControlBlock();
-        INNER_CORE_LOG( "Publisher::Publisher - Created publisher with ID: %u, type: %d, path: %s\n", 
-                            config_.channel_id, 
-                            static_cast<int>(ctrl->header.type),
-                            shm_path_.c_str() );
+        m_bRunning.store( false, std::memory_order_relaxed );
+        m_iActiveChannelIdx.store( 0, std::memory_order_relaxed );
+        auto ctrl = m_pShm->GetControlBlock();
+        INNER_CORE_LOG( "Publisher::Publisher - Created publisher with ID: %u, type: %d\n", 
+                            m_config.channel_id, 
+                            static_cast<int>(ctrl->header.type) );
 
         if ( ctrl->header.type == IPCType::kMPSC ) {
             // write to own channel only
-            write_channels_[0].emplace( config_.channel_id,
+            m_writeChannels[0].emplace( m_config.channel_id,
                 ChannelFactory<ChannelQueueValue>::CreateWriteChannelFromQueue(
-                    shm_->GetChannelQueue( config_.channel_id )
+                    m_pShm->GetChannelQueue( m_config.channel_id )
                 )
             );
         } else {
-            StartScanner( kScannerTimeoutUs, kScannerIntervalUs );
+            startScanner( kScannerTimeoutUs, kScannerIntervalUs );
         }
     }
 
     Publisher::Publisher(Publisher&& other) noexcept
     {
         // Transfer ownership of scanner thread
-        other.StopScanner();
+        other.stopScanner();
 
-        shm_path_ = std::move(other.shm_path_);
-        config_ = std::move(other.config_);
-        shm_ = std::move(other.shm_);
-        allocator_ = std::move(other.allocator_);
-        event_hooks_ = std::move(other.event_hooks_);
+        m_config = std::move(other.m_config);
+        m_pShm = std::move(other.m_pShm);
+        m_pAllocator = std::move(other.m_pAllocator);
+        m_pEventHooks = std::move(other.m_pEventHooks);
 
         for ( UInt8 i = 0; i < kMaxChannels; ++i ) {
-            last_send_[i] = SteadyClock::time_point{};
+            m_lastSend[i] = SteadyClock::time_point{};
         }
 
-        is_running_.store( false, std::memory_order_relaxed );
-        active_channel_index_.store( 0, std::memory_order_relaxed );
+        m_bRunning.store( false, std::memory_order_relaxed );
+        m_iActiveChannelIdx.store( 0, std::memory_order_relaxed );
 
-        auto ctrl = shm_->GetControlBlock();
-        INNER_CORE_LOG( "Publisher::Publisher - Move publisher with ID: %u, type: %d, path: %s\n", 
-                            config_.channel_id, 
-                            static_cast<int>(ctrl->header.type),
-                            shm_path_.c_str() );
+        auto ctrl = m_pShm->GetControlBlock();
+        INNER_CORE_LOG( "Publisher::Publisher - Move publisher with ID: %u, type: %d\n", 
+                            m_config.channel_id, 
+                            static_cast<int>(ctrl->header.type) );
 
         if ( ctrl->header.type == IPCType::kMPSC ) {
             // write to own channel only
-            write_channels_[0].emplace( config_.channel_id,
+            m_writeChannels[0].emplace( m_config.channel_id,
                 ChannelFactory<ChannelQueueValue>::CreateWriteChannelFromQueue(
-                    shm_->GetChannelQueue( config_.channel_id )
+                    m_pShm->GetChannelQueue( m_config.channel_id )
                 )
             );
         } else {
-            StartScanner( kScannerTimeoutUs, kScannerIntervalUs );
+            startScanner( kScannerTimeoutUs, kScannerIntervalUs );
         }
     }
 
     Publisher::~Publisher() noexcept
     {
-        StopScanner();
-        write_channels_[0].clear();
-        write_channels_[1].clear();
+        stopScanner();
+        m_writeChannels[0].clear();
+        m_writeChannels[1].clear();
 
         // Deregister from ChannelRegistry
-        if ( shm_ ) {
-            ChannelRegistry::UnregisterWriteChannel( shm_->GetControlBlock(), config_.channel_id );
+        if ( m_pShm ) {
+            ChannelRegistry::UnregisterWriteChannel( m_pShm->GetControlBlock(), m_config.channel_id );
         }
     }
 
-    void Publisher::StartScanner( UInt16 timeout_microseconds, UInt16 interval_microseconds ) noexcept
+    void Publisher::startScanner( UInt16 timeout_microseconds, UInt16 interval_microseconds ) noexcept
     {
-        if ( is_running_.load(std::memory_order_acquire) ) {
+        if ( m_bRunning.load(std::memory_order_acquire) ) {
             return;  // Already running
         }
 
-        is_running_.store( true, std::memory_order_release );
-        scanner_thread_ = std::thread( &Publisher::InnerChannelScanner, this, timeout_microseconds, interval_microseconds );
+        m_bRunning.store( true, std::memory_order_release );
+        m_scannerThread = std::thread( &Publisher::innerChannelScanner, this, timeout_microseconds, interval_microseconds );
     }
 
     /**
      * @brief Stop internal channel scanner thread
      */
-    void Publisher::StopScanner() noexcept
+    void Publisher::stopScanner() noexcept
     {
-        if ( !is_running_.load(std::memory_order_acquire) || shm_ == nullptr ) {
+        if ( !m_bRunning.load(std::memory_order_acquire) || m_pShm == nullptr ) {
             return;  // Not running
         }
 
-        is_running_.store( false, std::memory_order_release );
+        m_bRunning.store( false, std::memory_order_release );
 
-        DEF_LAP_ASSERT( ( shm_ != nullptr ) && ( shm_->GetControlBlock() ) != nullptr, "SharedMemoryManager pointer is null" );
+        DEF_LAP_ASSERT( ( m_pShm != nullptr ) && ( m_pShm->GetControlBlock() ) != nullptr, "SharedMemoryManager pointer is null" );
 
         // notify the futex to wake up  
-        WaitSetHelper::FutexWake( &( shm_->GetControlBlock()->registry.read_seq ), INT32_MAX );
-        if ( scanner_thread_.joinable() ) {
-            scanner_thread_.join();
+        WaitSetHelper::FutexWake( &( m_pShm->GetControlBlock()->registry.read_seq ), INT32_MAX );
+        if ( m_scannerThread.joinable() ) {
+            m_scannerThread.join();
         }
     }
 
-    void Publisher::InnerChannelScanner( UInt16 timeout_microseconds, UInt16 interval_microseconds ) noexcept
+    void Publisher::innerChannelScanner( UInt16 timeout_microseconds, UInt16 interval_microseconds ) noexcept
     {
-        DEF_LAP_ASSERT( shm_ != nullptr && shm_->GetControlBlock() != nullptr, "SharedMemoryManager or ControlBlock must not be null" );
+        DEF_LAP_ASSERT( m_pShm != nullptr && m_pShm->GetControlBlock() != nullptr, "SharedMemoryManager or ControlBlock must not be null" );
 
-        auto* ctrl = shm_->GetControlBlock();
+        auto* ctrl = m_pShm->GetControlBlock();
 
         auto& read_mask = ctrl->registry.read_mask;
         auto& read_seq = ctrl->registry.read_seq;
 
         UInt32 last = 0;
-        while ( is_running_.load(std::memory_order_acquire) ) {
+        while ( m_bRunning.load(std::memory_order_acquire) ) {
             WaitSetHelper::FutexWait( &read_seq, last, timeout_microseconds * 1000 );
 
-            if ( !is_running_.load(std::memory_order_acquire) ) break;
+            if ( !m_bRunning.load(std::memory_order_acquire) ) break;
 
             if ( last != read_seq.load(std::memory_order_acquire) ) {
                 last = read_seq.load(std::memory_order_acquire);
-                UpdateWriteChannel( read_mask.load(std::memory_order_acquire) );
+                updateWriteChannel( read_mask.load(std::memory_order_acquire) );
             }
             std::this_thread::sleep_for( std::chrono::microseconds( interval_microseconds ) );
         }
     }
 
-    void Publisher::UpdateWriteChannel( UInt64 read_mask ) noexcept
+    void Publisher::updateWriteChannel( UInt64 read_mask ) noexcept
     {
-        auto updateIndex = ( active_channel_index_.load(std::memory_order_acquire) + 1 ) % 2;
-        auto& write_channel = write_channels_[ updateIndex ]; 
+        auto updateIndex = ( m_iActiveChannelIdx.load(std::memory_order_acquire) + 1 ) % 2;
+        auto& write_channel = m_writeChannels[ updateIndex ]; 
 
         write_channel.clear();
         if ( read_mask == 0 ) {
             // No active subscribers
-            active_channel_index_.store( updateIndex, std::memory_order_release );
+            m_iActiveChannelIdx.store( updateIndex, std::memory_order_release );
             return;
         }
 
@@ -542,7 +590,7 @@ namespace ipc
             int idx = __builtin_ctzll( read_mask );  // Count trailing zeros
             
             // Get subscriber queue from shared memory
-            auto* queue = shm_->GetChannelQueue( idx );
+            auto* queue = m_pShm->GetChannelQueue( idx );
             if ( queue != nullptr ) {
                 auto channel = ChannelFactory<ChannelQueueValue>::CreateWriteChannelFromQueue( queue );
                 if ( channel ) {
@@ -552,7 +600,7 @@ namespace ipc
 
             read_mask &= read_mask - 1;  // Clear lowest set bit
         }
-        active_channel_index_.store( updateIndex, std::memory_order_release );
+        m_iActiveChannelIdx.store( updateIndex, std::memory_order_release );
     }
 }  // namespace ipc
 }  // namespace core

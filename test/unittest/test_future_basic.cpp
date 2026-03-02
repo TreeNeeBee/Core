@@ -21,7 +21,7 @@ TEST(FutureBasicTest, WaitForAndGetResult) {
 
     // Wait for up to 200ms
     auto status = future.wait_for(std::chrono::milliseconds(200));
-    EXPECT_EQ(status, future_status::ready);
+    EXPECT_EQ(status, FutureStatus::kReady);
     EXPECT_TRUE(future.is_ready());
 
     auto result = future.GetResult();

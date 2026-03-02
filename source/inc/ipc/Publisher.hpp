@@ -72,6 +72,15 @@ namespace ipc
                                             const PublisherConfig& config = {}) noexcept;
 
         /**
+         * @brief Create publisher by shared memory file descriptor
+         * @param shm_fd Shared memory file descriptor
+         * @param config Configuration
+         * @return Result with publisher or error
+         */
+        static Result< Publisher > Create(int shm_fd,
+                                            const PublisherConfig& config = {}) noexcept;
+                                    
+        /**
          * @brief Destructor
          */
         ~Publisher() noexcept;
@@ -83,16 +92,7 @@ namespace ipc
         // Allow move - required by Result<Publisher>
         Publisher(Publisher&&) noexcept;
         Publisher& operator=(Publisher&&) noexcept = delete;
-        
-        /**
-         * @brief Get service name
-         * @return Service name
-         */
-        inline const String& GetShmPath() const noexcept
-        {
-            return shm_path_;
-        }
-        
+
         /**
          * @brief Get allocated chunk count
          * @return Number of allocated chunks
@@ -111,7 +111,7 @@ namespace ipc
          */
         void SetEventHooks(SharedHandle<IPCEventHooks> hooks) noexcept
         {
-            event_hooks_ = std::move(hooks);
+            m_pEventHooks = std::move(hooks);
         }
         
         /**
@@ -120,7 +120,7 @@ namespace ipc
          */
         inline IPCEventHooks* GetEventHooks() const noexcept
         {
-            return event_hooks_.get();
+            return m_pEventHooks.get();
         }
 
         /**
@@ -224,10 +224,12 @@ namespace ipc
         
     private:
         /**
-         * @brief Private constructor
+         * @brief Constructor
+         * @param config Configuration
+         * @param shm Shared memory manager
+         * @param allocator Chunk pool allocator
          */
-        Publisher( const String& shmPath,
-                 const PublisherConfig& config,
+        Publisher( const PublisherConfig& config,
                  UniqueHandle<SharedMemoryManager> shm,
                  UniqueHandle<ChunkPoolAllocator> allocator) noexcept;
 
@@ -235,41 +237,40 @@ namespace ipc
         * @brief Internal channel scanner thread
         * @details Periodically scans for active subscribers and updates write channels
         */
-        void InnerChannelScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+        void innerChannelScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
 
         /* @brief Update write channels based on active subscribers
         * @details Called periodically to refresh the list of active channels
         * - Scans ChannelRegistry for active subscribers
-        * - Updates internal write_channels_ vector accordingly
+        * - Updates internal m_writeChannels vector accordingly
         */
-        void UpdateWriteChannel( UInt64 write_mask ) noexcept;
+        void updateWriteChannel( UInt64 write_mask ) noexcept;
 
         /**
          * @brief Start internal channel scanner thread
          * @param timeout_microseconds Futex wait timeout in microseconds (0 = infinite)
          * @param interval_microseconds Scan interval in microseconds
          */
-        void StartScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
+        void startScanner( UInt16 timeout_microseconds = 0, UInt16 interval_microseconds = 0 ) noexcept;
 
         /**
          * @brief Stop internal channel scanner thread
          */
-        void StopScanner() noexcept;
+        void stopScanner() noexcept;
 
         // Result< void > InnerSend( Sample&& sample, UInt8 channel_id,
         //                                 PublishPolicy policy ) noexcept;
 
     private:
-        String                              shm_path_;                  ///< Shared memory path
-        PublisherConfig                     config_;                    ///< Configuration
-        UniqueHandle< SharedMemoryManager > shm_;                       ///< Shared memory manager
-        UniqueHandle< ChunkPoolAllocator >  allocator_;                 ///< Chunk allocator
-        SharedHandle< IPCEventHooks >       event_hooks_;               ///< Event hooks for monitoring
-        Atomic<Bool>                        is_running_;                ///< thread running flag
-        std::thread                         scanner_thread_;            ///< Channel scanner thread
-        SteadyClock::time_point             last_send_[kMaxChannels];   ///< Last send timestamps per subscriber
-        Atomic<UInt8>                       active_channel_index_;      ///< Active channel index
-        _MapChannel                         write_channels_[2];         ///< Write channels for each subscriber
+        PublisherConfig                     m_config;                    ///< Configuration
+        UniqueHandle< SharedMemoryManager > m_pShm;                       ///< Shared memory manager
+        UniqueHandle< ChunkPoolAllocator >  m_pAllocator;                 ///< Chunk allocator
+        SharedHandle< IPCEventHooks >       m_pEventHooks;               ///< Event hooks for monitoring
+        Atomic<Bool>                        m_bRunning;                ///< thread running flag
+        std::thread                         m_scannerThread;            ///< Channel scanner thread
+        SteadyClock::time_point             m_lastSend[kMaxChannels];   ///< Last send timestamps per subscriber
+        Atomic<UInt8>                       m_iActiveChannelIdx;      ///< Active channel index
+        _MapChannel                         m_writeChannels[2];         ///< Write channels for each subscriber
     };
     
 }  // namespace ipc

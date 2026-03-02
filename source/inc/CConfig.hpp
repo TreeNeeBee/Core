@@ -8,7 +8,7 @@
  *              - Triple security verification (CRC32 → Timestamp → HMAC-SHA256)
  *              - Private fields: __crc__, __timestamp__, __hmac__
  *              - HMAC key from environment variable HMAC_SECRET
- *              - Version control and rollback
+ *              - Version control and Rollback
  *              - Thread-safe operations
  * @copyright   Copyright (c) 2025
  * @version     2.0
@@ -24,10 +24,10 @@
 #include "CCrypto.hpp"
 
 #include "CSync.hpp"
+#include "CFunction.hpp"
 #include <map>
 #include <set>
 #include <vector>
-#include <functional>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 
@@ -88,54 +88,54 @@ public:
     explicit ConfigValue(const Char* value);
 
     // Type queries
-    ConfigValueType getType() const noexcept { return type_; }
-    Bool isNull() const noexcept { return type_ == ConfigValueType::kNull; }
-    Bool isBool() const noexcept { return type_ == ConfigValueType::kBoolean; }
-    Bool isInt() const noexcept { return type_ == ConfigValueType::kInteger; }
-    Bool isDouble() const noexcept { return type_ == ConfigValueType::kDouble; }
-    Bool isString() const noexcept { return type_ == ConfigValueType::kString; }
-    Bool isArray() const noexcept { return type_ == ConfigValueType::kArray; }
-    Bool isObject() const noexcept { return type_ == ConfigValueType::kObject; }
+    ConfigValueType GetType() const noexcept { return m_type; }
+    Bool IsNull() const noexcept { return m_type == ConfigValueType::kNull; }
+    Bool IsBool() const noexcept { return m_type == ConfigValueType::kBoolean; }
+    Bool IsInt() const noexcept { return m_type == ConfigValueType::kInteger; }
+    Bool IsDouble() const noexcept { return m_type == ConfigValueType::kDouble; }
+    Bool IsString() const noexcept { return m_type == ConfigValueType::kString; }
+    Bool IsArray() const noexcept { return m_type == ConfigValueType::kArray; }
+    Bool IsObject() const noexcept { return m_type == ConfigValueType::kObject; }
 
     // Value accessors with default fallback
-    Bool asBool(Bool defaultValue = false) const noexcept;
-    Int64 asInt(Int64 defaultValue = 0) const noexcept;
-    Double asDouble(Double defaultValue = 0.0) const noexcept;
-    String asString(const String& defaultValue = "") const noexcept;
+    Bool AsBool(Bool defaultValue = false) const noexcept;
+    Int64 AsInt(Int64 defaultValue = 0) const noexcept;
+    Double AsDouble(Double defaultValue = 0.0) const noexcept;
+    String AsString(const String& defaultValue = "") const noexcept;
 
     // Array operations
-    Size arraySize() const noexcept;
+    Size ArraySize() const noexcept;
     ConfigValue& operator[](Size index);
     const ConfigValue& operator[](Size index) const;
-    void append(const ConfigValue& value);
+    void Append(const ConfigValue& value);
 
     // Object operations
-    Bool hasKey(const String& key) const noexcept;
+    Bool HasKey(const String& key) const noexcept;
     ConfigValue& operator[](const String& key);
     const ConfigValue& operator[](const String& key) const;
-    Vector<String> getKeys() const;
+    Vector<String> GetKeys() const;
 
     // Serialization
-    String toJsonString(Bool pretty = false) const;
-    static ConfigValue fromJsonString(const String& json);
+    String ToJsonString(Bool pretty = false) const;
+    static ConfigValue FromJsonString(const String& json);
 
 private:
-    void toJsonString(std::ostream& os, Int32 indent, Bool pretty) const;
+    void ToJsonString(std::ostream& os, Int32 indent, Bool pretty) const;
     
-    ConfigValueType type_;
+    ConfigValueType m_type;
     
-    // Use union to save memory
+    // Use union to Save memory
     union {
-        Bool boolValue_;
-        Int64 intValue_;
-        Double doubleValue_;
+        Bool m_bValue;
+        Int64 m_iValue;
+        Double m_dValue;
     };
     
-    String stringValue_;
-    Vector<ConfigValue> arrayValue_;
-    Map<String, ConfigValue> objectValue_;
+    String m_strValue;
+    Vector<ConfigValue> m_vecArrayValue;
+    Map<String, ConfigValue> m_mapObjectValue;
 
-    void clear();
+    void Clear();
 };
 
 /**
@@ -149,20 +149,20 @@ private:
  *          - hmac: HMAC-SHA256 authentication code (hex string)
  */
 struct ConfigMetadata {
-    UInt32 version;         ///< Configuration version
-    String description;     ///< Configuration description
-    Bool encrypted;         ///< Base64 encoding flag (true = data hidden)
-    String crc;             ///< CRC32 checksum (hex string)
-    String timestamp;       ///< Last modification timestamp (ISO format)
-    String hmac;            ///< HMAC-SHA256 (hex string)
+    UInt32 m_iVersion;         ///< Configuration version
+    String m_strDescription;     ///< Configuration description
+    Bool m_bEncrypted;         ///< Base64 encoding flag (true = data hidden)
+    String m_strCrc;             ///< CRC32 checksum (hex string)
+    String m_strTimestamp;       ///< Last modification timestamp (ISO format)
+    String m_strHmac;            ///< HMAC-SHA256 (hex string)
     
-    ConfigMetadata() : version(1), encrypted(false) {}
+    ConfigMetadata() : m_iVersion(1), m_bEncrypted(false) {}
 };
 
 /**
  * @brief Configuration change callback
  */
-using ConfigChangeCallback = std::function<void(const String& key, const ConfigValue& oldValue, const ConfigValue& newValue)>;
+using ConfigChangeCallback = Function<void(const String& key, const ConfigValue& oldValue, const ConfigValue& newValue)>;
 
 /**
  * @brief Unified Configuration Manager with Triple Security Verification
@@ -173,33 +173,33 @@ using ConfigChangeCallback = std::function<void(const String& key, const ConfigV
  * - JSON persistence with private fields (__crc__, __timestamp__, __hmac__)
  * - Triple security verification: CRC32 → Timestamp → HMAC-SHA256
  * - HMAC key from environment variable HMAC_SECRET
- * - Version control and rollback support
+ * - Version control and Rollback support
  * - Thread-safe operations
  * - Change notification callbacks
  * 
  * Security Flow:
- * - Save: core_json → compute CRC/timestamp/HMAC → add private fields → save
- * - Load: parse JSON → extract/remove private fields → verify CRC → timestamp → HMAC → load
+ * - Save: core_json → compute CRC/timestamp/HMAC → add private fields → Save
+ * - Load: parse JSON → extract/Remove private fields → verify CRC → timestamp → HMAC → Load
  * 
  * @usage
  * // Set HMAC_SECRET environment variable first
- * ConfigManager& config = ConfigManager::getInstance();
- * config.initialize("/path/to/config.json", true);  // enable_security=true
+ * ConfigManager& config = ConfigManager::GetInstance();
+ * config.Initialize("/path/to/config.json", true);  // enable_security=true
  * 
  * // Set values
- * config.setInt("network.port", 8080);
- * config.setBool("network.enabled", true);
+ * config.SetInt("network.port", 8080);
+ * config.SetBool("network.enabled", true);
  * 
  * // Get values
- * Int64 port = config.getInt("network.port", 8080);
- * Bool enabled = config.getBool("network.enabled", false);
+ * Int64 port = config.GetInt("network.port", 8080);
+ * Bool enabled = config.GetBool("network.enabled", false);
  * 
  * // Save with security verification
- * config.save();
+ * config.Save();
  * 
- * // Backup and rollback
- * config.createBackup();
- * config.rollback();
+ * // Backup and Rollback
+ * config.CreateBackup();
+ * config.Rollback();
  */
 class ConfigManager {
 public:
@@ -207,10 +207,10 @@ public:
      * @brief Module update policy when persisting configuration
      * 
      * Controls whether a module's latest in-memory data should be written to disk.
-     * - NoUpdate: Never update this module section on save (except the policy field itself)
-     * - FirstUpdate: Write once on the first successful save, then keep previous persisted data
-     * - AlwaysUpdate: Always write the latest data on every save
-     * - OnChangeUpdate: Write only if the module's data changed since last save
+     * - NoUpdate: Never update this module section on Save (except the policy field itself)
+     * - FirstUpdate: Write once on the first successful Save, then keep previous persisted data
+     * - AlwaysUpdate: Always write the latest data on every Save
+     * - OnChangeUpdate: Write only if the module's data changed since last Save
      */
     enum class UpdatePolicy : UInt8 {
         kNoUpdate = 0,
@@ -227,7 +227,7 @@ public:
      * @return Reference to the global ConfigManager instance
      * @threadsafe Thread-safe - uses static local variable initialization
      */
-    static ConfigManager& getInstance();
+    static ConfigManager& GetInstance();
 
     /**
      * @brief Initialize configuration manager
@@ -237,7 +237,7 @@ public:
      * @throws ConfigException if HMAC_SECRET not set when loading file with HMAC
      * @threadsafe Not thread-safe - must be called before multi-threaded access
      */
-    Result<void, ConfigErrc> initialize(const String& configPath, 
+    Result<void, ConfigErrc> Initialize(const String& configPath, 
                                         Bool enableSecurity = true);
 
     /**
@@ -246,45 +246,45 @@ public:
      * @note This updates the metadata.encrypted field
      * @threadsafe Thread-safe - uses internal locking
      */
-    void setBase64Encoding(Bool enable);
+    void SetBase64Encoding(Bool enable);
 
     /**
      * @brief Get current Base64 encoding status
      * @return True if Base64 encoding is enabled
      * @threadsafe Thread-safe - reads under lock
      */
-    Bool isBase64Enabled() const;
+    Bool IsBase64Enabled() const;
 
     /**
      * @brief Get configuration metadata
      * @return Current configuration metadata
      * @threadsafe Thread-safe - returns copy under lock
      */
-    ConfigMetadata getMetadata() const;
+    ConfigMetadata GetMetadata() const;
 
     /**
      * @brief Set configuration version
      * @param version Configuration version number
      */
-    void setVersion(UInt32 version);
+    void SetVersion(UInt32 version);
 
     /**
      * @brief Get configuration version
      * @return Current configuration version
      */
-    UInt32 getVersion() const;
+    UInt32 GetVersion() const;
 
     /**
      * @brief Set configuration description
      * @param description Configuration description text
      */
-    void setDescription(const String& description);
+    void SetDescription(const String& description);
 
     /**
      * @brief Get configuration description
      * @return Current configuration description
      */
-    String getDescription() const;
+    String GetDescription() const;
 
     /**
      * @brief Load configuration from file with security verification
@@ -293,19 +293,19 @@ public:
      * @return Result indicating success or error
      * @throws ConfigException on verification failure when skipVerification=false
      */
-    Result<void, ConfigErrc> load(Bool skipVerification = false);
+    Result<void, ConfigErrc> Load(Bool skipVerification = false);
 
     /**
      * @brief Create backup of current configuration
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> createBackup();
+    Result<void, ConfigErrc> CreateBackup();
 
     /**
      * @brief Rollback to previous backup
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> rollback();
+    Result<void, ConfigErrc> Rollback();
 
     /**
      * @brief Set configuration value
@@ -313,35 +313,35 @@ public:
      * @param value Configuration value
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> set(const String& key, const ConfigValue& value);
+    Result<void, ConfigErrc> SetValue(const String& key, const ConfigValue& value);
 
     /**
      * @brief Get configuration value
      * @param key Configuration key (dot notation)
      * @return Optional containing value if found
      */
-    Optional<ConfigValue> get(const String& key) const;
+    Optional<ConfigValue> Get(const String& key) const;
 
     /**
      * @brief Remove configuration key
      * @param key Configuration key (dot notation)
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> remove(const String& key);
+    Result<void, ConfigErrc> Remove(const String& key);
 
     /**
-     * @brief Check if key exists
+     * @brief Check if key Exists
      * @param key Configuration key (dot notation)
-     * @return True if key exists
+     * @return True if key Exists
      */
-    Bool exists(const String& key) const;
+    Bool Exists(const String& key) const;
 
     /**
      * @brief Get all keys with optional prefix filter
      * @param prefix Key prefix filter (empty for all)
      * @return Vector of matching keys
      */
-    Vector<String> getKeys(const String& prefix = "") const;
+    Vector<String> GetKeys(const String& prefix = "") const;
 
     /**
      * @brief Get module-specific configuration as JSON string
@@ -349,14 +349,14 @@ public:
      * @param pretty Enable pretty printing
      * @return JSON string of module configuration
      */
-    String getModuleConfig(const String& moduleName, Bool pretty = true) const;
+    String GetModuleConfig(const String& moduleName, Bool pretty = true) const;
 
     /**
      * @brief Get module-specific configuration as nlohmann::json object
      * @param moduleName Name of the module
      * @return nlohmann::json object (empty object if module not found)
      */
-    nlohmann::json getModuleConfigJson(const String& moduleName) const;
+    nlohmann::json GetModuleConfigJson(const String& moduleName) const;
 
     /**
      * @brief Set module-specific configuration from JSON string
@@ -364,7 +364,7 @@ public:
      * @param jsonConfig JSON string containing module configuration
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> setModuleConfig(const String& moduleName, const String& jsonConfig);
+    Result<void, ConfigErrc> SetModuleConfig(const String& moduleName, const String& jsonConfig);
 
     /**
      * @brief Set module-specific configuration from nlohmann::json object
@@ -372,7 +372,7 @@ public:
      * @param jsonConfig nlohmann::json object containing module configuration
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> setModuleConfigJson(const String& moduleName, const nlohmann::json& jsonConfig);
+    Result<void, ConfigErrc> SetModuleConfigJson(const String& moduleName, const nlohmann::json& jsonConfig);
 
     // ---------------------------------------------------------------------
     // Update Policy APIs
@@ -380,29 +380,29 @@ public:
     /**
      * @brief Get module update policy (defaults to FirstUpdate if not set)
      */
-    UpdatePolicy getModuleUpdatePolicy(const String& moduleName) const;
+    UpdatePolicy GetModuleUpdatePolicy(const String& moduleName) const;
 
     /**
      * @brief Set module update policy (runtime). Will also reflect into config data for persistence.
      */
-    Result<void, ConfigErrc> setModuleUpdatePolicy(const String& moduleName, UpdatePolicy policy);
+    Result<void, ConfigErrc> SetModuleUpdatePolicy(const String& moduleName, UpdatePolicy policy);
 
     /**
      * @brief Set module update policy from string: "none"|"first"|"always"|"on_change"
      */
-    Result<void, ConfigErrc> setModuleUpdatePolicy(const String& moduleName, const String& policyStr);
+    Result<void, ConfigErrc> SetModuleUpdatePolicy(const String& moduleName, const String& policyStr);
 
     // Convenience accessors
-    Bool getBool(const String& key, Bool defaultValue = false) const;
-    Int64 getInt(const String& key, Int64 defaultValue = 0) const;
-    Double getDouble(const String& key, Double defaultValue = 0.0) const;
-    String getString(const String& key, const String& defaultValue = "") const;
+    Bool GetBool(const String& key, Bool defaultValue = false) const;
+    Int64 GetInt(const String& key, Int64 defaultValue = 0) const;
+    Double GetDouble(const String& key, Double defaultValue = 0.0) const;
+    String GetString(const String& key, const String& defaultValue = "") const;
 
     // Convenience setters
-    Result<void, ConfigErrc> setBool(const String& key, Bool value);
-    Result<void, ConfigErrc> setInt(const String& key, Int64 value);
-    Result<void, ConfigErrc> setDouble(const String& key, Double value);
-    Result<void, ConfigErrc> setString(const String& key, const String& value);
+    Result<void, ConfigErrc> SetBool(const String& key, Bool value);
+    Result<void, ConfigErrc> SetInt(const String& key, Int64 value);
+    Result<void, ConfigErrc> SetDouble(const String& key, Double value);
+    Result<void, ConfigErrc> SetString(const String& key, const String& value);
 
     /**
      * @brief Register change callback
@@ -410,13 +410,13 @@ public:
      * @param callback Callback function
      * @return Callback ID for unregistration
      */
-    UInt32 registerChangeCallback(const String& key, ConfigChangeCallback callback);
+    UInt32 RegisterChangeCallback(const String& key, ConfigChangeCallback callback);
 
     /**
      * @brief Unregister change callback
      * @param callbackId Callback ID from registration
      */
-    void unregisterChangeCallback(UInt32 callbackId);
+    void UnregisterChangeCallback(UInt32 callbackId);
 
     /**
      * @brief Get configuration metadata
@@ -427,19 +427,19 @@ public:
      * @param pretty Enable pretty printing
      * @return JSON string
      */
-    String toJson(Bool pretty = true) const;
+    String ToJson(Bool pretty = true) const;
 
     /**
      * @brief Import configuration from JSON string
      * @param json JSON string
      * @return Result indicating success or error
      */
-    Result<void, ConfigErrc> fromJson(const String& json);
+    Result<void, ConfigErrc> FromJson(const String& json);
 
     /**
      * @brief Clear all configuration data
      */
-    void clear();
+    void Clear();
 
 private:
     ConfigManager();
@@ -449,30 +449,30 @@ private:
 
     /**
      * @brief Save configuration to file with security fields (RAII - called in destructor)
-     * Flow: dump core → compute CRC/timestamp/HMAC → add private fields → save
+     * Flow: dump core → compute CRC/timestamp/HMAC → add private fields → Save
      * @param enableSecurity If false, skip security field generation (for initial creation)
      * @return Result indicating success or error
      * @note This method is private and automatically called in destructor
      */
-    Result<void, ConfigErrc> save(Bool enableSecurity = true);
+    Result<void, ConfigErrc> Save(Bool enableSecurity = true);
 
     // Internal storage (using nlohmann::json)
-    nlohmann::json configData_;          // JSON object (core data)
-    ConfigMetadata metadata_;            // Metadata (version, description, security)
-    Vector<nlohmann::json> backupStack_; // JSON backup stack
+    nlohmann::json m_configData;          // JSON object (core data)
+    ConfigMetadata m_metadata;            // Metadata (version, description, security)
+    Vector<nlohmann::json> m_vecBackupStack; // JSON backup stack
     
     // Configuration
-    String configPath_;
-    Bool enableSecurity_;
-    Crypto crypto_;             // Cryptographic utilities (HMAC key managed internally)
-    Bool initialized_;
+    String m_strConfigPath;
+    Bool m_bEnableSecurity;
+    Crypto m_crypto;             // Cryptographic utilities (HMAC key managed internally)
+    Bool m_bInitialized;
 
     // Change tracking
-    Map<UInt32, std::pair<String, ConfigChangeCallback>> callbacks_;
-    UInt32 nextCallbackId_;
+    Map<UInt32, std::pair<String, ConfigChangeCallback>> m_mapCallbacks;
+    UInt32 m_iNextCallbackId;
 
     // Thread safety
-    mutable RecursiveMutex mutex_;
+    mutable RecursiveMutex m_mutex;
 
     // Security helpers
     String getCurrentTimestamp() const;
@@ -486,19 +486,19 @@ private:
     // Update Policy internals
     // ---------------------------------------------------------------------
     // Per-module update policies
-    Map<String, UpdatePolicy> modulePolicies_;
+    Map<String, UpdatePolicy> m_mapModulePolicies;
     // Default policy for new/unspecified modules (loaded from __update_policy__.default)
-    UpdatePolicy defaultPolicy_;
+    UpdatePolicy m_defaultPolicy;
     // Track modules that have already been saved once (for FirstUpdate)
-    Set<String> moduleSavedOnce_;
+    Set<String> m_setModuleSavedOnce;
     // Track last-saved CRC per module (for OnChangeUpdate)
-    Map<String, UInt32> moduleLastCrc_;
+    Map<String, UInt32> m_mapModuleLastCrc;
     // Last fully persisted core json (without __metadata__)
-    nlohmann::json lastPersistedData_;
-    // Modules with explicitly set policies (persisted under top-level __update_policy__)
-    Set<String> explicitPolicyModules_;
+    nlohmann::json m_lastPersistedData;
+    // Modules with explicitly Set policies (persisted under top-level __update_policy__)
+    Set<String> m_setExplicitPolicyModules;
 
-    // Helpers (assume mutex_ is held)
+    // Helpers (assume m_mutex is held)
     void refreshPoliciesFromConfigLocked();
     static const Char* policyToString(UpdatePolicy p);
     static Optional<UpdatePolicy> parsePolicyString(const String& s);

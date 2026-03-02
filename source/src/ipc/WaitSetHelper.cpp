@@ -140,20 +140,22 @@ namespace ipc
                                 UInt32 expected,
                                 UInt64 timeout_ns) noexcept
     {
-        struct timespec ts = { 0, 0 };
+        struct timespec ts;
+        struct timespec* pts = nullptr;
         
         if ( timeout_ns > 0 ) {
-            ts.tv_sec = timeout_ns / 1000000000ULL;
-            ts.tv_nsec = timeout_ns % 1000000000ULL;
+            ts.tv_sec = static_cast< time_t >( timeout_ns / 1000000000ULL );
+            ts.tv_nsec = static_cast< long >( timeout_ns % 1000000000ULL );
+            pts = &ts;
         }
         
-        // FUTEX_WAIT_PRIVATE: More efficient for process-private futexes
-        // But we need FUTEX_WAIT for shared memory across processes
+        // FUTEX_WAIT: Cross-process shared memory futex
+        // Pass nullptr for infinite wait when timeout_ns == 0
         return syscall(SYS_futex,
                       uaddr,
                       FUTEX_WAIT,
                       expected,
-                      &ts,
+                      pts,
                       nullptr,
                       0);
     }

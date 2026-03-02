@@ -10,11 +10,11 @@ TEST(PromiseTest, SetErrorAndSetResult) {
     auto f = p.get_future();
 
     // Set an error by value
-    p.SetError( MakeErrorCode(future_errc::promise_already_satisfied) );
+    p.SetError( MakeErrorCode(FutureErrc::kPromiseAlreadySatisfied) );
 
     auto r = f.GetResult();
     EXPECT_FALSE(r.HasValue());
-    EXPECT_EQ(r.Error().Value(), static_cast<ErrorDomain::CodeType>(future_errc::promise_already_satisfied));
+    EXPECT_EQ(r.Error().Value(), static_cast<ErrorDomain::CodeType>(FutureErrc::kPromiseAlreadySatisfied));
 
     // New promise/future pair to test SetResult
     Promise<int> p2;

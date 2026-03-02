@@ -53,11 +53,11 @@ namespace ipc
         /// When ref_count reaches 0, chunk returns to free list
         Atomic<UInt8>       ref_count;  
         Atomic<UInt8>       state;              ///< ChunkState enum
-        UInt16              crc_;               ///< CRC for data integrity
-        UInt32              payload_size_;      ///< Size of user payload
+        UInt16              crc;               ///< CRC for data integrity
+        UInt32              payload_size;      ///< Size of user payload
         
         Atomic<UInt8>       channel_id;         ///< Channel ID (for multi-channel support)
-        UInt8               reserved_[3];       ///< Padding for alignment  
+        UInt8               reserved[3];       ///< Padding for alignment  
 
         /// Next chunk index in free list (kInvalidChunkIndex if end)
         Atomic<UInt16>      next_free_index;
@@ -69,12 +69,12 @@ namespace ipc
         /**
          * @brief Initialize chunk header
          * @param index Chunk index in pool
-         * @param payload_size Size of user payload
+         * @param size Size of user payload
          */
-        void Initialize( UInt16 index, UInt32 payload_size ) noexcept
+        void Initialize( UInt16 index, UInt32 size ) noexcept
         {
             chunk_index = index;
-            payload_size_ = payload_size;
+            payload_size = size;
 
             state.store( static_cast< UInt8 >( ChunkState::kFree ), std::memory_order_release );
             ref_count.store( 0, std::memory_order_release) ;

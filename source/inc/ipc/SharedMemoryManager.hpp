@@ -64,10 +64,10 @@ namespace ipc
          * @brief Constructor
          */
         SharedMemoryManager() noexcept
-            : shm_fd_(-1)
-            , base_addr_(nullptr)
-            , size_(0)
-            , ref_count_acquired_(false)
+            : m_iFd(-1)
+            , m_pBaseAddr(nullptr)
+            , m_iSize(0)
+            , m_bRefCountAcquired(false)
         {
         }
         
@@ -76,9 +76,9 @@ namespace ipc
          */
         ~SharedMemoryManager() noexcept
         {
-            if ( base_addr_ != nullptr && base_addr_ != MAP_FAILED ) {
+            if ( m_pBaseAddr != nullptr && m_pBaseAddr != MAP_FAILED ) {
                 auto* ctrl = GetControlBlock();
-                if ( ref_count_acquired_ && ctrl && ctrl->Validate() ) {
+                if ( m_bRefCountAcquired && ctrl && ctrl->Validate() ) {
                     auto ref_count = ctrl->header.ref_count.load( std::memory_order_acquire );
                     if ( ref_count <= 1 ) {
                         ctrl->header.ready.store( SHMState::kClosing, std::memory_order_release );
@@ -86,7 +86,7 @@ namespace ipc
                 }
             }
 
-            Cleanup();
+            cleanup();
         }
         
         // Delete copy/move
@@ -119,12 +119,21 @@ namespace ipc
                            const SharedMemoryConfig& config) noexcept;
         
         /**
+         * @brief Open existing shared memory segment by file descriptor
+         * @param shm_fd Shared memory file descriptor
+         * @param config Configuration
+         * @return Result with success or error
+         */
+        Result<void> Open( int shm_fd, 
+                           const SharedMemoryConfig& config) noexcept;  
+
+        /**
          * @brief Get base address of shared memory
          * @return Base address pointer
          */
         inline void* GetBaseAddress() const noexcept 
         { 
-            return base_addr_; 
+            return m_pBaseAddr; 
         }
         
         /**
@@ -133,7 +142,7 @@ namespace ipc
          */
         inline ControlBlock* GetControlBlock() const noexcept
         {
-            return static_cast< ControlBlock* >( base_addr_ );
+            return static_cast< ControlBlock* >( m_pBaseAddr );
         }
 
         /**
@@ -142,9 +151,9 @@ namespace ipc
          */
         inline ChannelQueue* GetChannelQueue() const noexcept
         {
-            DEF_LAP_ASSERT( base_addr_, "Shared memory not initialized" );
+            DEF_LAP_ASSERT( m_pBaseAddr, "Shared memory not initialized" );
 
-            return reinterpret_cast< ChannelQueue* >( reinterpret_cast< UInt8* >( base_addr_ ) + kChannelRegionOffset );
+            return reinterpret_cast< ChannelQueue* >( reinterpret_cast< UInt8* >( m_pBaseAddr ) + kChannelRegionOffset );
         }
 
         /**
@@ -160,7 +169,7 @@ namespace ipc
          */
         ChannelQueue* GetChannelQueue( UInt32 queue_index ) const noexcept
         {
-            DEF_LAP_ASSERT( base_addr_, "Shared memory not initialized" );
+            DEF_LAP_ASSERT( m_pBaseAddr, "Shared memory not initialized" );
             DEF_LAP_ASSERT( queue_index < kMaxChannels, "Queue index out of range" );
 
             return reinterpret_cast< ChannelQueue* >( reinterpret_cast< UInt8* >( GetChannelQueue() ) + kChannelQueueSize * queue_index );
@@ -172,16 +181,16 @@ namespace ipc
          */
         inline void* GetChunkPool() const noexcept
         {
-            DEF_LAP_ASSERT( base_addr_, "Shared memory not initialized" );
+            DEF_LAP_ASSERT( m_pBaseAddr, "Shared memory not initialized" );
 
-            return reinterpret_cast< void* >( reinterpret_cast< UInt8* >( base_addr_ ) + kChunkPoolOffset );
+            return reinterpret_cast< void* >( reinterpret_cast< UInt8* >( m_pBaseAddr ) + kChunkPoolOffset );
         }
         
         /**
          * @brief Get total size of shared memory
          * @return Size in bytes
          */
-        UInt64 GetSize() const noexcept { return size_; }
+        UInt64 GetSize() const noexcept { return m_iSize; }
 
         /**
          * @brief Get shared memory path
@@ -189,7 +198,7 @@ namespace ipc
          */
         inline String GetShmPath() const noexcept
         {
-            return shm_path_;
+            return m_strPath;
         }
         
     private:  
@@ -198,21 +207,21 @@ namespace ipc
          * @param config Configuration
          * @return Result
          */
-        Result<void> InitializeSharedMemory(const SharedMemoryConfig& config) noexcept;
+        Result<void> initializeSharedMemory(const SharedMemoryConfig& config) noexcept;
         
         /**
-         * @brief Cleanup resources
+         * @brief cleanup resources
          */
-        void Cleanup() noexcept;
+        void cleanup() noexcept;
 
     private:      
-        int shm_fd_;                ///< Shared memory file descriptor
-        void* base_addr_;           ///< Base address of mapped memory
+        int m_iFd;                ///< Shared memory file descriptor
+        void* m_pBaseAddr;           ///< Base address of mapped memory
         //void* aligned_addr_;        ///< Aligned address for allocation
-        Size size_;               ///< Total size of shared memory
-        String shm_path_;           ///< Shared memory path
-        SharedMemoryConfig config_; ///< Configuration
-        Bool ref_count_acquired_;    ///< Whether ref_count was acquired
+        Size m_iSize;               ///< Total size of shared memory
+        String m_strPath;           ///< Shared memory path
+        SharedMemoryConfig m_config; ///< Configuration
+        Bool m_bRefCountAcquired;    ///< Whether ref_count was acquired
     };
     
 }  // namespace ipc

@@ -20,11 +20,10 @@
 #define LAP_CORE_TIMER_HPP
 
 #include <thread>
-#include <functional>
-#include <atomic>
 #include <chrono>
 #include <type_traits>
 #include "CTypedef.hpp"
+#include "CFunction.hpp"
 #include "CSync.hpp"
 
 namespace lap {
@@ -49,47 +48,47 @@ public:
     Timer() noexcept = default;
     Timer(const Timer&) = delete;
     Timer& operator=(const Timer&) = delete;
-    ~Timer() { stop(); }
+    ~Timer() { Stop(); }
 
-    bool isRunning() const noexcept { return running_.load(std::memory_order_acquire); }
+    Bool IsRunning() const noexcept { return m_bRunning.load(std::memory_order_acquire); }
 
     // One-shot or periodic start after a relative delay
-    void startAfter(duration delay,
-                    ::std::function<void()> cb,
+    void StartAfter(duration delay,
+                    Function<void()> cb,
                     duration period = duration::zero())
     {
-        startAt(Clock::now() + delay, ::std::move(cb), period);
+        StartAt(Clock::now() + delay, ::std::move(cb), period);
     }
 
     // One-shot or periodic start at an absolute time point
-    void startAt(time_point when,
-                 ::std::function<void()> cb,
+    void StartAt(time_point when,
+                 Function<void()> cb,
                  duration period = duration::zero())
     {
-        stop(); // ensure clean state
+        Stop(); // ensure clean state
         {
-            LockGuard lock(mtx_);
-            callback_ = ::std::move(cb);
-            next_ = when;
-            period_ = period;
-            running_.store(true, std::memory_order_release);
+            LockGuard lock(m_mtx);
+            m_callback = ::std::move(cb);
+            m_next = when;
+            m_period = period;
+            m_bRunning.store(true, std::memory_order_release);
         }
-        worker_ = ::std::thread([this]{ this->run(); });
+        m_worker = ::std::thread([this]{ this->run(); });
     }
 
-    void stop() noexcept
+    void Stop() noexcept
     {
         const auto self_id = ::std::this_thread::get_id();
         {
-            LockGuard lock(mtx_);
-            if (!running_.exchange(false, std::memory_order_acq_rel)) {
+            LockGuard lock(m_mtx);
+            if (!m_bRunning.exchange(false, std::memory_order_acq_rel)) {
                 // already stopped
             }
-            cv_.notify_all();
+            m_cv.notify_all();
         }
         // Avoid joining if called from the timer thread itself
-        if (worker_.joinable() && worker_.get_id() != self_id) {
-            worker_.join();
+        if (m_worker.joinable() && m_worker.get_id() != self_id) {
+            m_worker.join();
         }
     }
 
@@ -98,23 +97,23 @@ private:
     {
         // record this thread id for stop-from-callback safety
         for (;;) {
-            ::std::function<void()> cb;
+            Function<void()> cb;
             time_point when;
             duration p;
             {
-                UniqueLock lock(mtx_, std::defer_lock);
+                UniqueLock lock(m_mtx, std::defer_lock);
                 lock.lock();
                 // wait until next trigger or stop
-                cv_.wait_until(lock, next_, [this]{ return !running_.load(std::memory_order_acquire) || Clock::now() >= next_; });
-                if (!running_.load(std::memory_order_acquire)) {
+                m_cv.wait_until(lock, m_next, [this]{ return !m_bRunning.load(std::memory_order_acquire) || Clock::now() >= m_next; });
+                if (!m_bRunning.load(std::memory_order_acquire)) {
                     break;
                 }
-                cb = callback_;
-                when = next_;
-                p = period_;
+                cb = m_callback;
+                when = m_next;
+                p = m_period;
             }
 
-            // Execute callback outside lock to prevent blocking stop()
+            // Execute callback outside lock to prevent blocking Stop()
             try {
                 if (cb) cb();
             } catch (...) {
@@ -123,30 +122,30 @@ private:
 
             if (p == duration::zero()) {
                 // one-shot
-                LockGuard lock(mtx_);
-                running_.store(false, std::memory_order_release);
-                cv_.notify_all();
+                LockGuard lock(m_mtx);
+                m_bRunning.store(false, std::memory_order_release);
+                m_cv.notify_all();
                 break;
             } else {
                 // periodic: schedule next; catch up if we are behind
-                LockGuard lock(mtx_);
+                LockGuard lock(m_mtx);
                 auto now = Clock::now();
                 do {
-                    next_ += p;
-                } while (next_ <= now);
+                    m_next += p;
+                } while (m_next <= now);
                 // loop continues
             }
         }
     }
 
 private:
-    mutable Mutex mtx_;
-    ::std::condition_variable_any cv_;
-    ::std::thread worker_;
-    ::std::function<void()> callback_;
-    time_point next_{};
-    duration period_{}; // zero means one-shot
-    ::std::atomic<bool> running_{false};
+    mutable Mutex m_mtx;
+    ConditionVariableAny m_cv;
+    ::std::thread m_worker;
+    Function<void()> m_callback;
+    time_point m_next{};
+    duration m_period{}; // zero means one-shot
+    Atomic<Bool> m_bRunning{false};
 };
 
 using SteadyTimer = Timer<SteadyClock>;

@@ -37,46 +37,46 @@ namespace core
     {
     public:
         // Now (system and steady)
-        static SystemClock::time_point nowSystem() noexcept { return SystemClock::now(); }
-        static SteadyClock::time_point nowSteady() noexcept { return SteadyClock::now(); }
+        static SystemClock::time_point NowSystem() noexcept { return SystemClock::now(); }
+        static SteadyClock::time_point NowSteady() noexcept { return SteadyClock::now(); }
 
         // Milliseconds since Unix epoch (system clock)
-        static UInt64 getCurrentTime() noexcept
+        static UInt64 GetCurrentTime() noexcept
         {
-            return toUnixMillis( nowSystem() );
+            return ToUnixMillis( NowSystem() );
         }
 
-        static UInt64 toUnixMillis( SystemClock::time_point tp ) noexcept
+        static UInt64 ToUnixMillis( SystemClock::time_point tp ) noexcept
         {
             return ::std::chrono::duration_cast< ::std::chrono::milliseconds >( tp.time_since_epoch() ).count();
         }
 
-        static SystemClock::time_point fromUnixMillis( UInt64 ms ) noexcept
+        static SystemClock::time_point FromUnixMillis( UInt64 ms ) noexcept
         {
             return SystemClock::time_point{ ::std::chrono::milliseconds{ ms } };
         }
 
         template < typename Rep, typename Period >
-        static UInt64 toMillis( ::std::chrono::duration< Rep, Period > d ) noexcept
+        static UInt64 ToMillis( ::std::chrono::duration< Rep, Period > d ) noexcept
         {
             return ::std::chrono::duration_cast< ::std::chrono::milliseconds >( d ).count();
         }
 
         // Sleep helpers (not marked noexcept because standard does not specify noexcept)
         template < typename Rep, typename Period >
-        static void sleepFor( ::std::chrono::duration< Rep, Period > d )
+        static void SleepFor( ::std::chrono::duration< Rep, Period > d )
         {
             ::std::this_thread::sleep_for( d );
         }
 
         template < typename Clock, typename Duration >
-        static void sleepUntil( ::std::chrono::time_point< Clock, Duration > tp )
+        static void SleepUntil( ::std::chrono::time_point< Clock, Duration > tp )
         {
             ::std::this_thread::sleep_until( tp );
         }
 
         // Formatting (system time only). Example format: "%Y-%m-%d %H:%M:%S"
-        static String formatSystem( SystemClock::time_point tp, const Char* fmt = "%Y-%m-%d %H:%M:%S" )
+        static String FormatSystem( SystemClock::time_point tp, const Char* fmt = "%Y-%m-%d %H:%M:%S" )
         {
             using namespace std;
             time_t tt = SystemClock::to_time_t( tp );
@@ -100,7 +100,7 @@ namespace core
                 tm tmv{};
                 gmtime_r(&now, &tmv);  // UTC time
                 
-                char buffer[32];
+                Char buffer[32];
                 strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &tmv);
                 return String(buffer);
             } catch (...) {

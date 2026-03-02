@@ -42,19 +42,19 @@ namespace core
 
         Promise& operator= ( Promise &&other ) noexcept
         {
-            swap( ::std::move( other ) );
+            Swap( ::std::move( other ) );
 
             return *this;
         }
 
         Promise& operator= ( const Promise & ) = delete;
 
-        void swap ( Promise &other ) noexcept
+        void Swap ( Promise &other ) noexcept
         {
             ::std::swap( m_impPromise, other.m_impPromise );
         }
 
-        Future<T, E> get_future ()
+        Future<T, E> GetFuture ()
         {
             ::std::future< Result< T, E > > future;
 
@@ -70,35 +70,35 @@ namespace core
         }
 
         template<typename U = T>
-        ::std::enable_if_t< !( ::std::is_same< U, void >::value ) > set_value ( const T &value )
+        ::std::enable_if_t< !( ::std::is_same< U, void >::value ) > SetValue ( const U &value )
         {
-            // set_value with T
+            // SetValue with T
             try {
-                m_impPromise.set_value( Result< U, E >( value ) );
+                m_impPromise.set_value( Result< T, E >( value ) );
             }
             catch ( ::std::future_error const& e ) {
-                m_impPromise = ::std::promise< Result< U, E > >();
-                m_impPromise.set_value( Result< U, E >( ErrorCode( this->convertError( e ) ) ) );
+                m_impPromise = ::std::promise< Result< T, E > >();
+                m_impPromise.set_value( Result< T, E >( ErrorCode( this->convertError( e ) ) ) );
             }
         }
 
         template<typename U = T>
-        ::std::enable_if_t< !( ::std::is_same< U, void >::value ) >  set_value ( T &&value )
+        ::std::enable_if_t< !( ::std::is_same< U, void >::value ) >  SetValue ( U &&value )
         {
-            // set_value with T
+            // SetValue with T
             try {
-                m_impPromise.set_value( Result< U, E >( ::std::forward< U >( value ) ) );
+                m_impPromise.set_value( Result< T, E >( ::std::forward< U >( value ) ) );
             }
             catch (std::future_error const& e) {
-                m_impPromise = ::std::promise< Result< U, E > >();
-                m_impPromise.set_value( Result< U, E >( ErrorCode( this->convertError( e ) ) ) );
+                m_impPromise = ::std::promise< Result< T, E > >();
+                m_impPromise.set_value( Result< T, E >( ErrorCode( this->convertError( e ) ) ) );
             }
         }
 
         template<typename U = T>
-        ::std::enable_if_t< ( ::std::is_same< U, void >::value ) > set_value ()
+        ::std::enable_if_t< ( ::std::is_same< U, void >::value ) > SetValue ()
         {
-            // set_value with void
+            // SetValue with void
             try {
                 m_impPromise.set_value( Result< void, E >() );
             }
@@ -139,14 +139,14 @@ namespace core
         }
 
     private:
-        inline future_errc convertError( const ::std::future_error &error )
+        inline FutureErrc convertError( const ::std::future_error &error )
         {
             if ( error.code() == ::std::future_errc::promise_already_satisfied ) {
-                return future_errc::promise_already_satisfied;
+                return FutureErrc::kPromiseAlreadySatisfied;
             } else if ( error.code() == ::std::future_errc::future_already_retrieved ) {
-                return future_errc::future_already_retrieved;
+                return FutureErrc::kFutureAlreadyRetrieved;
             } else {
-                return future_errc::no_state;
+                return FutureErrc::kNoState;
             }
         }
 

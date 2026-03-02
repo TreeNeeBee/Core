@@ -55,16 +55,16 @@ namespace core
     struct variant_size : std::variant_size<T> {};
     
     template <typename T>
-    inline constexpr std::size_t variant_size_v = std::variant_size_v<T>;
+    inline constexpr Size variant_size_v = std::variant_size_v<T>;
     
-    template <std::size_t I, typename T>
+    template <Size I, typename T>
     struct variant_alternative : std::variant_alternative<I, T> {};
     
-    template <std::size_t I, typename T>
+    template <Size I, typename T>
     using variant_alternative_t = typename std::variant_alternative<I, T>::type;
     
     // variant_npos constant (AUTOSAR SWS_CORE_01813)
-    inline constexpr std::size_t variant_npos = std::variant_npos;
+    inline constexpr Size variant_npos = std::variant_npos;
     
     // monostate (AUTOSAR SWS_CORE_01814)
     using monostate = std::monostate;
@@ -96,17 +96,17 @@ namespace core
     };
     
     // variant_npos for boost::variant
-    inline constexpr std::size_t variant_npos = static_cast<std::size_t>(-1);
+    inline constexpr Size variant_npos = static_cast<Size>(-1);
     
     // get function for boost::variant
-    template <std::size_t I, typename... Types>
+    template <Size I, typename... Types>
     auto get(Variant<Types...>& v) -> typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type&
     {
         using TargetType = typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type;
         return boost::get<TargetType>(v);
     }
     
-    template <std::size_t I, typename... Types>
+    template <Size I, typename... Types>
     auto get(const Variant<Types...>& v) -> const typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type&
     {
         using TargetType = typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type;
@@ -126,14 +126,14 @@ namespace core
     }
     
     // get_if function for boost::variant
-    template <std::size_t I, typename... Types>
+    template <Size I, typename... Types>
     auto get_if(Variant<Types...>* pv) noexcept -> typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type*
     {
         using TargetType = typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type;
         return boost::get<TargetType>(pv);
     }
     
-    template <std::size_t I, typename... Types>
+    template <Size I, typename... Types>
     auto get_if(const Variant<Types...>* pv) noexcept -> const typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type*
     {
         using TargetType = typename boost::mpl::at_c<typename Variant<Types...>::types, I>::type;
@@ -162,7 +162,7 @@ namespace core
     
     // holds_alternative function for boost::variant
     template <typename T, typename... Types>
-    bool holds_alternative(const Variant<Types...>& v) noexcept
+    Bool holds_alternative(const Variant<Types...>& v) noexcept
     {
         return v.which() == boost::mpl::find<typename Variant<Types...>::types, T>::type::pos::value;
     }
@@ -176,12 +176,12 @@ namespace core
      * @return Index of current alternative, or variant_npos if valueless
      */
     template <typename... Types>
-    constexpr std::size_t GetVariantIndex(const Variant<Types...>& v) noexcept
+    constexpr Size GetVariantIndex(const Variant<Types...>& v) noexcept
     {
 #if __cplusplus >= 201703L
         return v.index();
 #else
-        return static_cast<std::size_t>(v.which());
+        return static_cast<Size>(v.which());
 #endif
     }
 
@@ -193,7 +193,7 @@ namespace core
      * @return true if variant holds a value, false if valueless
      */
     template <typename... Types>
-    constexpr bool HasVariantValue(const Variant<Types...>& v) noexcept
+    constexpr Bool HasVariantValue(const Variant<Types...>& v) noexcept
     {
 #if __cplusplus >= 201703L
         return !v.valueless_by_exception();

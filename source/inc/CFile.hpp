@@ -33,7 +33,6 @@
 
 #include <boost/crc.hpp>
 #include <fstream>
-#include <string>
 #include <regex>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -73,7 +72,7 @@ namespace core
             Util& operator=(const Util&) = delete;
             
             // Check if a file exists
-            static Bool exists(const String& filePath) noexcept
+            static Bool Exists(const String& filePath) noexcept
             {
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
                 std::error_code ec;
@@ -84,7 +83,7 @@ namespace core
             }
 
             // Delete a file
-            static Bool remove(const String& filePath) noexcept
+            static Bool Remove(const String& filePath) noexcept
             {
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
                 std::error_code ec;
@@ -95,7 +94,7 @@ namespace core
             }
 
             // Copy a file
-            static Bool copy(const String& source, const String& destination) noexcept
+            static Bool Copy(const String& source, const String& destination) noexcept
             {
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
                 std::error_code ec;
@@ -108,7 +107,7 @@ namespace core
             }
 
             // Move a file
-            static Bool move(const String& source, const String& destination) noexcept
+            static Bool Move(const String& source, const String& destination) noexcept
             {
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
                 std::error_code ec;
@@ -120,7 +119,7 @@ namespace core
             }
 
             // Create an empty file
-            static Bool create(const String& filePath) noexcept
+            static Bool Create(const String& filePath) noexcept
             {
                 try {
                     std::ofstream ofs(filePath);
@@ -131,7 +130,7 @@ namespace core
             }
 
             // Get the size of a file
-            static std::size_t size(const String& filePath) noexcept
+            static std::size_t FileSize(const String& filePath) noexcept
             {
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
                 std::error_code ec;
@@ -143,21 +142,21 @@ namespace core
             }
 
             // Remove file extension from path
-            static StringView removeExtension(StringView strPath) noexcept
+            static StringView RemoveExtension(StringView strPath) noexcept
             {
                 Size point(strPath.find_last_of('.'));
                 return point > 0 && point != StringView::npos ? strPath.substr(0, point) : strPath;
             }
 
             // Check if file path is valid
-            static Bool checkValid(StringView strFile) noexcept
+            static Bool CheckValid(StringView strFile) noexcept
             {
                 ::std::regex regFile("([\\w\\.\\/]+)$");
                 return ::std::regex_match(strFile.data(), regFile);
             }
 
             // Calculate CRC32 checksum of a file (returns 0 on error)
-            static UInt32 crc(StringView strFile, Bool isHeaderOnly = true) noexcept
+            static UInt32 Crc(StringView strFile, Bool isHeaderOnly = true) noexcept
             {
                 boost::crc_32_type crc;
                 Vector<Char> buffer(4096);
@@ -181,23 +180,23 @@ namespace core
             }
 
             // Delete file with validation
-            static Bool deleteFile(StringView strFile) noexcept
+            static Bool DeleteFile(StringView strFile) noexcept
             {
                 // Treat as success if invalid path
-                if (!checkValid(strFile)) {
+                if (!CheckValid(strFile)) {
                     return true;
                 }
-                return remove(String(strFile));
+                return Remove(String(strFile));
             }
 
             // Rename/move file (wrapper for POSIX rename)
-            static Bool rename(const String& oldPath, const String& newPath) noexcept
+            static Bool Rename(const String& oldPath, const String& newPath) noexcept
             {
                 return ::rename(oldPath.c_str(), newPath.c_str()) == 0;
             }
 
             // Get file status
-            static Bool stat(const String& path, struct stat* st) noexcept
+            static Bool Stat(const String& path, struct stat* st) noexcept
             {
                 return ::stat(path.c_str(), st) == 0;
             }
@@ -286,9 +285,9 @@ namespace core
              * @param filePath Path to the file
              * @return Modification time in milliseconds since epoch, 0 on error
              */
-            static UInt64 getModificationTime(const String& filePath) noexcept
+            static UInt64 GetModificationTime(const String& filePath) noexcept
             {
-                if (!exists(filePath)) {
+                if (!Exists(filePath)) {
                     return 0;
                 }
                 
@@ -311,16 +310,16 @@ namespace core
         // Open modes for instance operations
         enum class OpenMode : UInt32
         {
-            ReadOnly    = 0x0001,   // O_RDONLY
-            WriteOnly   = 0x0002,   // O_WRONLY
-            ReadWrite   = 0x0004,   // O_RDWR
-            Create      = 0x0008,   // O_CREAT
-            Append      = 0x0010,   // O_APPEND
-            Truncate    = 0x0020,   // O_TRUNC
-            Exclusive   = 0x0040,   // O_EXCL
-            CloseOnExec = 0x0080,   // O_CLOEXEC
-            Sync        = 0x0100,   // O_SYNC - synchronous writes (no OS cache)
-            Direct      = 0x0200    // O_DIRECT - direct I/O bypassing page cache
+            kReadOnly    = 0x0001,   // O_RDONLY
+            kWriteOnly   = 0x0002,   // O_WRONLY
+            kReadWrite   = 0x0004,   // O_RDWR
+            kCreate      = 0x0008,   // O_CREAT
+            kAppend      = 0x0010,   // O_APPEND
+            kTruncate    = 0x0020,   // O_TRUNC
+            kExclusive   = 0x0040,   // O_EXCL
+            kCloseOnExec = 0x0080,   // O_CLOEXEC
+            kSync        = 0x0100,   // O_SYNC - synchronous writes (no OS cache)
+            kDirect      = 0x0200    // O_DIRECT - direct I/O bypassing page cache
         };
 
         // Default constructor (no file opened)
@@ -330,13 +329,13 @@ namespace core
         explicit File(const String& path, UInt32 flags, UInt32 mode = 0644) noexcept
             : m_fd(-1)
         {
-            open(path, flags, mode);
+            Open(path, flags, mode);
         }
 
         // Destructor - auto-close file
         ~File() noexcept
         {
-            close();
+            Close();
         }
 
         // Non-copyable
@@ -352,7 +351,7 @@ namespace core
         File& operator=(File&& other) noexcept
         {
             if (this != &other) {
-                close();
+                Close();
                 m_fd = other.m_fd;
                 other.m_fd = -1;
             }
@@ -360,9 +359,9 @@ namespace core
         }
 
         // Open file with flags
-        Bool open(const String& path, UInt32 flags, UInt32 mode = 0644) noexcept
+        Bool Open(const String& path, UInt32 flags, UInt32 mode = 0644) noexcept
         {
-            close();  // Close existing fd if any
+            Close();  // Close existing fd if any
 
             int sysFlags = convertFlags(flags);
             m_fd = ::open(path.c_str(), sysFlags, mode);
@@ -370,7 +369,7 @@ namespace core
         }
 
         // Close file
-        void close() noexcept
+        void Close() noexcept
         {
             if (m_fd >= 0) {
                 ::close(m_fd);
@@ -379,35 +378,35 @@ namespace core
         }
 
         // Write data (returns bytes written, -1 on error)
-        Int64 write(const void* buf, Size len) noexcept
+        Int64 Write(const void* buf, Size len) noexcept
         {
             if (m_fd < 0) return -1;
             return ::write(m_fd, buf, len);
         }
 
         // Read data (returns bytes read, -1 on error)
-        Int64 read(void* buf, Size len) noexcept
+        Int64 Read(void* buf, Size len) noexcept
         {
             if (m_fd < 0) return -1;
             return ::read(m_fd, buf, len);
         }
 
         // Sync to disk
-        Bool fsync() noexcept
+        Bool Fsync() noexcept
         {
             if (m_fd < 0) return false;
             return ::fsync(m_fd) == 0;
         }
 
         // Get file status
-        Bool fstat(struct stat* st) noexcept
+        Bool Fstat(struct stat* st) noexcept
         {
             if (m_fd < 0) return false;
             return ::fstat(m_fd, st) == 0;
         }
 
         // Advisory file locking (blocking)
-        Bool lock(Bool exclusive = true) noexcept
+        Bool Lock(Bool exclusive = true) noexcept
         {
             if (m_fd < 0) return false;
             int operation = exclusive ? LOCK_EX : LOCK_SH;
@@ -415,7 +414,7 @@ namespace core
         }
 
         // Advisory file locking (non-blocking)
-        Bool tryLock(Bool exclusive = true) noexcept
+        Bool TryLock(Bool exclusive = true) noexcept
         {
             if (m_fd < 0) return false;
             int operation = exclusive ? (LOCK_EX | LOCK_NB) : (LOCK_SH | LOCK_NB);
@@ -423,34 +422,34 @@ namespace core
         }
 
         // Unlock file
-        Bool unlock() noexcept
+        Bool Unlock() noexcept
         {
             if (m_fd < 0) return false;
             return ::flock(m_fd, LOCK_UN) == 0;
         }
 
         // Check if file is open
-        Bool isOpen() const noexcept { return m_fd >= 0; }
+        Bool IsOpen() const noexcept { return m_fd >= 0; }
         
         // Get raw file descriptor
-        int get() const noexcept { return m_fd; }
+        int Get() const noexcept { return m_fd; }
 
     private:
         // Convert OpenMode flags to system flags
         static int convertFlags(UInt32 flags) noexcept
         {
             int result = 0;
-            if (flags & static_cast<UInt32>(OpenMode::ReadOnly))    result |= O_RDONLY;
-            if (flags & static_cast<UInt32>(OpenMode::WriteOnly))   result |= O_WRONLY;
-            if (flags & static_cast<UInt32>(OpenMode::ReadWrite))   result |= O_RDWR;
-            if (flags & static_cast<UInt32>(OpenMode::Create))      result |= O_CREAT;
-            if (flags & static_cast<UInt32>(OpenMode::Append))      result |= O_APPEND;
-            if (flags & static_cast<UInt32>(OpenMode::Truncate))    result |= O_TRUNC;
-            if (flags & static_cast<UInt32>(OpenMode::Exclusive))   result |= O_EXCL;
-            if (flags & static_cast<UInt32>(OpenMode::CloseOnExec)) result |= O_CLOEXEC;
-            if (flags & static_cast<UInt32>(OpenMode::Sync))        result |= O_SYNC;
+            if (flags & static_cast<UInt32>(OpenMode::kReadOnly))    result |= O_RDONLY;
+            if (flags & static_cast<UInt32>(OpenMode::kWriteOnly))   result |= O_WRONLY;
+            if (flags & static_cast<UInt32>(OpenMode::kReadWrite))   result |= O_RDWR;
+            if (flags & static_cast<UInt32>(OpenMode::kCreate))      result |= O_CREAT;
+            if (flags & static_cast<UInt32>(OpenMode::kAppend))      result |= O_APPEND;
+            if (flags & static_cast<UInt32>(OpenMode::kTruncate))    result |= O_TRUNC;
+            if (flags & static_cast<UInt32>(OpenMode::kExclusive))   result |= O_EXCL;
+            if (flags & static_cast<UInt32>(OpenMode::kCloseOnExec)) result |= O_CLOEXEC;
+            if (flags & static_cast<UInt32>(OpenMode::kSync))        result |= O_SYNC;
 #ifdef O_DIRECT
-            if (flags & static_cast<UInt32>(OpenMode::Direct))      result |= O_DIRECT;
+            if (flags & static_cast<UInt32>(OpenMode::kDirect))      result |= O_DIRECT;
 #endif
             return result;
         }

@@ -16,7 +16,6 @@
 #include "Message.hpp"
 #include <utility>
 #include <cstring>
-#include <cassert>
 
 namespace lap
 {
@@ -45,24 +44,24 @@ namespace ipc
          * @param chunk_index Chunk index
          */
         Sample( ChunkPoolAllocator* allocator, UInt32 chunk_index ) noexcept
-            : chunk_index_( chunk_index )
-            , allocator_( allocator )
-            , header_( nullptr )
-            , payload_( nullptr )
+            : m_iChunkIndex( chunk_index )
+            , m_pAllocator( allocator )
+            , m_pHeader( nullptr )
+            , m_pPayload( nullptr )
         {
-            DEF_LAP_ASSERT( allocator_ != nullptr, "ChunkPoolAllocator must not be nullptr" );
-            DEF_LAP_ASSERT( chunk_index_ != kInvalidChunkIndex, "Chunk index must be valid" );
+            DEF_LAP_ASSERT( m_pAllocator != nullptr, "ChunkPoolAllocator must not be nullptr" );
+            DEF_LAP_ASSERT( m_iChunkIndex != kInvalidChunkIndex, "Chunk index must be valid" );
 
-            if ( allocator_ && chunk_index_ != kInvalidChunkIndex ) {
-                header_ = allocator_->GetChunkHeader( chunk_index_ );
-                if ( header_ ) {
-                    // header_->ref_count.fetch_add( 1, std::memory_order_acq_rel );
-                    payload_ = static_cast< Byte* >( header_->GetPayload() );
+            if ( m_pAllocator && m_iChunkIndex != kInvalidChunkIndex ) {
+                m_pHeader = m_pAllocator->GetChunkHeader( m_iChunkIndex );
+                if ( m_pHeader ) {
+                    // m_pHeader->ref_count.fetch_add( 1, std::memory_order_acq_rel );
+                    m_pPayload = static_cast< Byte* >( m_pHeader->GetPayload() );
                 }
             }
 
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
-            DEF_LAP_ASSERT( payload_ != nullptr, "Payload must not be nullptr" );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
+            DEF_LAP_ASSERT( m_pPayload != nullptr, "Payload must not be nullptr" );
         }
         
         /**
@@ -70,14 +69,14 @@ namespace ipc
          */
         ~Sample() noexcept
         {
-            if ( header_ && allocator_ && chunk_index_ != kInvalidChunkIndex ) {
+            if ( m_pHeader && m_pAllocator && m_iChunkIndex != kInvalidChunkIndex ) {
                 // Decrement reference count
-                //UInt8 ref_count = header_->ref_count.load( std::memory_order_acq_rel );
-                UInt8 ref_count = header_->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
+                //UInt8 ref_count = m_pHeader->ref_count.load( std::memory_order_acq_rel );
+                UInt8 ref_count = m_pHeader->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
 
                 // If ref count reaches 0, return to pool
                 if ( ref_count == 1 ) {
-                    allocator_->Deallocate( chunk_index_ );
+                    m_pAllocator->Deallocate( m_iChunkIndex );
                 }
             }
 
@@ -92,10 +91,10 @@ namespace ipc
          * @brief Move constructor
          */
         Sample( Sample&& other ) noexcept
-            : chunk_index_( other.chunk_index_ )
-            , allocator_( other.allocator_ )
-            , header_( other.header_ )
-            , payload_( other.payload_ )
+            : m_iChunkIndex( other.m_iChunkIndex )
+            , m_pAllocator( other.m_pAllocator )
+            , m_pHeader( other.m_pHeader )
+            , m_pPayload( other.m_pPayload )
         {
             other.Release();
         }
@@ -107,17 +106,17 @@ namespace ipc
         {
             if ( this != &other) {
                 // Decrement ref count for current chunk before overwriting
-                if ( header_ && allocator_ && chunk_index_ != kInvalidChunkIndex) {
-                    UInt64 new_count = header_->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
+                if ( m_pHeader && m_pAllocator && m_iChunkIndex != kInvalidChunkIndex) {
+                    UInt64 new_count = m_pHeader->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
                     if ( new_count == 1 ) {
-                        allocator_->Deallocate(chunk_index_);
+                        m_pAllocator->Deallocate(m_iChunkIndex);
                     }
                 }
                 
-                allocator_ = other.allocator_;
-                chunk_index_ = other.chunk_index_;
-                header_ = other.header_;
-                payload_ = other.payload_;
+                m_pAllocator = other.m_pAllocator;
+                m_iChunkIndex = other.m_iChunkIndex;
+                m_pHeader = other.m_pHeader;
+                m_pPayload = other.m_pPayload;
                 
                 other.Release();
             }
@@ -127,13 +126,13 @@ namespace ipc
         template < typename T >
         inline T* Payload() noexcept
         {
-            return reinterpret_cast<T*>( payload_ );
+            return reinterpret_cast<T*>( m_pPayload );
         }
 
         template < typename T >
         inline const T* Payload() const noexcept
         {
-            return reinterpret_cast<T*>( payload_ );
+            return reinterpret_cast<T*>( m_pPayload );
         }
         
         /**
@@ -142,7 +141,7 @@ namespace ipc
          */
         inline Byte* RawData() noexcept
         {
-            return payload_;
+            return m_pPayload;
         }
         
         /**
@@ -151,13 +150,13 @@ namespace ipc
          */
         inline const Byte* RawData() const noexcept
         {
-            return payload_;
+            return m_pPayload;
         }
 
         inline Size RawDataSize() const noexcept
         {
-            if ( header_ ) {
-                return header_->payload_size_;
+            if ( m_pHeader ) {
+                return m_pHeader->payload_size;
             } else {
                 return 0;
             }
@@ -165,8 +164,8 @@ namespace ipc
 
         inline UInt8 ChannelID() const noexcept
         {
-            if ( header_ ) {
-                return header_->channel_id.load(std::memory_order_acquire);
+            if ( m_pHeader ) {
+                return m_pHeader->channel_id.load(std::memory_order_acquire);
             } else {
                 return kInvalidChannelID;
             }
@@ -174,8 +173,8 @@ namespace ipc
 
         inline void SetChannelID( UInt8 channel_id ) const noexcept
         {
-            if ( header_ ) {
-                header_->channel_id.store(channel_id, std::memory_order_release);
+            if ( m_pHeader ) {
+                m_pHeader->channel_id.store(channel_id, std::memory_order_release);
             }
         }
         
@@ -184,7 +183,7 @@ namespace ipc
          */
         inline Byte& operator*() noexcept
         {
-            return *payload_;
+            return *m_pPayload;
         }
         
         /**
@@ -192,7 +191,7 @@ namespace ipc
          */
         inline const Byte& operator*() const noexcept
         {
-            return *payload_;
+            return *m_pPayload;
         }
         
         /**
@@ -200,7 +199,7 @@ namespace ipc
          */
         inline Byte* operator->() noexcept
         {
-            return payload_;
+            return m_pPayload;
         }
         
         /**
@@ -208,31 +207,31 @@ namespace ipc
          */
         inline const Byte* operator->() const noexcept
         {
-            return payload_;
+            return m_pPayload;
         }
 
         Size Write( const Byte* const buffer,  Size size ) const noexcept
         {
-            if ( !payload_ || !header_ || !buffer || size == 0 ) {
+            if ( !m_pPayload || !m_pHeader || !buffer || size == 0 ) {
                 return 0;
             }
 
-            Size copy_size = size < header_->payload_size_ ? size : header_->payload_size_;
+            Size copy_size = size < m_pHeader->payload_size ? size : m_pHeader->payload_size;
         
-            std::memcpy( payload_, buffer, copy_size );
+            std::memcpy( m_pPayload, buffer, copy_size );
 
             return copy_size;
         }
 
         Size Read( Byte* const buffer, Size size ) const noexcept
         {
-            if ( !payload_ || !header_ || !buffer || size == 0 ) {
+            if ( !m_pPayload || !m_pHeader || !buffer || size == 0 ) {
                 return 0;
             }
 
-            Size copy_size = size < header_->payload_size_ ? size : header_->payload_size_;
+            Size copy_size = size < m_pHeader->payload_size ? size : m_pHeader->payload_size;
         
-            std::memcpy( buffer, payload_, copy_size );
+            std::memcpy( buffer, m_pPayload, copy_size );
 
             return copy_size;
         }
@@ -243,8 +242,8 @@ namespace ipc
             static_assert( std::is_base_of_v< Message, T >,
                       "T must derive from Message");
 
-            if ( payload_ ) {
-                new ( payload_ ) T( std::forward<Args>(args)... );
+            if ( m_pPayload ) {
+                new ( m_pPayload ) T( std::forward<Args>(args)... );
             }
         }
 
@@ -252,8 +251,8 @@ namespace ipc
         // void onMessageSend() noexcept
         // {
         //     if constexpr ( std::is_base_of<Message, T>::value ) {
-        //         if ( payload_ && header_ ) {
-        //             payload_->OnMessageSend( static_cast< void* >( payload_ ), header_->payload_size_ );
+        //         if ( m_pPayload && m_pHeader ) {
+        //             m_pPayload->OnMessageSend( static_cast< void* >( m_pPayload ), m_pHeader->payload_size );
         //         }
         //     }
         // }
@@ -262,8 +261,8 @@ namespace ipc
         // void onMessageReceived() noexcept
         // {
         //     if constexpr ( std::is_base_of<Message, T>::value ) {
-        //         if ( payload_ && header_ ) {
-        //             payload_->OnMessageReceived( static_cast< const void* >( payload_ ), header_->payload_size_ );
+        //         if ( m_pPayload && m_pHeader ) {
+        //             m_pPayload->OnMessageReceived( static_cast< const void* >( m_pPayload ), m_pHeader->payload_size );
         //         }
         //     }
         // }
@@ -274,13 +273,13 @@ namespace ipc
          */
         inline Bool IsValid() const noexcept
         {
-            // return ( chunk_index_ != kInvalidChunkIndex )
-            //        && ( allocator_ != nullptr ) 
-            //        && ( header_ != nullptr ) 
-            //        && ( payload_ != nullptr );
-            return ( allocator_ != nullptr ) 
-                   && ( header_ != nullptr ) 
-                   && ( payload_ != nullptr );
+            // return ( m_iChunkIndex != kInvalidChunkIndex )
+            //        && ( m_pAllocator != nullptr ) 
+            //        && ( m_pHeader != nullptr ) 
+            //        && ( m_pPayload != nullptr );
+            return ( m_pAllocator != nullptr ) 
+                   && ( m_pHeader != nullptr ) 
+                   && ( m_pPayload != nullptr );
         }
         
         /**
@@ -297,7 +296,7 @@ namespace ipc
          */
         inline UInt16 GetChunkIndex() const noexcept
         {
-            return chunk_index_;
+            return m_iChunkIndex;
         }
 
         /**
@@ -307,10 +306,10 @@ namespace ipc
          */
         void Release() noexcept
         {
-            header_ = nullptr;
-            payload_ = nullptr;
-            chunk_index_ = kInvalidChunkIndex;
-            allocator_ = nullptr;
+            m_pHeader = nullptr;
+            m_pPayload = nullptr;
+            m_iChunkIndex = kInvalidChunkIndex;
+            m_pAllocator = nullptr;
         }
 
         /**
@@ -319,8 +318,8 @@ namespace ipc
          */
         inline ChunkState GetState() const noexcept
         {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
-            return static_cast< ChunkState >( header_->state.load( std::memory_order_acquire ) );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
+            return static_cast< ChunkState >( m_pHeader->state.load( std::memory_order_acquire ) );
         }
 
     protected:
@@ -329,23 +328,23 @@ namespace ipc
 
         inline UInt8 FetchAdd( UInt8 delta ) noexcept
         {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
 
-            return header_->ref_count.fetch_add( delta, std::memory_order_acq_rel );
+            return m_pHeader->ref_count.fetch_add( delta, std::memory_order_acq_rel );
         }
 
         inline UInt8 IncrementRef() noexcept
         {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
 
-            return header_->ref_count.fetch_add( 1, std::memory_order_acq_rel );
+            return m_pHeader->ref_count.fetch_add( 1, std::memory_order_acq_rel );
         }
 
         inline UInt8 DecrementRef() noexcept
         {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
 
-            return header_->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
+            return m_pHeader->ref_count.fetch_sub( 1, std::memory_order_acq_rel );
         }
 
         /**
@@ -356,12 +355,12 @@ namespace ipc
          */
         Bool TransitionState( ChunkState expected, ChunkState desired ) noexcept
         {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
 
             UInt8 expected_val = static_cast< UInt8 >( expected );
             UInt8 desired_val = static_cast< UInt8 >( desired );
             
-            return header_->state.compare_exchange_strong(
+            return m_pHeader->state.compare_exchange_strong(
                 expected_val,
                 desired_val,
                 std::memory_order_acq_rel,
@@ -371,9 +370,9 @@ namespace ipc
 
         inline ChunkState TransitionState( ChunkState desired ) noexcept
         {
-            DEF_LAP_ASSERT( header_ != nullptr, "ChunkHeader must not be nullptr" );
+            DEF_LAP_ASSERT( m_pHeader != nullptr, "ChunkHeader must not be nullptr" );
 
-            return static_cast< ChunkState >( header_->state.exchange( static_cast< UInt8 >( desired ), std::memory_order_acq_rel ) );
+            return static_cast< ChunkState >( m_pHeader->state.exchange( static_cast< UInt8 >( desired ), std::memory_order_acq_rel ) );
         }
     
     private:
@@ -381,21 +380,21 @@ namespace ipc
          * @brief Get chunk header
          * @return Chunk header pointer
          */
-        inline ChunkHeader* GetHeader() noexcept
+        inline ChunkHeader* getHeader() noexcept
         {
-            return header_;
+            return m_pHeader;
         }
 
-        inline ChunkPoolAllocator* GetChunkPoolAllocator() noexcept
+        inline ChunkPoolAllocator* getChunkPoolAllocator() noexcept
         {
-            return allocator_;
+            return m_pAllocator;
         }
         
     private:
-        UInt16                  chunk_index_;   ///< Chunk index
-        ChunkPoolAllocator*     allocator_;     ///< Allocator reference
-        ChunkHeader*            header_;        ///< Chunk header
-        Byte*                   payload_;       ///< Typed payload pointer
+        UInt16                  m_iChunkIndex;   ///< Chunk index
+        ChunkPoolAllocator*     m_pAllocator;     ///< Allocator reference
+        ChunkHeader*            m_pHeader;        ///< Chunk header
+        Byte*                   m_pPayload;       ///< Typed payload pointer
     };
     
 }  // namespace ipc

@@ -68,7 +68,7 @@ static ConfigValue JsonToConfigValue(const json& j) {
     } else if (j.is_array()) {
         ConfigValue arr;
         for (const auto& el : j) {
-            arr.append(JsonToConfigValue(el));
+            arr.Append(JsonToConfigValue(el));
         }
         return arr;
     } else if (j.is_object()) {
@@ -85,142 +85,142 @@ static ConfigValue JsonToConfigValue(const json& j) {
 // ConfigValue Implementation (kept for API compatibility)
 // ============================================================================
 
-ConfigValue::ConfigValue() : type_(ConfigValueType::kNull) {}
+ConfigValue::ConfigValue() : m_type(ConfigValueType::kNull) {}
 
 ConfigValue::ConfigValue(Bool value) 
-    : type_(ConfigValueType::kBoolean), boolValue_(value) {}
+    : m_type(ConfigValueType::kBoolean), m_bValue(value) {}
 
 ConfigValue::ConfigValue(Int64 value)
-    : type_(ConfigValueType::kInteger), intValue_(value) {}
+    : m_type(ConfigValueType::kInteger), m_iValue(value) {}
 
 ConfigValue::ConfigValue(Double value)
-    : type_(ConfigValueType::kDouble), doubleValue_(value) {}
+    : m_type(ConfigValueType::kDouble), m_dValue(value) {}
 
 ConfigValue::ConfigValue(const String& value)
-    : type_(ConfigValueType::kString), stringValue_(value) {}
+    : m_type(ConfigValueType::kString), m_strValue(value) {}
 
 ConfigValue::ConfigValue(const Char* value)
-    : type_(ConfigValueType::kString), stringValue_(value) {}
+    : m_type(ConfigValueType::kString), m_strValue(value) {}
 
-Bool ConfigValue::asBool(Bool defaultValue) const noexcept {
-    if (type_ == ConfigValueType::kBoolean) return boolValue_;
+Bool ConfigValue::AsBool(Bool defaultValue) const noexcept {
+    if (m_type == ConfigValueType::kBoolean) return m_bValue;
     return defaultValue;
 }
 
-Int64 ConfigValue::asInt(Int64 defaultValue) const noexcept {
-    if (type_ == ConfigValueType::kInteger) return intValue_;
+Int64 ConfigValue::AsInt(Int64 defaultValue) const noexcept {
+    if (m_type == ConfigValueType::kInteger) return m_iValue;
     return defaultValue;
 }
 
-Double ConfigValue::asDouble(Double defaultValue) const noexcept {
-    if (type_ == ConfigValueType::kDouble) return doubleValue_;
+Double ConfigValue::AsDouble(Double defaultValue) const noexcept {
+    if (m_type == ConfigValueType::kDouble) return m_dValue;
     return defaultValue;
 }
 
-String ConfigValue::asString(const String& defaultValue) const noexcept {
-    if (type_ == ConfigValueType::kString) return stringValue_;
+String ConfigValue::AsString(const String& defaultValue) const noexcept {
+    if (m_type == ConfigValueType::kString) return m_strValue;
     return defaultValue;
 }
 
-Size ConfigValue::arraySize() const noexcept {
-    if (type_ == ConfigValueType::kArray) return arrayValue_.size();
+Size ConfigValue::ArraySize() const noexcept {
+    if (m_type == ConfigValueType::kArray) return m_vecArrayValue.size();
     return 0;
 }
 
 ConfigValue& ConfigValue::operator[](Size index) {
-    if (type_ != ConfigValueType::kArray) {
-        type_ = ConfigValueType::kArray;
-        arrayValue_.clear();
+    if (m_type != ConfigValueType::kArray) {
+        m_type = ConfigValueType::kArray;
+        m_vecArrayValue.clear();
     }
-    if (index >= arrayValue_.size()) {
-        arrayValue_.resize(index + 1);
+    if (index >= m_vecArrayValue.size()) {
+        m_vecArrayValue.resize(index + 1);
     }
-    return arrayValue_[index];
+    return m_vecArrayValue[index];
 }
 
 const ConfigValue& ConfigValue::operator[](Size index) const {
     static ConfigValue null;
-    if (type_ != ConfigValueType::kArray || index >= arrayValue_.size()) {
+    if (m_type != ConfigValueType::kArray || index >= m_vecArrayValue.size()) {
         return null;
     }
-    return arrayValue_[index];
+    return m_vecArrayValue[index];
 }
 
-void ConfigValue::append(const ConfigValue& value) {
-    if (type_ != ConfigValueType::kArray) {
-        type_ = ConfigValueType::kArray;
-        arrayValue_.clear();
+void ConfigValue::Append(const ConfigValue& value) {
+    if (m_type != ConfigValueType::kArray) {
+        m_type = ConfigValueType::kArray;
+        m_vecArrayValue.clear();
     }
-    arrayValue_.push_back(value);
+    m_vecArrayValue.push_back(value);
 }
 
-Bool ConfigValue::hasKey(const String& key) const noexcept {
-    if (type_ != ConfigValueType::kObject) return false;
-    return objectValue_.find(key) != objectValue_.end();
+Bool ConfigValue::HasKey(const String& key) const noexcept {
+    if (m_type != ConfigValueType::kObject) return false;
+    return m_mapObjectValue.find(key) != m_mapObjectValue.end();
 }
 
 ConfigValue& ConfigValue::operator[](const String& key) {
-    if (type_ != ConfigValueType::kObject) {
-        type_ = ConfigValueType::kObject;
-        objectValue_.clear();
+    if (m_type != ConfigValueType::kObject) {
+        m_type = ConfigValueType::kObject;
+        m_mapObjectValue.clear();
     }
-    return objectValue_[key];
+    return m_mapObjectValue[key];
 }
 
 const ConfigValue& ConfigValue::operator[](const String& key) const {
     static ConfigValue null;
-    if (type_ != ConfigValueType::kObject) return null;
-    auto it = objectValue_.find(key);
-    if (it == objectValue_.end()) return null;
+    if (m_type != ConfigValueType::kObject) return null;
+    auto it = m_mapObjectValue.find(key);
+    if (it == m_mapObjectValue.end()) return null;
     return it->second;
 }
 
-Vector<String> ConfigValue::getKeys() const {
+Vector<String> ConfigValue::GetKeys() const {
     Vector<String> keys;
-    if (type_ == ConfigValueType::kObject) {
-        for (const auto& pair : objectValue_) {
+    if (m_type == ConfigValueType::kObject) {
+        for (const auto& pair : m_mapObjectValue) {
             keys.push_back(pair.first);
         }
     }
     return keys;
 }
 
-String ConfigValue::toJsonString(Bool pretty) const {
+String ConfigValue::ToJsonString(Bool pretty) const {
     std::ostringstream oss;
-    toJsonString(oss, 0, pretty);
+    ToJsonString(oss, 0, pretty);
     return oss.str();
 }
 
-void ConfigValue::toJsonString(std::ostream& os, Int32 indent, Bool pretty) const {
+void ConfigValue::ToJsonString(std::ostream& os, Int32 indent, Bool pretty) const {
     auto doIndent = [&](Int32 level) {
         if (pretty) {
             for (Int32 i = 0; i < level * 2; ++i) os << ' ';
         }
     };
 
-    switch (type_) {
+    switch (m_type) {
         case ConfigValueType::kNull:
             os << "null";
             break;
         case ConfigValueType::kBoolean:
-            os << (boolValue_ ? "true" : "false");
+            os << (m_bValue ? "true" : "false");
             break;
         case ConfigValueType::kInteger:
-            os << intValue_;
+            os << m_iValue;
             break;
         case ConfigValueType::kDouble:
-            os << std::fixed << std::setprecision(6) << doubleValue_;
+            os << std::fixed << std::setprecision(6) << m_dValue;
             break;
         case ConfigValueType::kString:
-            os << "\"" << stringValue_ << "\"";
+            os << "\"" << m_strValue << "\"";
             break;
         case ConfigValueType::kArray:
             os << "[";
             if (pretty) os << "\n";
-            for (Size i = 0; i < arrayValue_.size(); ++i) {
+            for (Size i = 0; i < m_vecArrayValue.size(); ++i) {
                 if (pretty) doIndent(indent + 1);
-                arrayValue_[i].toJsonString(os, indent + 1, pretty);
-                if (i < arrayValue_.size() - 1) os << ",";
+                m_vecArrayValue[i].ToJsonString(os, indent + 1, pretty);
+                if (i < m_vecArrayValue.size() - 1) os << ",";
                 if (pretty) os << "\n";
             }
             if (pretty) doIndent(indent);
@@ -230,11 +230,11 @@ void ConfigValue::toJsonString(std::ostream& os, Int32 indent, Bool pretty) cons
             os << "{";
             if (pretty) os << "\n";
             Size count = 0;
-            for (const auto& pair : objectValue_) {
+            for (const auto& pair : m_mapObjectValue) {
                 if (pretty) doIndent(indent + 1);
                 os << "\"" << pair.first << "\": ";
-                pair.second.toJsonString(os, indent + 1, pretty);
-                if (++count < objectValue_.size()) os << ",";
+                pair.second.ToJsonString(os, indent + 1, pretty);
+                if (++count < m_mapObjectValue.size()) os << ",";
                 if (pretty) os << "\n";
             }
             if (pretty) doIndent(indent);
@@ -243,7 +243,7 @@ void ConfigValue::toJsonString(std::ostream& os, Int32 indent, Bool pretty) cons
     }
 }
 
-ConfigValue ConfigValue::fromJsonString(const String& jsonStr) {
+ConfigValue ConfigValue::FromJsonString(const String& jsonStr) {
     try {
         json j = json::parse(jsonStr);
         return JsonToConfigValue(j);
@@ -257,10 +257,10 @@ ConfigValue ConfigValue::fromJsonString(const String& jsonStr) {
 // ============================================================================
 
 ConfigManager::ConfigManager()
-    : enableSecurity_(true)
-    , initialized_(false)
-    , nextCallbackId_(1)
-    , defaultPolicy_(UpdatePolicy::kOnChangeUpdate)
+    : m_bEnableSecurity(true)
+    , m_bInitialized(false)
+    , m_iNextCallbackId(1)
+    , m_defaultPolicy(UpdatePolicy::kOnChangeUpdate)
 {
     // HMAC key is automatically loaded by Crypto's constructor from environment
     // No manual key loading required here
@@ -268,29 +268,29 @@ ConfigManager::ConfigManager()
     // Crypto/OpenSSL lifecycle is managed in Crypto utilities; no Config-level init required
     
     // Initialize with empty JSON object
-    configData_ = json::object();
+    m_configData = json::object();
     
     // Initialize metadata with defaults
-    metadata_.version = 1;
-    metadata_.encrypted = false;
-    metadata_.description = "";
+    m_metadata.m_iVersion = 1;
+    m_metadata.m_bEncrypted = false;
+    m_metadata.m_strDescription = "";
     
-    // Automatically initialize with default config file
+    // Automatically Initialize with default config file
     // This will load config.json if it exists, otherwise start with empty config
-    auto result = initialize(DEFAULT_CONFIG_FILE, enableSecurity_);
+    auto result = Initialize(DEFAULT_CONFIG_FILE, m_bEnableSecurity);
     if (!result.HasValue()) {
         INNER_CORE_LOG("[ConfigManager] Initialize with default config file failed, starting with empty config\n");
     }
 }
 
 ConfigManager::~ConfigManager() {
-    // Automatically save configuration on destruction with full security
+    // Automatically Save configuration on destruction with full security
     // OpenSSL cleanup is disabled at init, so it's safe to use HMAC here
-    if (initialized_ && !configPath_.empty()) {
+    if (m_bInitialized && !m_strConfigPath.empty()) {
         INNER_CORE_LOG("[ConfigManager] Auto-saving configuration on destruction\n");
-        auto result = save(true);
+        auto result = Save(true);
         if (!result.HasValue()) {
-            INNER_CORE_LOG("[ConfigManager] Failed to save configuration on destruction: error=%d\n", 
+            INNER_CORE_LOG("[ConfigManager] Failed to Save configuration on destruction: error=%d\n", 
                            static_cast<int>(result.Error()));
         } else {
             INNER_CORE_LOG("[ConfigManager] Configuration saved successfully on destruction\n");
@@ -300,20 +300,20 @@ ConfigManager::~ConfigManager() {
     // Crypto/OpenSSL cleanup is handled by the process/crypto library; no explicit cleanup here
 }
 
-ConfigManager& ConfigManager::getInstance() {
+ConfigManager& ConfigManager::GetInstance() {
     static ConfigManager instance;
     return instance;
 }
 
-Result<void, ConfigErrc> ConfigManager::initialize(const String& configPath, Bool enableSecurity) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::Initialize(const String& configPath, Bool enableSecurity) {
+    RecursiveLockGuard lock(m_mutex);
     
-    configPath_ = configPath;
-    enableSecurity_ = enableSecurity;
-    initialized_ = true;
+    m_strConfigPath = configPath;
+    m_bEnableSecurity = enableSecurity;
+    m_bInitialized = true;
     
     // Try to load existing configuration
-    auto loadResult = load();
+    auto loadResult = Load();
     if (!loadResult.HasValue() && loadResult.Error() != ConfigErrc::kFileNotFound) {
         return loadResult;
     }
@@ -321,53 +321,53 @@ Result<void, ConfigErrc> ConfigManager::initialize(const String& configPath, Boo
     return Result<void, ConfigErrc>::FromValue();
 }
 
-void ConfigManager::setBase64Encoding(Bool enable) {
-    LockGuard lock(mutex_);
-    metadata_.encrypted = enable;
+void ConfigManager::SetBase64Encoding(Bool enable) {
+    RecursiveLockGuard lock(m_mutex);
+    m_metadata.m_bEncrypted = enable;
 }
 
-Bool ConfigManager::isBase64Enabled() const {
-    LockGuard lock(mutex_);
-    return metadata_.encrypted;
+Bool ConfigManager::IsBase64Enabled() const {
+    RecursiveLockGuard lock(m_mutex);
+    return m_metadata.m_bEncrypted;
 }
 
-ConfigMetadata ConfigManager::getMetadata() const {
-    LockGuard lock(mutex_);
-    return metadata_;
+ConfigMetadata ConfigManager::GetMetadata() const {
+    RecursiveLockGuard lock(m_mutex);
+    return m_metadata;
 }
 
-void ConfigManager::setVersion(UInt32 version) {
-    LockGuard lock(mutex_);
-    metadata_.version = version;
+void ConfigManager::SetVersion(UInt32 version) {
+    RecursiveLockGuard lock(m_mutex);
+    m_metadata.m_iVersion = version;
 }
 
-UInt32 ConfigManager::getVersion() const {
-    LockGuard lock(mutex_);
-    return metadata_.version;
+UInt32 ConfigManager::GetVersion() const {
+    RecursiveLockGuard lock(m_mutex);
+    return m_metadata.m_iVersion;
 }
 
-void ConfigManager::setDescription(const String& description) {
-    LockGuard lock(mutex_);
-    metadata_.description = description;
+void ConfigManager::SetDescription(const String& description) {
+    RecursiveLockGuard lock(m_mutex);
+    m_metadata.m_strDescription = description;
 }
 
-String ConfigManager::getDescription() const {
-    LockGuard lock(mutex_);
-    return metadata_.description;
+String ConfigManager::GetDescription() const {
+    RecursiveLockGuard lock(m_mutex);
+    return m_metadata.m_strDescription;
 }
 
-Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::Load(Bool skipVerification) {
+    RecursiveLockGuard lock(m_mutex);
     
-    if (!initialized_) {
+    if (!m_bInitialized) {
         INNER_CORE_LOG("[ConfigManager] Load error: Not initialized\n");
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kInternalError);
     }
     
     // Read file
-    auto fileData = readFile(configPath_);
+    auto fileData = readFile(m_strConfigPath);
     if (!fileData.HasValue()) {
-        INNER_CORE_LOG("[ConfigManager] Load error: Cannot read file '%s'\n", configPath_.c_str());
+        INNER_CORE_LOG("[ConfigManager] Load error: Cannot read file '%s'\n", m_strConfigPath.c_str());
         return Result<void, ConfigErrc>::FromError(fileData.Error());
     }
     
@@ -375,7 +375,7 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
         String jsonStr = fileData.Value();
         
         // Decode from Base64 if encrypted flag is set in metadata
-        if (metadata_.encrypted && jsonStr.length() > 0 && jsonStr[0] != '{') {
+        if (m_metadata.m_bEncrypted && jsonStr.length() > 0 && jsonStr[0] != '{') {
             String decoded = Crypto::Util::base64DecodeToString(jsonStr);
             if (decoded.empty() && !jsonStr.empty()) {
                 INNER_CORE_LOG("[ConfigManager] Base64 decode error\n");
@@ -392,13 +392,13 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
         if (fullJson.contains(FIELD_METADATA)) {
             const json& metaJson = fullJson[FIELD_METADATA];
             if (metaJson.contains(META_VERSION)) {
-                metadata_.version = metaJson[META_VERSION].get<UInt32>();
+                m_metadata.m_iVersion = metaJson[META_VERSION].get<UInt32>();
             }
             if (metaJson.contains(META_DESCRIPTION)) {
-                metadata_.description = metaJson[META_DESCRIPTION].get<String>();
+                m_metadata.m_strDescription = metaJson[META_DESCRIPTION].get<String>();
             }
             if (metaJson.contains(META_ENCRYPTED)) {
-                metadata_.encrypted = metaJson[META_ENCRYPTED].get<Bool>();
+                m_metadata.m_bEncrypted = metaJson[META_ENCRYPTED].get<Bool>();
             }
             if (metaJson.contains(META_CRC)) {
                 storedCrc = metaJson[META_CRC].get<String>();
@@ -418,7 +418,7 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
         String coreJson = jsonForSecurity.dump();
         
         // Security verification if enabled and not skipped
-        if (enableSecurity_ && !skipVerification && !storedCrc.empty()) {
+        if (m_bEnableSecurity && !skipVerification && !storedCrc.empty()) {
             // Step 1: Verify CRC32
             UInt32 computedCrc = Crypto::Util::computeCrc32(
                 reinterpret_cast<const UInt8*>(coreJson.c_str()), 
@@ -442,7 +442,7 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
             
             // Step 3: Verify HMAC
             if (!storedHmac.empty()) {
-                if (!crypto_.verifyHmac(
+                if (!m_crypto.verifyHmac(
                     reinterpret_cast<const UInt8*>(coreJson.c_str()),
                     coreJson.length(),
                     storedHmac)) {
@@ -453,32 +453,32 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
         }
         
         // Store core configuration
-        configData_ = fullJson;
-        lastPersistedData_ = configData_;
+        m_configData = fullJson;
+        m_lastPersistedData = m_configData;
         
         // Update metadata security fields
-        metadata_.crc = storedCrc;
-        metadata_.timestamp = storedTimestamp;
-        metadata_.hmac = storedHmac;
+        m_metadata.m_strCrc = storedCrc;
+        m_metadata.m_strTimestamp = storedTimestamp;
+        m_metadata.m_strHmac = storedHmac;
 
-        // Refresh policies from config fields and initialize tracking baselines
+        // Refresh policies from config fields and Initialize tracking baselines
         refreshPoliciesFromConfigLocked();
-        moduleSavedOnce_.clear();
-        moduleLastCrc_.clear();
-        for (auto it = configData_.begin(); it != configData_.end(); ++it) {
+        m_setModuleSavedOnce.clear();
+        m_mapModuleLastCrc.clear();
+        for (auto it = m_configData.begin(); it != m_configData.end(); ++it) {
             const String moduleName = it.key();
             if (moduleName == FIELD_UPDATE_POLICY || moduleName == FIELD_METADATA) continue;
             // mark as already saved once if present in persisted file
-            moduleSavedOnce_.insert(moduleName);
+            m_setModuleSavedOnce.insert(moduleName);
             if (it.value().is_object() || it.value().is_array() || it.value().is_primitive()) {
-                moduleLastCrc_[moduleName] = computeModuleCrcLocked(it.value());
+                m_mapModuleLastCrc[moduleName] = computeModuleCrcLocked(it.value());
             }
         }
         
         return Result<void, ConfigErrc>::FromValue();
         
     } catch (const json::exception& e) {
-        INNER_CORE_LOG("[ConfigManager] JSON parse error: %s (file: %s)\n", e.what(), configPath_.c_str());
+        INNER_CORE_LOG("[ConfigManager] JSON parse error: %s (file: %s)\n", e.what(), m_strConfigPath.c_str());
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kParseError);
     } catch (const ConfigException& e) {
         INNER_CORE_LOG("[ConfigManager] Configuration error: %s\n", e.what());
@@ -489,10 +489,10 @@ Result<void, ConfigErrc> ConfigManager::load(Bool skipVerification) {
     }
 }
 
-Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::Save(Bool enableSecurity) {
+    RecursiveLockGuard lock(m_mutex);
     
-    if (!initialized_) {
+    if (!m_bInitialized) {
         INNER_CORE_LOG("[ConfigManager] Save error: Not initialized\n");
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kInternalError);
     }
@@ -502,11 +502,11 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
         json toPersist = json::object();
 
         // Preserve existing top-level policy mapping (will be updated)
-        if (configData_.contains(FIELD_UPDATE_POLICY)) {
-            toPersist[FIELD_UPDATE_POLICY] = configData_[FIELD_UPDATE_POLICY];
+        if (m_configData.contains(FIELD_UPDATE_POLICY)) {
+            toPersist[FIELD_UPDATE_POLICY] = m_configData[FIELD_UPDATE_POLICY];
         }
 
-        for (auto it = configData_.begin(); it != configData_.end(); ++it) {
+        for (auto it = m_configData.begin(); it != m_configData.end(); ++it) {
             const String moduleName = it.key();
             if (moduleName == FIELD_UPDATE_POLICY || moduleName == FIELD_METADATA) {
                 // handled separately
@@ -514,8 +514,8 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
             }
 
             const json& currentModule = it.value();
-            json previousModule = lastPersistedData_.contains(moduleName) ? lastPersistedData_[moduleName] : json();
-            UpdatePolicy policy = getModuleUpdatePolicy(moduleName);
+            json previousModule = m_lastPersistedData.contains(moduleName) ? m_lastPersistedData[moduleName] : json();
+            UpdatePolicy policy = GetModuleUpdatePolicy(moduleName);
 
             json selected = currentModule; // default
 
@@ -530,7 +530,7 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
                     break;
                 }
                 case UpdatePolicy::kFirstUpdate: {
-                    Bool alreadySaved = lastPersistedData_.contains(moduleName);
+                    Bool alreadySaved = m_lastPersistedData.contains(moduleName);
                     if (alreadySaved) {
                         selected = previousModule;
                     } else {
@@ -544,8 +544,8 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
                 }
                 case UpdatePolicy::kOnChangeUpdate: {
                     UInt32 curCrc = computeModuleCrcLocked(currentModule);
-                    auto itC = moduleLastCrc_.find(moduleName);
-                    if (itC != moduleLastCrc_.end() && itC->second == curCrc) {
+                    auto itC = m_mapModuleLastCrc.find(moduleName);
+                    if (itC != m_mapModuleLastCrc.end() && itC->second == curCrc) {
                         selected = previousModule;
                     } else {
                         selected = currentModule;
@@ -563,15 +563,15 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
         if (!toPersist.contains(FIELD_UPDATE_POLICY)) {
             toPersist[FIELD_UPDATE_POLICY] = json::object();
         }
-        // Preserve existing module policies from configData_
-        if (configData_.contains(FIELD_UPDATE_POLICY) && configData_[FIELD_UPDATE_POLICY].is_object()) {
-            for (auto it = configData_[FIELD_UPDATE_POLICY].begin(); 
-                 it != configData_[FIELD_UPDATE_POLICY].end(); ++it) {
+        // Preserve existing module policies from m_configData
+        if (m_configData.contains(FIELD_UPDATE_POLICY) && m_configData[FIELD_UPDATE_POLICY].is_object()) {
+            for (auto it = m_configData[FIELD_UPDATE_POLICY].begin(); 
+                 it != m_configData[FIELD_UPDATE_POLICY].end(); ++it) {
                 toPersist[FIELD_UPDATE_POLICY][it.key()] = it.value();
             }
         }
         // Ensure default policy key is present
-        toPersist[FIELD_UPDATE_POLICY][POLICY_DEFAULT_KEY] = policyToString(defaultPolicy_);
+        toPersist[FIELD_UPDATE_POLICY][POLICY_DEFAULT_KEY] = policyToString(m_defaultPolicy);
 
         // Build core JSON (exclude __update_policy__ and __metadata__ from security ops)
         json coreForSecurity = toPersist;
@@ -586,18 +586,18 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
         
         // Create __metadata__ object
         json metaJson = json::object();
-        metaJson[META_VERSION] = metadata_.version;
-        metaJson[META_DESCRIPTION] = metadata_.description;
-        metaJson[META_ENCRYPTED] = metadata_.encrypted;
+        metaJson[META_VERSION] = m_metadata.m_iVersion;
+        metaJson[META_DESCRIPTION] = m_metadata.m_strDescription;
+        metaJson[META_ENCRYPTED] = m_metadata.m_bEncrypted;
         
-        if (enableSecurity && enableSecurity_) {
+        if (enableSecurity && m_bEnableSecurity) {
             // Compute security fields using Crypto utilities
             UInt32 crc = Crypto::Util::computeCrc32(
                 reinterpret_cast<const UInt8*>(coreJson.c_str()),
                 coreJson.length()
             );
             String timestamp = getCurrentTimestamp();
-            String hmac = crypto_.computeHmac(
+            String hmac = m_crypto.computeHmac(
                 reinterpret_cast<const UInt8*>(coreJson.c_str()),
                 coreJson.length()
             );
@@ -612,9 +612,9 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
             metaJson[META_HMAC] = hmac;
             
             // Update internal metadata
-            metadata_.crc = metaJson[META_CRC];
-            metadata_.timestamp = timestamp;
-            metadata_.hmac = hmac;
+            m_metadata.m_strCrc = metaJson[META_CRC];
+            m_metadata.m_strTimestamp = timestamp;
+            m_metadata.m_strHmac = hmac;
         }
         
         // Add __metadata__ to full JSON
@@ -624,7 +624,7 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
         String jsonOutput = fullJson.dump(4);
         
         // Encode to Base64 if encrypted flag is set
-        if (metadata_.encrypted) {
+        if (m_metadata.m_bEncrypted) {
             jsonOutput = Crypto::Util::base64Encode(jsonOutput);
             if (jsonOutput.empty()) {
                 INNER_CORE_LOG("[ConfigManager] Base64 encode error\n");
@@ -632,25 +632,25 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
             }
         }
         
-        auto writeResult = writeFile(configPath_, jsonOutput);
+        auto writeResult = writeFile(m_strConfigPath, jsonOutput);
         if (!writeResult.HasValue()) {
-            INNER_CORE_LOG("[ConfigManager] Save error: Cannot write to file '%s'\n", configPath_.c_str());
+            INNER_CORE_LOG("[ConfigManager] Save error: Cannot write to file '%s'\n", m_strConfigPath.c_str());
         }
 
         if (writeResult.HasValue()) {
-            // Update persisted snapshot and CRCs after successful save
-            lastPersistedData_ = toPersist;
-            moduleLastCrc_.clear();
+            // Update persisted snapshot and CRCs after successful Save
+            m_lastPersistedData = toPersist;
+            m_mapModuleLastCrc.clear();
             for (auto it = toPersist.begin(); it != toPersist.end(); ++it) {
                 const String moduleName = it.key();
                 if (moduleName == FIELD_UPDATE_POLICY) continue;
-                moduleLastCrc_[moduleName] = computeModuleCrcLocked(it.value());
+                m_mapModuleLastCrc[moduleName] = computeModuleCrcLocked(it.value());
             }
             // Update FirstUpdate tracking
             for (auto it = toPersist.begin(); it != toPersist.end(); ++it) {
                 const String moduleName = it.key();
                 if (moduleName == FIELD_UPDATE_POLICY) continue;
-                moduleSavedOnce_.insert(moduleName);
+                m_setModuleSavedOnce.insert(moduleName);
             }
         }
         return writeResult;
@@ -664,35 +664,35 @@ Result<void, ConfigErrc> ConfigManager::save(Bool enableSecurity) {
     }
 }
 
-Result<void, ConfigErrc> ConfigManager::createBackup() {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::CreateBackup() {
+    RecursiveLockGuard lock(m_mutex);
     
-    backupStack_.push_back(configData_);
+    m_vecBackupStack.push_back(m_configData);
     
     // Keep max 10 backups
-    if (backupStack_.size() > 10) {
-        backupStack_.erase(backupStack_.begin());
+    if (m_vecBackupStack.size() > 10) {
+        m_vecBackupStack.erase(m_vecBackupStack.begin());
     }
     
     return Result<void, ConfigErrc>::FromValue();
 }
 
-Result<void, ConfigErrc> ConfigManager::rollback() {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::Rollback() {
+    RecursiveLockGuard lock(m_mutex);
     
-    if (backupStack_.empty()) {
+    if (m_vecBackupStack.empty()) {
         INNER_CORE_LOG("[ConfigManager] Rollback error: No backup available");
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kNoBackupAvailable);
     }
     
-    configData_ = backupStack_.back();
-    backupStack_.pop_back();
+    m_configData = m_vecBackupStack.back();
+    m_vecBackupStack.pop_back();
     
     return Result<void, ConfigErrc>::FromValue();
 }
 
-Result<void, ConfigErrc> ConfigManager::set(const String& key, const ConfigValue& value) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::SetValue(const String& key, const ConfigValue& value) {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
         // Split key by '.'
@@ -704,7 +704,7 @@ Result<void, ConfigErrc> ConfigManager::set(const String& key, const ConfigValue
         }
         
         // Navigate to the target location
-        json* current = &configData_;
+        json* current = &m_configData;
         for (size_t i = 0; i < parts.size() - 1; ++i) {
             if (!current->contains(parts[i])) {
                 (*current)[parts[i]] = json::object();
@@ -720,20 +720,20 @@ Result<void, ConfigErrc> ConfigManager::set(const String& key, const ConfigValue
         
         // Set new value
         const String& lastKey = parts.back();
-        if (value.isBool()) {
-            (*current)[lastKey] = value.asBool();
-        } else if (value.isInt()) {
-            (*current)[lastKey] = value.asInt();
-        } else if (value.isDouble()) {
-            (*current)[lastKey] = value.asDouble();
-        } else if (value.isString()) {
-            (*current)[lastKey] = value.asString();
+        if (value.IsBool()) {
+            (*current)[lastKey] = value.AsBool();
+        } else if (value.IsInt()) {
+            (*current)[lastKey] = value.AsInt();
+        } else if (value.IsDouble()) {
+            (*current)[lastKey] = value.AsDouble();
+        } else if (value.IsString()) {
+            (*current)[lastKey] = value.AsString();
         } else {
             (*current)[lastKey] = nullptr;
         }
         
         // Notify callbacks
-        for (const auto& pair : callbacks_) {
+        for (const auto& pair : m_mapCallbacks) {
             const String& prefix = pair.second.first;
             if (key.find(prefix) == 0 || prefix.empty()) {
                 pair.second.second(key, oldValue, value);
@@ -751,8 +751,8 @@ Result<void, ConfigErrc> ConfigManager::set(const String& key, const ConfigValue
     }
 }
 
-Optional<ConfigValue> ConfigManager::get(const String& key) const {
-    LockGuard lock(mutex_);
+Optional<ConfigValue> ConfigManager::Get(const String& key) const {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
         // Split key by '.'
@@ -764,7 +764,7 @@ Optional<ConfigValue> ConfigManager::get(const String& key) const {
         }
         
         // Navigate to the value
-        const json* current = &configData_;
+        const json* current = &m_configData;
         for (const auto& p : parts) {
             if (!current->contains(p)) {
                 return Optional<ConfigValue>();
@@ -780,8 +780,8 @@ Optional<ConfigValue> ConfigManager::get(const String& key) const {
     }
 }
 
-Result<void, ConfigErrc> ConfigManager::remove(const String& key) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::Remove(const String& key) {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
         // Split key by '.'
@@ -793,7 +793,7 @@ Result<void, ConfigErrc> ConfigManager::remove(const String& key) {
         }
         
         // Navigate to parent
-        json* current = &configData_;
+        json* current = &m_configData;
         for (size_t i = 0; i < parts.size() - 1; ++i) {
             if (!current->contains(parts[i])) {
                 return Result<void, ConfigErrc>::FromError(ConfigErrc::kInvalidKey);
@@ -814,16 +814,16 @@ Result<void, ConfigErrc> ConfigManager::remove(const String& key) {
     }
 }
 
-Bool ConfigManager::exists(const String& key) const {
-    return get(key).has_value();
+Bool ConfigManager::Exists(const String& key) const {
+    return Get(key).has_value();
 }
 
-Vector<String> ConfigManager::getKeys(const String& prefix) const {
-    LockGuard lock(mutex_);
+Vector<String> ConfigManager::GetKeys(const String& prefix) const {
+    RecursiveLockGuard lock(m_mutex);
     Vector<String> result;
     
     try {
-        const json* current = &configData_;
+        const json* current = &m_configData;
         
         if (!prefix.empty()) {
             // Navigate to prefix
@@ -856,141 +856,141 @@ Vector<String> ConfigManager::getKeys(const String& prefix) const {
     return result;
 }
 
-String ConfigManager::getModuleConfig(const String& moduleName, Bool pretty) const {
-    LockGuard lock(mutex_);
+String ConfigManager::GetModuleConfig(const String& moduleName, Bool pretty) const {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
-        if (configData_.contains(moduleName)) {
+        if (m_configData.contains(moduleName)) {
             if (pretty) {
-                return configData_[moduleName].dump(4);
+                return m_configData[moduleName].dump(4);
             } else {
-                return configData_[moduleName].dump();
+                return m_configData[moduleName].dump();
             }
         }
         return "{}";
     } catch (const std::exception& e) {
-        INNER_CORE_LOG("[ConfigManager] getModuleConfig error: %s\n", e.what());
+        INNER_CORE_LOG("[ConfigManager] GetModuleConfig error: %s\n", e.what());
         return "{}";
     }
 }
 
-Result<void, ConfigErrc> ConfigManager::setModuleConfig(const String& moduleName, const String& jsonConfig) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::SetModuleConfig(const String& moduleName, const String& jsonConfig) {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
         json moduleJson = json::parse(jsonConfig);
-        configData_[moduleName] = moduleJson;
+        m_configData[moduleName] = moduleJson;
         return Result<void, ConfigErrc>::FromValue();
     } catch (const json::parse_error& e) {
-        INNER_CORE_LOG("[ConfigManager] setModuleConfig parse error: %s (module: %s, byte: %zu)\n", 
+        INNER_CORE_LOG("[ConfigManager] SetModuleConfig parse error: %s (module: %s, byte: %zu)\n", 
                        e.what(), moduleName.c_str(), static_cast<size_t>(e.byte));
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kParseError);
     } catch (const std::exception& e) {
-        INNER_CORE_LOG("[ConfigManager] setModuleConfig error: %s (module: %s)\n", e.what(), moduleName.c_str());
+        INNER_CORE_LOG("[ConfigManager] SetModuleConfig error: %s (module: %s)\n", e.what(), moduleName.c_str());
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kInternalError);
     }
 }
 
-json ConfigManager::getModuleConfigJson(const String& moduleName) const {
-    LockGuard lock(mutex_);
+json ConfigManager::GetModuleConfigJson(const String& moduleName) const {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
-        if (configData_.contains(moduleName)) {
-            return configData_[moduleName];
+        if (m_configData.contains(moduleName)) {
+            return m_configData[moduleName];
         }
         return json::object();
     } catch (const std::exception& e) {
-        INNER_CORE_LOG("[ConfigManager] getModuleConfigJson error: %s\n", e.what());
+        INNER_CORE_LOG("[ConfigManager] GetModuleConfigJson error: %s\n", e.what());
         return json::object();
     }
 }
 
-Result<void, ConfigErrc> ConfigManager::setModuleConfigJson(const String& moduleName, const json& jsonConfig) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::SetModuleConfigJson(const String& moduleName, const json& jsonConfig) {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
         if (!jsonConfig.is_object() && !jsonConfig.is_array()) {
-            INNER_CORE_LOG("[ConfigManager] setModuleConfigJson error: Config must be object or array (module: %s)\n", 
+            INNER_CORE_LOG("[ConfigManager] SetModuleConfigJson error: Config must be object or array (module: %s)\n", 
                            moduleName.c_str());
             return Result<void, ConfigErrc>::FromError(ConfigErrc::kValidationError);
         }
-        configData_[moduleName] = jsonConfig;
+        m_configData[moduleName] = jsonConfig;
         
         // Set update policy for this module to "default" (kOnChangeUpdate)
-        modulePolicies_[moduleName] = UpdatePolicy::kOnChangeUpdate;  // "default" policy
-        explicitPolicyModules_.insert(moduleName);
+        m_mapModulePolicies[moduleName] = UpdatePolicy::kOnChangeUpdate;  // "default" policy
+        m_setExplicitPolicyModules.insert(moduleName);
         
-        // Update __update_policy__ in configData_ for consistency
-        if (!configData_.contains(FIELD_UPDATE_POLICY)) {
-            configData_[FIELD_UPDATE_POLICY] = json::object();
+        // Update __update_policy__ in m_configData for consistency
+        if (!m_configData.contains(FIELD_UPDATE_POLICY)) {
+            m_configData[FIELD_UPDATE_POLICY] = json::object();
         }
-        if (configData_[FIELD_UPDATE_POLICY].is_object()) {
-            configData_[FIELD_UPDATE_POLICY][moduleName] = POLICY_DEFAULT_KEY;
+        if (m_configData[FIELD_UPDATE_POLICY].is_object()) {
+            m_configData[FIELD_UPDATE_POLICY][moduleName] = POLICY_DEFAULT_KEY;
         }
         
         // Keep policy materialized after module content change
-        materializePolicyFieldLocked(moduleName, configData_);
+        materializePolicyFieldLocked(moduleName, m_configData);
         return Result<void, ConfigErrc>::FromValue();
     } catch (const std::exception& e) {
-        INNER_CORE_LOG("[ConfigManager] setModuleConfigJson error: %s (module: %s)\n", e.what(), moduleName.c_str());
+        INNER_CORE_LOG("[ConfigManager] SetModuleConfigJson error: %s (module: %s)\n", e.what(), moduleName.c_str());
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kInternalError);
     }
 }
 
-Bool ConfigManager::getBool(const String& key, Bool defaultValue) const {
-    auto value = get(key);
-    return value.has_value() ? value.value().asBool(defaultValue) : defaultValue;
+Bool ConfigManager::GetBool(const String& key, Bool defaultValue) const {
+    auto value = Get(key);
+    return value.has_value() ? value.value().AsBool(defaultValue) : defaultValue;
 }
 
-Int64 ConfigManager::getInt(const String& key, Int64 defaultValue) const {
-    auto value = get(key);
-    return value.has_value() ? value.value().asInt(defaultValue) : defaultValue;
+Int64 ConfigManager::GetInt(const String& key, Int64 defaultValue) const {
+    auto value = Get(key);
+    return value.has_value() ? value.value().AsInt(defaultValue) : defaultValue;
 }
 
-Double ConfigManager::getDouble(const String& key, Double defaultValue) const {
-    auto value = get(key);
-    return value.has_value() ? value.value().asDouble(defaultValue) : defaultValue;
+Double ConfigManager::GetDouble(const String& key, Double defaultValue) const {
+    auto value = Get(key);
+    return value.has_value() ? value.value().AsDouble(defaultValue) : defaultValue;
 }
 
-String ConfigManager::getString(const String& key, const String& defaultValue) const {
-    auto value = get(key);
-    return value.has_value() ? value.value().asString(defaultValue) : defaultValue;
+String ConfigManager::GetString(const String& key, const String& defaultValue) const {
+    auto value = Get(key);
+    return value.has_value() ? value.value().AsString(defaultValue) : defaultValue;
 }
 
-Result<void, ConfigErrc> ConfigManager::setBool(const String& key, Bool value) {
-    return set(key, ConfigValue(value));
+Result<void, ConfigErrc> ConfigManager::SetBool(const String& key, Bool value) {
+    return SetValue(key, ConfigValue(value));
 }
 
-Result<void, ConfigErrc> ConfigManager::setInt(const String& key, Int64 value) {
-    return set(key, ConfigValue(value));
+Result<void, ConfigErrc> ConfigManager::SetInt(const String& key, Int64 value) {
+    return SetValue(key, ConfigValue(value));
 }
 
-Result<void, ConfigErrc> ConfigManager::setDouble(const String& key, Double value) {
-    return set(key, ConfigValue(value));
+Result<void, ConfigErrc> ConfigManager::SetDouble(const String& key, Double value) {
+    return SetValue(key, ConfigValue(value));
 }
 
-Result<void, ConfigErrc> ConfigManager::setString(const String& key, const String& value) {
-    return set(key, ConfigValue(value));
+Result<void, ConfigErrc> ConfigManager::SetString(const String& key, const String& value) {
+    return SetValue(key, ConfigValue(value));
 }
 
-UInt32 ConfigManager::registerChangeCallback(const String& prefix, ConfigChangeCallback callback) {
-    LockGuard lock(mutex_);
-    UInt32 id = nextCallbackId_++;
-    callbacks_[id] = std::make_pair(prefix, callback);
+UInt32 ConfigManager::RegisterChangeCallback(const String& prefix, ConfigChangeCallback callback) {
+    RecursiveLockGuard lock(m_mutex);
+    UInt32 id = m_iNextCallbackId++;
+    m_mapCallbacks[id] = std::make_pair(prefix, callback);
     return id;
 }
 
-void ConfigManager::unregisterChangeCallback(UInt32 callbackId) {
-    LockGuard lock(mutex_);
-    callbacks_.erase(callbackId);
+void ConfigManager::UnregisterChangeCallback(UInt32 callbackId) {
+    RecursiveLockGuard lock(m_mutex);
+    m_mapCallbacks.erase(callbackId);
 }
 
-String ConfigManager::toJson(Bool pretty) const {
-    LockGuard lock(mutex_);
+String ConfigManager::ToJson(Bool pretty) const {
+    RecursiveLockGuard lock(m_mutex);
     if (pretty) {
-        return configData_.dump(4);
+        return m_configData.dump(4);
     } else {
-        return configData_.dump();
+        return m_configData.dump();
     }
 }
 
@@ -1016,28 +1016,28 @@ Optional<ConfigManager::UpdatePolicy> ConfigManager::parsePolicyString(const Str
     return Optional<UpdatePolicy>();
 }
 
-ConfigManager::UpdatePolicy ConfigManager::getModuleUpdatePolicy(const String& moduleName) const {
-    LockGuard lock(mutex_);
-    auto it = modulePolicies_.find(moduleName);
-    if (it != modulePolicies_.end()) return it->second;
-    return defaultPolicy_; // use runtime default instead of static constant
+ConfigManager::UpdatePolicy ConfigManager::GetModuleUpdatePolicy(const String& moduleName) const {
+    RecursiveLockGuard lock(m_mutex);
+    auto it = m_mapModulePolicies.find(moduleName);
+    if (it != m_mapModulePolicies.end()) return it->second;
+    return m_defaultPolicy; // use runtime default instead of static constant
 }
 
-Result<void, ConfigErrc> ConfigManager::setModuleUpdatePolicy(const String& moduleName, UpdatePolicy policy) {
-    LockGuard lock(mutex_);
-    modulePolicies_[moduleName] = policy;
-    explicitPolicyModules_.insert(moduleName);
+Result<void, ConfigErrc> ConfigManager::SetModuleUpdatePolicy(const String& moduleName, UpdatePolicy policy) {
+    RecursiveLockGuard lock(m_mutex);
+    m_mapModulePolicies[moduleName] = policy;
+    m_setExplicitPolicyModules.insert(moduleName);
     // Reflect policy into current config data for persistence / manual editing
-    materializePolicyFieldLocked(moduleName, configData_);
+    materializePolicyFieldLocked(moduleName, m_configData);
     return Result<void, ConfigErrc>::FromValue();
 }
 
-Result<void, ConfigErrc> ConfigManager::setModuleUpdatePolicy(const String& moduleName, const String& policyStr) {
+Result<void, ConfigErrc> ConfigManager::SetModuleUpdatePolicy(const String& moduleName, const String& policyStr) {
     auto p = parsePolicyString(policyStr);
     if (!p.has_value()) {
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kValidationError);
     }
-    return setModuleUpdatePolicy(moduleName, p.value());
+    return SetModuleUpdatePolicy(moduleName, p.value());
 }
 
 // ============================================================================
@@ -1045,23 +1045,23 @@ Result<void, ConfigErrc> ConfigManager::setModuleUpdatePolicy(const String& modu
 // ============================================================================
 
 void ConfigManager::refreshPoliciesFromConfigLocked() {
-    modulePolicies_.clear();
+    m_mapModulePolicies.clear();
     // First, load top-level mapping if present
     Map<String, UpdatePolicy> topMap;
-    explicitPolicyModules_.clear();
+    m_setExplicitPolicyModules.clear();
     
     // Reset default policy to fallback
-    defaultPolicy_ = UpdatePolicy::kOnChangeUpdate;
+    m_defaultPolicy = UpdatePolicy::kOnChangeUpdate;
     
     try {
-        if (configData_.contains(FIELD_UPDATE_POLICY) && configData_[FIELD_UPDATE_POLICY].is_object()) {
-            const json& m = configData_[FIELD_UPDATE_POLICY];
+        if (m_configData.contains(FIELD_UPDATE_POLICY) && m_configData[FIELD_UPDATE_POLICY].is_object()) {
+            const json& m = m_configData[FIELD_UPDATE_POLICY];
             
             // Read default policy if present
             if (m.contains(POLICY_DEFAULT_KEY) && m[POLICY_DEFAULT_KEY].is_string()) {
                 auto defPol = parsePolicyString(m[POLICY_DEFAULT_KEY].get<String>());
                 if (defPol.has_value()) {
-                    defaultPolicy_ = defPol.value();
+                    m_defaultPolicy = defPol.value();
                 }
             }
             
@@ -1071,7 +1071,7 @@ void ConfigManager::refreshPoliciesFromConfigLocked() {
                     auto pp = parsePolicyString(it.value().get<String>());
                     if (pp.has_value()) {
                         topMap[it.key()] = pp.value();
-                        explicitPolicyModules_.insert(it.key());
+                        m_setExplicitPolicyModules.insert(it.key());
                     }
                 }
             }
@@ -1080,10 +1080,10 @@ void ConfigManager::refreshPoliciesFromConfigLocked() {
         // ignore mapping errors
     }
 
-    for (auto it = configData_.begin(); it != configData_.end(); ++it) {
+    for (auto it = m_configData.begin(); it != m_configData.end(); ++it) {
         const String moduleName = it.key();
         if (moduleName == FIELD_UPDATE_POLICY || moduleName == FIELD_METADATA) continue;
-        UpdatePolicy pol = defaultPolicy_; // use loaded default
+        UpdatePolicy pol = m_defaultPolicy; // use loaded default
         try {
             if (it.value().is_object()) {
                 // No per-module policy field; use top-level mapping
@@ -1097,7 +1097,7 @@ void ConfigManager::refreshPoliciesFromConfigLocked() {
         } catch (...) {
             pol = kDefaultUpdatePolicy;
         }
-        modulePolicies_[moduleName] = pol;
+        m_mapModulePolicies[moduleName] = pol;
     }
 }
 
@@ -1124,12 +1124,12 @@ UInt32 ConfigManager::computeModuleCrcLocked(const json& moduleJson) const {
 }
 
 void ConfigManager::materializePolicyFieldLocked(const String& moduleName, json& rootJson) {
-    UpdatePolicy pol = defaultPolicy_; // use runtime default
-    auto itP = modulePolicies_.find(moduleName);
-    if (itP != modulePolicies_.end()) pol = itP->second;
+    UpdatePolicy pol = m_defaultPolicy; // use runtime default
+    auto itP = m_mapModulePolicies.find(moduleName);
+    if (itP != m_mapModulePolicies.end()) pol = itP->second;
 
     // Only persist explicit policies; default ones are omitted
-    if (explicitPolicyModules_.find(moduleName) != explicitPolicyModules_.end()) {
+    if (m_setExplicitPolicyModules.find(moduleName) != m_setExplicitPolicyModules.end()) {
         if (!rootJson.contains(FIELD_UPDATE_POLICY)) {
             rootJson[FIELD_UPDATE_POLICY] = json::object();
         }
@@ -1147,33 +1147,33 @@ void ConfigManager::materializePolicyFieldLocked(const String& moduleName, json&
     }
 }
 
-Result<void, ConfigErrc> ConfigManager::fromJson(const String& jsonStr) {
-    LockGuard lock(mutex_);
+Result<void, ConfigErrc> ConfigManager::FromJson(const String& jsonStr) {
+    RecursiveLockGuard lock(m_mutex);
     
     try {
         json parsed = json::parse(jsonStr);
         if (!parsed.is_object()) {
-            INNER_CORE_LOG("[ConfigManager] fromJson error: Root must be a JSON object\n");
+            INNER_CORE_LOG("[ConfigManager] FromJson error: Root must be a JSON object\n");
             return Result<void, ConfigErrc>::FromError(ConfigErrc::kValidationError);
         }
-        configData_ = parsed;
+        m_configData = parsed;
         return Result<void, ConfigErrc>::FromValue();
     } catch (const json::parse_error& e) {
-        INNER_CORE_LOG("[ConfigManager] fromJson parse error\n");
+        INNER_CORE_LOG("[ConfigManager] FromJson parse error\n");
         INNER_CORE_LOG("  Error: %s\n", e.what());
         INNER_CORE_LOG("  Position: byte %zu\n", static_cast<size_t>(e.byte));
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kParseError);
     } catch (const std::exception& e) {
-        INNER_CORE_LOG("[ConfigManager] fromJson error: %s\n", e.what());
+        INNER_CORE_LOG("[ConfigManager] FromJson error: %s\n", e.what());
         return Result<void, ConfigErrc>::FromError(ConfigErrc::kInternalError);
     }
 }
 
-void ConfigManager::clear() {
-    LockGuard lock(mutex_);
-    configData_ = json::object();
-    backupStack_.clear();
-    callbacks_.clear();
+void ConfigManager::Clear() {
+    RecursiveLockGuard lock(m_mutex);
+    m_configData = json::object();
+    m_vecBackupStack.clear();
+    m_mapCallbacks.clear();
 }
 
 // ============================================================================

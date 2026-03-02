@@ -2,8 +2,11 @@
  * @file        CSync.hpp
  * @author      ddkv587 ( ddkv587@gmail.com )
  * @brief       Synchronization primitives for AUTOSAR Adaptive Platform
- * @date        2025-10-27
- * @details     Provides mutex, condition variable, and other synchronization objects
+ * @date        2026-02-06
+ * @details     Provides mutex, lock guard, condition variable, and other synchronization
+ *              primitives as thin type aliases over std library types.
+ *              C++17 is the default standard; C++14 backward compatibility is provided
+ *              where necessary via conditional compilation.
  * @copyright   Copyright (c) 2025
  * @note
  * sdk:
@@ -14,6 +17,7 @@
  * <tr><th>Date        <th>Version  <th>Author          <th>Description
  * <tr><td>2023/07/16  <td>1.0      <td>ddkv587         <td>init version
  * <tr><td>2025/10/27  <td>1.1      <td>ddkv587         <td>update header format
+ * <tr><td>2026/02/06  <td>2.0      <td>ddkv587         <td>refactor: use std types directly, add ScopedLock
  * </table>
  */
 #ifndef LAP_CORE_SYNC_HPP
@@ -23,277 +27,321 @@
 #include <shared_mutex>
 #include <condition_variable>
 #include <chrono>
+#include <tuple>
+#include <utility>
+
 #include "CTypedef.hpp"
 
-namespace lap {
-namespace core {
+namespace lap
+{
+namespace core
+{
+
+// ==================== Mutex Type Aliases ====================
 
 /**
- * @brief Abstract base class for synchronization objects.
- * 
- * Defines a common interface for mutex-like synchronization, inspired by Boost.Thread and MFC's CSyncObject.
+ * @brief Non-recursive mutex for mutual exclusion
  */
-class SyncObject {
-public:
-    virtual ~SyncObject() noexcept = default;
-    virtual void lock() noexcept = 0;
-    virtual Bool try_lock() noexcept = 0;
-    virtual void unlock() noexcept = 0;
-};
+using Mutex             = ::std::mutex;
 
 /**
- * @brief Non-recursive mutex for mutual exclusion.
- * 
- * Wraps std::mutex, compatible with lap::core types.
+ * @brief Recursive mutex allowing multiple locks by the same thread
  */
-class Mutex : public SyncObject {
-public:
-    void lock() noexcept override { mtx_.lock(); }
-    Bool try_lock() noexcept override { return mtx_.try_lock(); }
-    void unlock() noexcept override { mtx_.unlock(); }
-
-private:
-    std::mutex mtx_;
-};
+using RecursiveMutex    = ::std::recursive_mutex;
 
 /**
- * @brief Recursive mutex allowing multiple locks by the same thread.
- * 
- * Wraps std::recursive_mutex, compatible with lap::core types.
+ * @brief Read-Write lock for multi-reader / single-writer scenarios
+ * @details C++17: std::shared_mutex, C++14: std::shared_timed_mutex
  */
-class RecursiveMutex : public SyncObject {
-public:
-    void lock() noexcept override { mtx_.lock(); }
-    Bool try_lock() noexcept override { return mtx_.try_lock(); }
-    void unlock() noexcept override { mtx_.unlock(); }
+#if __cplusplus >= 201703L
+using RWLock            = ::std::shared_mutex;
+#else
+using RWLock            = ::std::shared_timed_mutex;
+#endif
 
-private:
-    std::recursive_mutex mtx_;
-};
+// ==================== Condition Variable Aliases ====================
 
 /**
- * @brief Read-Write lock (shared mutex) for multi-reader/single-writer scenarios.
+ * @brief Condition variable (works with std::unique_lock< std::mutex >)
+ */
+using ConditionVariable     = ::std::condition_variable;
+
+/**
+ * @brief Condition variable for any lockable type
+ */
+using ConditionVariableAny  = ::std::condition_variable_any;
+
+// ==================== Template Lock Aliases (Generic) ====================
+
+/**
+ * @brief Generic RAII lock guard, wraps std::lock_guard
+ * @tparam M Mutex type (Mutex, RecursiveMutex, RWLock, etc.)
+ */
+template < typename M >
+using TLockGuard    = ::std::lock_guard< M >;
+
+/**
+ * @brief Generic RAII unique lock with manual control, wraps std::unique_lock
+ * @tparam M Mutex type
+ */
+template < typename M >
+using TUniqueLock   = ::std::unique_lock< M >;
+
+/**
+ * @brief Generic RAII shared (read) lock, wraps std::shared_lock
+ * @tparam M SharedMutex type (RWLock, etc.)
+ */
+template < typename M >
+using TSharedLock   = ::std::shared_lock< M >;
+
+// ==================== Concrete Lock Aliases (Backward Compatible) ====================
+
+/**
+ * @brief RAII lock guard for Mutex (drop-in replacement for previous LockGuard)
+ * @note  Usage: LockGuard lock( m_mutex );
+ */
+using LockGuard         = TLockGuard< Mutex >;
+
+/**
+ * @brief RAII lock guard for RecursiveMutex
+ */
+using RecursiveLockGuard = TLockGuard< RecursiveMutex >;
+
+/**
+ * @brief RAII unique lock for Mutex (supports deferred locking, condition_variable)
+ * @note  Usage: UniqueLock lock( m_mutex );
+ */
+using UniqueLock        = TUniqueLock< Mutex >;
+
+/**
+ * @brief RAII shared (read) lock for RWLock
+ * @note  Usage: ReadLockGuard lock( m_rwLock );
+ */
+using ReadLockGuard     = TSharedLock< RWLock >;
+
+/**
+ * @brief RAII exclusive (write) lock for RWLock
+ * @note  Usage: WriteLockGuard lock( m_rwLock );
+ */
+using WriteLockGuard    = TLockGuard< RWLock >;
+
+// ==================== ScopedLock ====================
+
+#if __cplusplus >= 201703L
+
+/**
+ * @brief RAII scoped lock supporting multiple mutexes with deadlock avoidance
+ * @tparam MutexTypes  One or more mutex types
+ * @details C++17: directly aliases std::scoped_lock
  *
- * Wraps std::shared_mutex. Writer APIs conform to SyncObject; reader APIs are provided separately.
+ * Usage:
+ * @code
+ *   ScopedLock lock( m_mutex );                // single mutex (CTAD)
+ *   ScopedLock lock( m_mutex1, m_mutex2 );     // multi-mutex, deadlock-free
+ * @endcode
  */
-class RWLock : public SyncObject {
-public:
-    // Writer (exclusive) APIs
-    void lock() noexcept override { sm_.lock(); }
-    Bool try_lock() noexcept override { return sm_.try_lock(); }
-    void unlock() noexcept override { sm_.unlock(); }
+template < typename... MutexTypes >
+using ScopedLock = ::std::scoped_lock< MutexTypes... >;
 
-    // Reader (shared) APIs
-    void lock_shared() noexcept { sm_.lock_shared(); }
-    Bool try_lock_shared() noexcept { return sm_.try_lock_shared(); }
-    void unlock_shared() noexcept { sm_.unlock_shared(); }
+#else // C++14 fallback
+
+/**
+ * @brief C++14 ScopedLock — general variadic template (multiple mutexes)
+ * @details Uses std::lock() for deadlock avoidance when locking multiple mutexes.
+ */
+template < typename... MutexTypes >
+class ScopedLock
+{
+public:
+    explicit ScopedLock( MutexTypes&... mutexes )
+        : m_mutexes( mutexes... )
+    {
+        ::std::lock( mutexes... );
+    }
+
+    ~ScopedLock()
+    {
+        unlockAll( ::std::index_sequence_for< MutexTypes... >{} );
+    }
+
+    ScopedLock( const ScopedLock& )             = delete;
+    ScopedLock& operator=( const ScopedLock& )  = delete;
 
 private:
-    std::shared_mutex sm_;
+    template < ::std::size_t... Is >
+    void unlockAll( ::std::index_sequence< Is... > )
+    {
+        int dummy[] = { ( ::std::get< Is >( m_mutexes ).unlock(), 0 )... };
+        (void)dummy;
+    }
+
+    ::std::tuple< MutexTypes&... > m_mutexes;
 };
 
 /**
- * @brief RAII lock guard for automatic unlocking.
- * 
- * Ensures lock is released on scope exit, similar to std::lock_guard.
+ * @brief C++14 ScopedLock — single mutex specialization
+ * @details No std::lock() overhead; direct lock/unlock.
  */
-class LockGuard {
+template < typename MutexType >
+class ScopedLock< MutexType >
+{
 public:
-    explicit LockGuard(SyncObject& sync) : sync_(sync) {
-        sync_.lock();
+    explicit ScopedLock( MutexType& mutex ) noexcept
+        : m_mutex( mutex )
+    {
+        m_mutex.lock();
     }
-    ~LockGuard() noexcept {
-        sync_.unlock();
+
+    ~ScopedLock() noexcept
+    {
+        m_mutex.unlock();
     }
-    LockGuard(const LockGuard&) = delete;
-    LockGuard& operator=(const LockGuard&) = delete;
+
+    ScopedLock( const ScopedLock& )             = delete;
+    ScopedLock& operator=( const ScopedLock& )  = delete;
 
 private:
-    SyncObject& sync_;
+    MutexType& m_mutex;
 };
 
 /**
- * @brief Flexible RAII unique lock for manual lock control.
- * 
- * Supports deferred locking and try-locking, similar to std::unique_lock.
+ * @brief C++14 ScopedLock — zero mutex specialization (no-op)
  */
-class UniqueLock {
+template <>
+class ScopedLock<>
+{
 public:
-    explicit UniqueLock(SyncObject& sync) : sync_(sync), owned_(false) {
-        lock();
+    explicit ScopedLock() noexcept = default;
+    ScopedLock( const ScopedLock& )             = delete;
+    ScopedLock& operator=( const ScopedLock& )  = delete;
+};
+
+#endif // __cplusplus >= 201703L
+
+// ==================== Higher-Level Synchronization Primitives ====================
+
+/**
+ * @brief Manual event for thread synchronization
+ * @details Supports signaling and waiting, inspired by Win32/Boost event objects.
+ *          Uses std::condition_variable + std::mutex directly for efficiency.
+ * @note    Thread-safe
+ */
+class Event
+{
+public:
+    Event() noexcept = default;
+    ~Event() noexcept = default;
+
+    Event( const Event& )               = delete;
+    Event& operator=( const Event& )    = delete;
+
+    /**
+     * @brief Wait indefinitely for the event to be signaled
+     */
+    void Wait()
+    {
+        UniqueLock lock( m_mutex );
+        m_cv.wait( lock, [this] { return m_bSignaled; } );
     }
-    explicit UniqueLock(SyncObject& sync, std::defer_lock_t) noexcept
-        : sync_(sync), owned_(false) {}
-    
-    ~UniqueLock() noexcept {
-        if (owned_) unlock();
+
+    /**
+     * @brief Wait with timeout
+     * @param relTime  Maximum duration to wait
+     * @return true if signaled, false if timed out
+     */
+    template < typename Rep, typename Period >
+    Bool WaitFor( const ::std::chrono::duration< Rep, Period >& relTime )
+    {
+        UniqueLock lock( m_mutex );
+        return m_cv.wait_for( lock, relTime, [this] { return m_bSignaled; } );
     }
-    
-    void lock() {
-        if (!owned_) {
-            sync_.lock();
-            owned_ = true;
+
+    /**
+     * @brief Signal the event, waking all waiters
+     */
+    void Signal() noexcept
+    {
+        {
+            LockGuard lock( m_mutex );
+            m_bSignaled = true;
         }
+        m_cv.notify_all();
     }
-    
-    Bool try_lock() {
-        if (!owned_) {
-            owned_ = sync_.try_lock();
-        }
-        return owned_;
-    }
-    
-    void unlock() noexcept {
-        if (owned_) {
-            sync_.unlock();
-            owned_ = false;
-        }
-    }
-    
-    Bool owns_lock() const noexcept { return owned_; }
-    SyncObject* mutex() const noexcept { return &sync_; }
-    
-    UniqueLock(const UniqueLock&) = delete;
-    UniqueLock& operator=(const UniqueLock&) = delete;
-    
-    UniqueLock(UniqueLock&& other) noexcept
-        : sync_(other.sync_), owned_(other.owned_) {
-        other.owned_ = false;
-    }
-    UniqueLock& operator=(UniqueLock&& other) noexcept {
-        if (this != &other) {
-            if (owned_) sync_.unlock();
-            sync_ = other.sync_;
-            owned_ = other.owned_;
-            other.owned_ = false;
-        }
-        return *this;
+
+    /**
+     * @brief Reset the event to unsignaled state
+     */
+    void Reset() noexcept
+    {
+        LockGuard lock( m_mutex );
+        m_bSignaled = false;
     }
 
 private:
-    SyncObject& sync_;
-    Bool owned_;
+    Mutex               m_mutex;
+    ConditionVariable   m_cv;
+    Bool                m_bSignaled = false;
 };
 
 /**
- * @brief RAII read lock for RWLock.
+ * @brief Counting semaphore for resource limiting
+ * @details Emulates a semaphore using std::condition_variable + std::mutex.
+ * @note    Thread-safe
  */
-class ReadLockGuard {
+class Semaphore
+{
 public:
-    explicit ReadLockGuard(RWLock& rw) : rw_(rw) { rw_.lock_shared(); }
-    ~ReadLockGuard() noexcept { rw_.unlock_shared(); }
-    ReadLockGuard(const ReadLockGuard&) = delete;
-    ReadLockGuard& operator=(const ReadLockGuard&) = delete;
-private:
-    RWLock& rw_;
-};
+    explicit Semaphore( UInt32 initialCount ) noexcept
+        : m_iCount( initialCount )
+    {}
 
-/**
- * @brief RAII write lock for RWLock.
- */
-class WriteLockGuard {
-public:
-    explicit WriteLockGuard(RWLock& rw) : rw_(rw) { rw_.lock(); }
-    ~WriteLockGuard() noexcept { rw_.unlock(); }
-    WriteLockGuard(const WriteLockGuard&) = delete;
-    WriteLockGuard& operator=(const WriteLockGuard&) = delete;
-private:
-    RWLock& rw_;
-};
+    ~Semaphore() noexcept = default;
 
-/**
- * @brief Manual event for thread synchronization.
- * 
- * Supports signaling and waiting, inspired by Boost's condition_variable.
- */
-class Event {
-public:
+    Semaphore( const Semaphore& )               = delete;
+    Semaphore& operator=( const Semaphore& )    = delete;
+
     /**
-     * @brief Wait for the event to be signaled.
+     * @brief Acquire the semaphore (decrement count, block if zero)
      */
-    void wait() {
-        UniqueLock lock(mtx_);
-        cv_.wait(lock, [this] { return signaled_; });
-    }
-    
-    /**
-     * @brief Wait with timeout.
-     * @return true if signaled, false if timed out.
-     */
-    template <typename Rep, typename Period>
-    Bool wait_for(const std::chrono::duration<Rep, Period>& rel_time) {
-        UniqueLock lock(mtx_);
-        return cv_.wait_for(lock, rel_time, [this] { return signaled_; });
-    }
-    
-    /**
-     * @brief Signal the event, waking all waiters.
-     */
-    void signal() noexcept {
-        LockGuard lock(mtx_);
-        signaled_ = true;
-        cv_.notify_all();
-    }
-    
-    /**
-     * @brief Reset the event to unsignaled state.
-     */
-    void reset() noexcept {
-        LockGuard lock(mtx_);
-        signaled_ = false;
+    void Acquire()
+    {
+        UniqueLock lock( m_mutex );
+        m_cv.wait( lock, [this] { return m_iCount > 0; } );
+        --m_iCount;
     }
 
-private:
-    Mutex mtx_;
-    std::condition_variable_any cv_;
-    Bool signaled_ = false;
-};
-
-/**
- * @brief Counting semaphore for resource limiting.
- * 
- * Emulates a semaphore using std::condition_variable, compatible with lap::core types.
- */
-class Semaphore {
-public:
-    explicit Semaphore(UInt32 initial_count) : count_(initial_count) {}
-    
     /**
-     * @brief Acquire the semaphore (decrement count).
+     * @brief Try to acquire without blocking
+     * @return true if acquired, false otherwise
      */
-    void acquire() {
-        UniqueLock lock(mtx_);
-        cv_.wait(lock, [this] { return count_ > 0; });
-        --count_;
-    }
-    
-    /**
-     * @brief Try to acquire without blocking.
-     * @return true if acquired, false otherwise.
-     */
-    Bool try_acquire() noexcept {
-        UniqueLock lock(mtx_);
-        if (count_ > 0) {
-            --count_;
+    Bool TryAcquire() noexcept
+    {
+        LockGuard lock( m_mutex );
+        if ( m_iCount > 0 ) {
+            --m_iCount;
             return true;
         }
         return false;
     }
-    
+
     /**
-     * @brief Release the semaphore (increment count).
+     * @brief Release the semaphore (increment count, wake one waiter)
      */
-    void release() noexcept {
-        LockGuard lock(mtx_);
-        ++count_;
-        cv_.notify_one();
+    void Release() noexcept
+    {
+        {
+            LockGuard lock( m_mutex );
+            ++m_iCount;
+        }
+        m_cv.notify_one();
     }
 
 private:
-    Mutex mtx_;
-    std::condition_variable_any cv_;
-    UInt32 count_;
+    Mutex               m_mutex;
+    ConditionVariable   m_cv;
+    UInt32              m_iCount;
 };
+
 } // namespace core
 } // namespace lap
 

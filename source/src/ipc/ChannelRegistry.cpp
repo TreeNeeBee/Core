@@ -1,3 +1,11 @@
+/**
+ * @file        ChannelRegistry.cpp
+ * @author      LightAP Core Team
+ * @brief       Implementation of ChannelRegistry
+ * @date        2026-01-13
+ * @copyright   Copyright (c) 2026
+ */
+
 #include "ipc/ChannelRegistry.hpp"
 #include "ipc/SharedMemoryManager.hpp"
 #include "ipc/WaitSetHelper.hpp"
@@ -10,19 +18,12 @@ namespace ipc
 {
     Result< UInt8 > ChannelRegistry::RegisterChannel( ControlBlock* ctrl, Bool isReadChannel, UInt8 channel_index ) noexcept
     {
-        DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );   
+        DEF_LAP_ASSERT( ctrl != nullptr, "ControlBlock pointer is null" );
+
         if ( isReadChannel ) {
-            return AllocateReadChannel( ctrl, channel_index ).AndThen( [&]( UInt8 index ) {
-                return Result< UInt8 >( index );
-            } ).OrElse( [&]( const ErrorCode& ec ) {
-                return Result< UInt8 >::FromError( ec );
-            } );
+            return AllocateReadChannel( ctrl, channel_index );
         } else {
-            return AllocateWriteChannel( ctrl, channel_index ).AndThen( [&]( UInt8 index ) {
-                return Result< UInt8 >( index );
-            } ).OrElse( [&]( const ErrorCode& ec ) {
-                return Result< UInt8 >::FromError( ec );
-            } );
+            return AllocateWriteChannel( ctrl, channel_index );
         }
     }
 
@@ -214,6 +215,6 @@ namespace ipc
      
         return Result< UInt8 >( target_index );
     }
-}
+}  // namespace ipc
 }  // namespace core
 }  // namespace lap

@@ -42,12 +42,12 @@ namespace ipc
          * @brief Constructor
          */
         RingBufferBlock() noexcept
-            : head_(0)
-            , tail_(0)
+            : m_head(0)
+            , m_tail(0)
         {
             // Zero-initialize buffer
             for ( UInt32 i = 0; i < Capacity; ++i ) {
-                buffer_[i] = T{};
+                m_buffer[i] = T{};
             }
         }
         
@@ -58,21 +58,21 @@ namespace ipc
          */
         Bool Enqueue(T value) noexcept
         {
-            UInt32 tail = tail_.load(std::memory_order_relaxed);
+            UInt32 tail = m_tail.load(std::memory_order_relaxed);
             UInt32 next_tail = (tail + 1) & (Capacity - 1);
             
             // Check if full
-            UInt32 head = head_.load(std::memory_order_acquire);
+            UInt32 head = m_head.load(std::memory_order_acquire);
             if (next_tail == head)
             {
                 return false;  // Queue full
             }
             
             // Write data
-            buffer_[tail] = value;
+            m_buffer[tail] = value;
             
             // Update tail (release semantics for consumer visibility)
-            tail_.store(next_tail, std::memory_order_release);
+            m_tail.store(next_tail, std::memory_order_release);
             
             return true;
         }
@@ -83,21 +83,21 @@ namespace ipc
          */
         Optional<T> Dequeue() noexcept
         {
-            UInt32 head = head_.load(std::memory_order_relaxed);
+            UInt32 head = m_head.load(std::memory_order_relaxed);
             
             // Check if empty
-            UInt32 tail = tail_.load(std::memory_order_acquire);
+            UInt32 tail = m_tail.load(std::memory_order_acquire);
             if (head == tail)
             {
                 return {};  // Queue empty
             }
             
             // Read data
-            T value = buffer_[head];
+            T value = m_buffer[head];
             
             // Update head (release semantics for producer visibility)
             UInt32 next_head = (head + 1) & (Capacity - 1);
-            head_.store(next_head, std::memory_order_release);
+            m_head.store(next_head, std::memory_order_release);
             
             return value;
         }
@@ -108,9 +108,9 @@ namespace ipc
          */
         Bool IsFull() const noexcept
         {
-            UInt32 tail = tail_.load(std::memory_order_relaxed);
+            UInt32 tail = m_tail.load(std::memory_order_relaxed);
             UInt32 next_tail = (tail + 1) & (Capacity - 1);
-            UInt32 head = head_.load(std::memory_order_acquire);
+            UInt32 head = m_head.load(std::memory_order_acquire);
             
             return next_tail == head;
         }
@@ -121,8 +121,8 @@ namespace ipc
          */
         Bool IsEmpty() const noexcept
         {
-            UInt32 head = head_.load(std::memory_order_relaxed);
-            UInt32 tail = tail_.load(std::memory_order_acquire);
+            UInt32 head = m_head.load(std::memory_order_relaxed);
+            UInt32 tail = m_tail.load(std::memory_order_acquire);
             
             return head == tail;
         }
@@ -134,8 +134,8 @@ namespace ipc
          */
         UInt32 Size() const noexcept
         {
-            UInt32 head = head_.load(std::memory_order_relaxed);
-            UInt32 tail = tail_.load(std::memory_order_relaxed);
+            UInt32 head = m_head.load(std::memory_order_relaxed);
+            UInt32 tail = m_tail.load(std::memory_order_relaxed);
             
             return (tail - head) & (Capacity - 1);
         }
@@ -150,9 +150,9 @@ namespace ipc
         }
         
     private:
-        alignas(kCacheLineSize) std::atomic<UInt32> head_;  ///< Consumer pointer
-        alignas(kCacheLineSize) std::atomic<UInt32> tail_;  ///< Producer pointer
-        T buffer_[Capacity];                                 ///< Data buffer
+        alignas(kCacheLineSize) std::atomic<UInt32> m_head;  ///< Consumer pointer
+        alignas(kCacheLineSize) std::atomic<UInt32> m_tail;  ///< Producer pointer
+        T m_buffer[Capacity];                                 ///< Data buffer
     };
     
 }  // namespace ipc

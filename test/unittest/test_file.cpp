@@ -15,8 +15,8 @@ protected:
 
     void TearDown() override {
         // Clean up temporary files
-        File::Util::remove(testFile);
-        File::Util::remove(testFileCopy);
+        File::Util::Remove(testFile);
+        File::Util::Remove(testFileCopy);
     }
 
     std::string testFile;
@@ -24,36 +24,36 @@ protected:
 };
 
 TEST_F(FileTest, Exists) {
-    EXPECT_TRUE(File::Util::exists(testFile));
-    EXPECT_FALSE(File::Util::exists("non_existent_file.txt"));
+    EXPECT_TRUE(File::Util::Exists(testFile));
+    EXPECT_FALSE(File::Util::Exists("non_existent_file.txt"));
 }
 
 TEST_F(FileTest, Remove) {
-    EXPECT_TRUE(File::Util::remove(testFile));
-    EXPECT_FALSE(File::Util::exists(testFile));
+    EXPECT_TRUE(File::Util::Remove(testFile));
+    EXPECT_FALSE(File::Util::Exists(testFile));
 }
 
 TEST_F(FileTest, Copy) {
-    EXPECT_TRUE(File::Util::copy(testFile, testFileCopy));
-    EXPECT_TRUE(File::Util::exists(testFileCopy));
+    EXPECT_TRUE(File::Util::Copy(testFile, testFileCopy));
+    EXPECT_TRUE(File::Util::Exists(testFileCopy));
 }
 
 TEST_F(FileTest, Move) {
     std::string movedFile = "moved_file.txt";
-    EXPECT_TRUE(File::Util::move(testFile, movedFile));
-    EXPECT_TRUE(File::Util::exists(movedFile));
-    EXPECT_FALSE(File::Util::exists(testFile));
-    File::Util::remove(movedFile);
+    EXPECT_TRUE(File::Util::Move(testFile, movedFile));
+    EXPECT_TRUE(File::Util::Exists(movedFile));
+    EXPECT_FALSE(File::Util::Exists(testFile));
+    File::Util::Remove(movedFile);
 }
 
 TEST_F(FileTest, Create) {
     std::string newFile = "new_file.txt";
-    EXPECT_TRUE(File::Util::create(newFile));
-    EXPECT_TRUE(File::Util::exists(newFile));
-    File::Util::remove(newFile);
+    EXPECT_TRUE(File::Util::Create(newFile));
+    EXPECT_TRUE(File::Util::Exists(newFile));
+    File::Util::Remove(newFile);
 }
 
 TEST_F(FileTest, Size) {
-    EXPECT_EQ(File::Util::size(testFile), 12); // "Test content" is 12 bytes
-    EXPECT_EQ(File::Util::size("non_existent_file.txt"), 0);
+    EXPECT_EQ(File::Util::FileSize(testFile), 12); // "Test content" is 12 bytes
+    EXPECT_EQ(File::Util::FileSize("non_existent_file.txt"), 0);
 }

@@ -21,12 +21,12 @@
 #ifndef LAP_CORE_PATH_HPP
 #define LAP_CORE_PATH_HPP
 
-#include <limits.h>
+#include <climits>
 #include <unistd.h>
 #include <regex>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <errno.h>
+#include <cerrno>
 #include <fstream>
 #include <cstring>
 #include "CTypedef.hpp"
@@ -51,7 +51,7 @@ namespace core
     {
     public:
         
-        static String getApplicationFolder( Bool bWithSlash = false ) noexcept
+        static String GetApplicationFolder( Bool bWithSlash = false ) noexcept
         {
             try {
                 auto p = fs::current_path();
@@ -60,7 +60,7 @@ namespace core
                 return s;
             } catch ( ... ) {
                 // Fallback to getcwd
-                char buff[PATH_MAX] = {0};
+                Char buff[PATH_MAX] = {0};
                 if ( ::getcwd( buff, sizeof(buff) ) != nullptr ) {
                     String s{ buff };
                     if ( bWithSlash && !s.empty() && s.back() != '/' ) s.push_back('/');
@@ -70,9 +70,9 @@ namespace core
             }
         }
 
-        static StringView getBaseName( StringView strPath ) noexcept
+        static StringView GetBaseName( StringView strPath ) noexcept
         {
-            if ( !valid( strPath ) )   return strPath;
+            if ( !Valid( strPath ) )   return strPath;
             return strPath.substr( strPath.find_last_of( "/\\" ) + 1 );
         }
         
@@ -81,18 +81,18 @@ namespace core
          * @param strPath Path string
          * @return Basename as String
          */
-        static String basename( StringView strPath ) noexcept
+        static String Basename( StringView strPath ) noexcept
         {
-            return String(getBaseName(strPath));
+            return String(GetBaseName(strPath));
         }
 
-        static StringView getFolder( StringView strPath ) noexcept
+        static StringView GetFolder( StringView strPath ) noexcept
         {
-            if ( !valid( strPath ) )   return "";
+            if ( !Valid( strPath ) )   return "";
             return strPath.substr( 0, strPath.rfind( '/' ) );
         }
 
-        static StringView append( StringView strBase, StringView extra ) noexcept
+        static StringView Append( StringView strBase, StringView extra ) noexcept
         {
             thread_local String s_buffer;
             s_buffer.clear();
@@ -109,7 +109,7 @@ namespace core
          * @param extra Extra path component
          * @return Combined path as String
          */
-        static String appendString( StringView strBase, StringView extra ) noexcept
+        static String AppendString( StringView strBase, StringView extra ) noexcept
         {
             String result;
             result.reserve( std::strlen( strBase.data() ) + 1 + std::strlen( extra.data() ) );
@@ -119,9 +119,9 @@ namespace core
             return result;
         }
 
-        static Bool createDirectory( StringView strPath ) noexcept
+        static Bool CreateDirectory( StringView strPath ) noexcept
         {
-            if ( !valid( strPath ) )   return false;
+            if ( !Valid( strPath ) )   return false;
             try {
                 fs::path p{ strPath.data() };
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
@@ -136,9 +136,9 @@ namespace core
             }
         }
 
-        static Bool createFile( StringView strPath ) noexcept
+        static Bool CreateFile( StringView strPath ) noexcept
         {
-            if ( !valid( strPath ) )   return false;
+            if ( !Valid( strPath ) )   return false;
             try {
                 fs::path p{ strPath.data() };
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
@@ -154,7 +154,7 @@ namespace core
             }
         }
 
-        static Bool isDirectory( StringView strPath ) noexcept
+        static Bool IsDirectory( StringView strPath ) noexcept
         {
             try {
                 return fs::is_directory( fs::path( strPath.data() ) );
@@ -163,7 +163,7 @@ namespace core
             }
         }
 
-        static Bool isFile( StringView strPath ) noexcept
+        static Bool IsFile( StringView strPath ) noexcept
         {
             try {
                 return fs::is_regular_file( fs::path( strPath.data() ) );
@@ -172,7 +172,7 @@ namespace core
             }
         }
 
-        static Bool exist( StringView strPath ) noexcept
+        static Bool Exist( StringView strPath ) noexcept
         {
             try {
                 return fs::exists( fs::path( strPath.data() ) );
@@ -181,7 +181,7 @@ namespace core
             }
         }
 
-        static Bool valid( StringView strPath ) noexcept
+        static Bool Valid( StringView strPath ) noexcept
         {
             return ( strPath.data() != nullptr ) && ( std::strlen( strPath.data() ) > 0 );
         }
@@ -192,9 +192,9 @@ namespace core
          * @param recursive If true, remove recursively; if false, only remove empty directory
          * @return true on success, false on failure
          */
-        static Bool removeDirectory( StringView strPath, Bool recursive = false ) noexcept
+        static Bool RemoveDirectory( StringView strPath, Bool recursive = false ) noexcept
         {
-            if ( !valid( strPath ) )   return false;
+            if ( !Valid( strPath ) )   return false;
             try {
                 fs::path p{ strPath.data() };
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
@@ -220,9 +220,9 @@ namespace core
          * @param dst Destination directory path
          * @return true on success, false on failure
          */
-        static Bool copyDirectory( StringView src, StringView dst ) noexcept
+        static Bool CopyDirectory( StringView src, StringView dst ) noexcept
         {
-            if ( !valid( src ) || !valid( dst ) )   return false;
+            if ( !Valid( src ) || !Valid( dst ) )   return false;
             try {
                 fs::path srcPath{ src.data() };
                 fs::path dstPath{ dst.data() };
@@ -247,7 +247,7 @@ namespace core
                     auto destFile = dstPath / path.filename();
                     
                     if ( fs::is_directory(path, ec) ) {
-                        copyDirectory( path.string().c_str(), destFile.string().c_str() );
+                        CopyDirectory( path.string().c_str(), destFile.string().c_str() );
                     } else {
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
                         fs::copy_file(path, destFile, fs::copy_options::overwrite_existing, ec);
@@ -268,9 +268,9 @@ namespace core
          * @param strPath Directory path
          * @return Total size in bytes
          */
-        static UInt64 getDirectorySize( StringView strPath ) noexcept
+        static UInt64 GetDirectorySize( StringView strPath ) noexcept
         {
-            if ( !valid( strPath ) )   return 0;
+            if ( !Valid( strPath ) )   return 0;
             try {
                 fs::path p{ strPath.data() };
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
@@ -299,10 +299,10 @@ namespace core
          * @param strPath Directory path
          * @return Vector of file names (not full paths)
          */
-        static Vector<String> listFiles( StringView strPath ) noexcept
+        static Vector<String> ListFiles( StringView strPath ) noexcept
         {
             Vector<String> files;
-            if ( !valid( strPath ) )   return files;
+            if ( !Valid( strPath ) )   return files;
             try {
                 fs::path p{ strPath.data() };
 #if __cplusplus >= 201703L && __has_include(<filesystem>)

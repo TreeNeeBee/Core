@@ -13,7 +13,7 @@ int main() {
         return 1;
     }
     
-    ConfigManager& cfg = ConfigManager::getInstance();
+    ConfigManager& cfg = ConfigManager::GetInstance();
     auto res = cfg.initialize("policy_demo.json", true);
     if (!res.HasValue()) {
         std::cerr << "init failed\n";
@@ -23,8 +23,8 @@ int main() {
     // Prepare modules
     nlohmann::json modA; modA["value"] = 100;
     nlohmann::json modB; modB["value"] = 200;
-    cfg.setModuleConfigJson("modA", modA);
-    cfg.setModuleConfigJson("modB", modB);
+    cfg.SetModuleConfigJson("modA", modA);
+    cfg.SetModuleConfigJson("modB", modB);
 
     // Set policies
     cfg.setModuleUpdatePolicy("modA", "first");
@@ -41,9 +41,9 @@ int main() {
 
     // Change modB to demonstrate on_change
     nlohmann::json modB2 = modB; modB2["value"] = 201;
-    cfg.setModuleConfigJson("modB", modB2);
+    cfg.SetModuleConfigJson("modB", modB2);
 
-    std::cout << "Updated modB: " << cfg.getModuleConfig("modB", true) << "\n";
+    std::cout << "Updated modB: " << cfg.GetModuleConfig("modB", true) << "\n";
 
     return 0;
 }

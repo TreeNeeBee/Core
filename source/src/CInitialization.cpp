@@ -11,14 +11,13 @@
 #include "CInitialization.hpp"
 #include "CConfig.hpp"
 #include "CCoreErrorDomain.hpp"
-#include <atomic>
-#include <mutex>
+#include "CSync.hpp"
 
 namespace lap {
 namespace core {
 
 // Initialization state management
-enum class InitState : uint8_t {
+enum class InitState : UInt8 {
     kNotInitialized = 0,
     kInitializing = 1,
     kInitialized = 2,
@@ -26,8 +25,8 @@ enum class InitState : uint8_t {
     kInitializationFailed = 4
 };
 
-static std::atomic<InitState> g_init_state{InitState::kNotInitialized};
-static std::mutex g_init_mutex;
+static Atomic<InitState> g_init_state{InitState::kNotInitialized};
+static Mutex g_init_mutex;
 
 /**
  * @brief Internal function to perform actual initialization work.
@@ -39,7 +38,7 @@ static std::mutex g_init_mutex;
  */
 static Result<void> performInitialization() {
     // Ensure configuration manager singleton exists
-    // (void)ConfigManager::getInstance();
+    // (void)ConfigManager::GetInstance();
 
     return Result<void>{};
 }
@@ -61,7 +60,7 @@ static Result<void> performDeinitialization() {
 
 // [SWS_CORE_15003] Startup and initialization of ARA
 Result<void> Initialize() noexcept {
-    std::lock_guard<std::mutex> lock(g_init_mutex);
+    LockGuard lock(g_init_mutex);
     
     InitState current_state = g_init_state.load(std::memory_order_acquire);
 
@@ -113,7 +112,7 @@ Result<void> Initialize(int& argc, char**& argv) noexcept {
 
 // [SWS_CORE_15004] Shutdown and de-initialization of ARA
 Result<void> Deinitialize() noexcept {
-    std::lock_guard<std::mutex> lock(g_init_mutex);
+    LockGuard lock(g_init_mutex);
     
     InitState current_state = g_init_state.load(std::memory_order_acquire);
 

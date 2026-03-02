@@ -120,7 +120,7 @@ namespace core
      * @threadsafe Thread-safe (no shared state)
      * @note Provides C++20 starts_with functionality for C++17
      */
-    inline bool starts_with(StringView sv, StringView prefix) noexcept
+    inline Bool starts_with(StringView sv, StringView prefix) noexcept
     {
         return sv.size() >= prefix.size() && 
                sv.compare(0, prefix.size(), prefix) == 0;
@@ -133,7 +133,7 @@ namespace core
      * @return true if sv starts with ch
      * @threadsafe Thread-safe (no shared state)
      */
-    inline bool starts_with(StringView sv, char ch) noexcept
+    inline Bool starts_with(StringView sv, Char ch) noexcept
     {
         return !sv.empty() && sv.front() == ch;
     }
@@ -145,7 +145,7 @@ namespace core
      * @return true if sv starts with prefix
      * @threadsafe Thread-safe (no shared state)
      */
-    inline bool starts_with(StringView sv, const char* prefix) noexcept
+    inline Bool starts_with(StringView sv, const Char* prefix) noexcept
     {
         return starts_with(sv, StringView(prefix));
     }
@@ -158,7 +158,7 @@ namespace core
      * @threadsafe Thread-safe (no shared state)
      * @note Provides C++20 ends_with functionality for C++17
      */
-    inline bool ends_with(StringView sv, StringView suffix) noexcept
+    inline Bool ends_with(StringView sv, StringView suffix) noexcept
     {
         return sv.size() >= suffix.size() && 
                sv.compare(sv.size() - suffix.size(), StringView::npos, suffix) == 0;
@@ -171,7 +171,7 @@ namespace core
      * @return true if sv ends with ch
      * @threadsafe Thread-safe (no shared state)
      */
-    inline bool ends_with(StringView sv, char ch) noexcept
+    inline Bool ends_with(StringView sv, Char ch) noexcept
     {
         return !sv.empty() && sv.back() == ch;
     }
@@ -183,7 +183,7 @@ namespace core
      * @return true if sv ends with suffix
      * @threadsafe Thread-safe (no shared state)
      */
-    inline bool ends_with(StringView sv, const char* suffix) noexcept
+    inline Bool ends_with(StringView sv, const Char* suffix) noexcept
     {
         return ends_with(sv, StringView(suffix));
     }
@@ -196,7 +196,7 @@ namespace core
      * @threadsafe Thread-safe (no shared state)
      * @note Provides C++23 contains functionality
      */
-    inline bool contains(StringView sv, StringView substr) noexcept
+    inline Bool contains(StringView sv, StringView substr) noexcept
     {
         return sv.find(substr) != StringView::npos;
     }
@@ -208,7 +208,7 @@ namespace core
      * @return true if sv contains ch
      * @threadsafe Thread-safe (no shared state)
      */
-    inline bool contains(StringView sv, char ch) noexcept
+    inline Bool contains(StringView sv, Char ch) noexcept
     {
         return sv.find(ch) != StringView::npos;
     }
@@ -220,7 +220,7 @@ namespace core
      * @return true if sv contains substr
      * @threadsafe Thread-safe (no shared state)
      */
-    inline bool contains(StringView sv, const char* substr) noexcept
+    inline Bool contains(StringView sv, const Char* substr) noexcept
     {
         return contains(sv, StringView(substr));
     }

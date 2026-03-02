@@ -54,44 +54,44 @@ namespace ipc
     {
         INNER_CORE_LOG("[DEBUG] Creating shared memory segment: %s\n", shmPath.c_str() );
 
-        shm_path_ = shmPath;
-        config_ = config;
+        m_strPath = shmPath;
+        m_config = config;
         
         // Try to create new shared memory (O_CREAT | O_EXCL)
-        shm_fd_ = shm_open( shm_path_.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666 );
+        m_iFd = shm_open( m_strPath.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666 );
         
-        if ( shm_fd_ >= 0 ) { 
+        if ( m_iFd >= 0 ) { 
             // Calculate and align total size
-            size_ = CalculateTotalSize( config );
+            m_iSize = CalculateTotalSize( config );
 
             // Set size
-            if ( ftruncate( shm_fd_, static_cast< off_t >( size_ ) ) != 0 ) {
-                close(shm_fd_);
-                shm_fd_ = -1;
+            if ( ftruncate( m_iFd, static_cast< off_t >( m_iSize ) ) != 0 ) {
+                close(m_iFd);
+                m_iFd = -1;
                 return Result< void >( MakeErrorCode( CoreErrc::kIPCShmCreateFailed ) );
             }
             
             // Map memory
-            base_addr_ = mmap( nullptr, size_, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, shm_fd_, 0 );
+            m_pBaseAddr = mmap( nullptr, m_iSize, PROT_READ | PROT_WRITE,
+                            MAP_SHARED, m_iFd, 0 );
             
-            if ( base_addr_ == MAP_FAILED ) {
-                close( shm_fd_ );
-                shm_fd_ = -1;
-                base_addr_ = nullptr;
+            if ( m_pBaseAddr == MAP_FAILED ) {
+                close( m_iFd );
+                m_iFd = -1;
+                m_pBaseAddr = nullptr;
                 return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
             }
 
-            DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( base_addr_ ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
+            DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( m_pBaseAddr ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
             
             // Initialize structures
-            auto result = InitializeSharedMemory( config );
+            auto result = initializeSharedMemory( config );
             if ( !result ) {
-                Cleanup();
+                cleanup();
                 return result;
             }   
 
-            ref_count_acquired_ = true;
+            m_bRefCountAcquired = true;
             
             return {};
         } else if ( errno == EEXIST ) {
@@ -106,55 +106,98 @@ namespace ipc
     {
         INNER_CORE_LOG("[DEBUG] Opening shared memory segment: %s\n", shmPath.c_str() );
 
-        shm_path_ = shmPath;
-        config_ = config;
+        m_strPath = shmPath;
+        m_config = config;
 
-        shm_fd_ = shm_open(shm_path_.c_str(), O_RDWR, 0666);
-        if ( shm_fd_ < 0 ) {
+        m_iFd = shm_open(m_strPath.c_str(), O_RDWR, 0666);
+        if ( m_iFd < 0 ) {
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmNotFound ) );
         }
         
         // Get existing size
         struct stat sb;
-        if ( fstat( shm_fd_, &sb ) != 0 ) {
-            close( shm_fd_ );
-            shm_fd_ = -1;
+        if ( fstat( m_iFd, &sb ) != 0 ) {
+            close( m_iFd );
+            m_iFd = -1;
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmStatFailed ) );
         }
         
-        size_ = static_cast< Size >( sb.st_size );
+        m_iSize = static_cast< Size >( sb.st_size );
         
         // Map memory
-        base_addr_ = mmap(nullptr, size_, PROT_READ | PROT_WRITE,
-                        MAP_SHARED, shm_fd_, 0);
+        m_pBaseAddr = mmap(nullptr, m_iSize, PROT_READ | PROT_WRITE,
+                        MAP_SHARED, m_iFd, 0);
         
-        if ( base_addr_ == MAP_FAILED ) {
-            close( shm_fd_ );
-            shm_fd_ = -1;
-            base_addr_ = nullptr;
+        if ( m_pBaseAddr == MAP_FAILED ) {
+            close( m_iFd );
+            m_iFd = -1;
+            m_pBaseAddr = nullptr;
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
         }
 
-        DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( base_addr_ ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
+        DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( m_pBaseAddr ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
         
         // Validate control block
         auto* ctrl = GetControlBlock();
         if ( !ctrl || !ctrl->Ready() || ctrl->header.type != config.ipc_type ) {
-            Cleanup();
+            cleanup();
             return Result< void >( MakeErrorCode( CoreErrc::kIPCShmInvalidMagic ) );
         }
 
         ctrl->header.ref_count.fetch_add( 1, std::memory_order_acq_rel );
-        ref_count_acquired_ = true;
+        m_bRefCountAcquired = true;
         
         return {};
     }
-    
-    Result<void> SharedMemoryManager::InitializeSharedMemory(const SharedMemoryConfig& config) noexcept
+
+    Result<void> SharedMemoryManager::Open( int shm_fd, const SharedMemoryConfig& config) noexcept
     {
-        INNER_CORE_LOG("[DEBUG] Initializing shared memory structures, size: %zu bytes\n", size_);
+        DEF_LAP_ASSERT( shm_fd >= 0, "Invalid shared memory file descriptor" );
+        INNER_CORE_LOG("[DEBUG] Opening shared memory segment with fd: %d\n", shm_fd );
+        
+        m_config = config;
+        m_iFd = -1;
+        // Get existing size
+        struct stat sb;
+        if ( fstat( shm_fd, &sb ) != 0 ) {
+            close( shm_fd );
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmStatFailed ) );
+        }
+   
+        m_iSize = static_cast< Size >( sb.st_size );
+        
+        // Map memory
+        m_pBaseAddr = mmap(nullptr, m_iSize, PROT_READ | PROT_WRITE,
+                        MAP_SHARED, shm_fd, 0);
+        
+        if ( m_pBaseAddr == MAP_FAILED ) {
+            close( shm_fd );
+            m_pBaseAddr = nullptr;
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmMapFailed ) );
+        }
+
+        m_iFd = shm_fd;
+
+        DEF_LAP_ASSERT( reinterpret_cast< UIntPtr >( m_pBaseAddr ) % kCacheLineSize == 0, "Shared memory not aligned properly" );
+        
+        // Validate control block
+        auto* ctrl = GetControlBlock();
+        if ( !ctrl || !ctrl->Ready() || ctrl->header.type != config.ipc_type ) {
+            cleanup();
+            return Result< void >( MakeErrorCode( CoreErrc::kIPCShmInvalidMagic ) );
+        }
+
+        ctrl->header.ref_count.fetch_add( 1, std::memory_order_acq_rel );
+        m_bRefCountAcquired = true;
+        
+        return {};  
+    } 
+    
+    Result<void> SharedMemoryManager::initializeSharedMemory(const SharedMemoryConfig& config) noexcept
+    {
+        INNER_CORE_LOG("[DEBUG] Initializing shared memory structures, size: %zu bytes\n", m_iSize);
         // Zero out entire shared memory
-        std::memset(base_addr_, 0, size_);
+        std::memset(m_pBaseAddr, 0, m_iSize);
 
         auto* ctrl = GetControlBlock();
         ctrl->Initialize( config.max_chunks,
@@ -197,35 +240,35 @@ namespace ipc
         return {};
     }
     
-    void SharedMemoryManager::Cleanup() noexcept
+    void SharedMemoryManager::cleanup() noexcept
     {
         Bool should_unlink = false;
 
         // Check if we should unlink the shared memory
-        if ( base_addr_ != nullptr && base_addr_ != MAP_FAILED ) {
+        if ( m_pBaseAddr != nullptr && m_pBaseAddr != MAP_FAILED ) {
             auto* ctrl = GetControlBlock();
-            if ( ref_count_acquired_ && ctrl && ctrl->Validate() ) {
+            if ( m_bRefCountAcquired && ctrl && ctrl->Validate() ) {
                 const UInt32 previous = ctrl->header.ref_count.fetch_sub( 1, std::memory_order_acq_rel );
                 if ( previous == 1U ) {
                     should_unlink = true;
                 }
             }
             
-            munmap(base_addr_, size_);
-            base_addr_ = nullptr;
+            munmap(m_pBaseAddr, m_iSize);
+            m_pBaseAddr = nullptr;
         }
         
-        if ( shm_fd_ >= 0 ) {
-            close( shm_fd_ );
-            shm_fd_ = -1;
+        if ( m_iFd >= 0 ) {
+            close( m_iFd );
+            m_iFd = -1;
         }
         
         // Unlink only if we're the last process
-        if ( should_unlink && !shm_path_.empty() ) {
-            shm_unlink(shm_path_.c_str());
+        if ( should_unlink && !m_strPath.empty() ) {
+            shm_unlink(m_strPath.c_str());
         }
 
-        ref_count_acquired_ = false;
+        m_bRefCountAcquired = false;
     }
     
 }  // namespace ipc

@@ -1,10 +1,10 @@
-# Core模块文档
+# Core 模块文档
 
 欢迎查阅 LightAP Core 模块的技术文档。
 
 ## 📍 快速开始
 
-- **文档导航**: [INDEX.md](INDEX.md) - 完整的文档索引和分类
+- **文档导航**: [INDEX.md](INDEX.md) — 完整的文档索引和分类
 - **模块概览**: [../README.md](../README.md) / [../README_CN.md](../README_CN.md)
 - **变更日志**: [../CHANGES.md](../CHANGES.md)
 
@@ -12,57 +12,41 @@
 
 ```
 doc/
-├── INDEX.md                    # 📍 文档导航入口（从这里开始）
-├── README.md                   # 本文件
+├── INDEX.md                         # 📍 文档导航入口（从这里开始）
+├── README.md                        # 本文件
 │
-├── *.md                        # 当前有效的技术文档
-│   ├── AUTOSAR_REFACTORING_PLAN.md
-│   ├── BENCHMARK_REPORT.md
-│   ├── HMAC_SECRET_CONFIG.md
-│   ├── ICEORYX2_VS_EPOLL.md
-│   └── IPC_DESIGN_ARCHITECTURE.md
+├── IPC_DESIGN_ARCHITECTURE.md       # CoreIPC 零拷贝设计架构
+├── BENCHMARK_REPORT.md              # 性能基准测试报告
+├── HMAC_SECRET_CONFIG.md            # HMAC 配置安全指南
+├── MEMORY_OPTIONS.md                # 内存管理构建选项
+├── AUTOSAR_AP_SWS_Core.pdf         # AUTOSAR 标准文档
 │
-├── reports/                    # 📊 测试报告和清理记录
-│   ├── CODE_CLEANUP_REPORT.md
-│   ├── ID_HANDLE_VALIDATION_SUMMARY.md
-│   └── TEST_STRUCTURE_CLEANUP.md
-│
-└── archive/                    # 🗄️ 历史文档归档
-    ├── README.md               # 归档文档说明
-    ├── old_refactoring/        # 历史重构记录
-    ├── current/                # 当前监控状态
-    └── *.md                    # 其他归档文档
+└── archive/                         # 🗄️ 历史文档归档（扁平结构）
+    ├── README.md                    # 归档文档说明
+    └── *.md                         # 所有归档文档
 ```
 
 ## 🔍 主要技术文档
 
 ### IPC 设计
-- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) - 零拷贝IPC设计架构（331KB详细设计）
+- [IPC_DESIGN_ARCHITECTURE.md](IPC_DESIGN_ARCHITECTURE.md) — CoreIPC 零拷贝设计架构
 
 ### 性能分析
-- [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) - 性能基准测试
-- [ICEORYX2_VS_EPOLL.md](ICEORYX2_VS_EPOLL.md) - iceoryx2与epoll对比
+- [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) — 性能基准测试
 
 ### 配置管理
-- [HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md) - 配置文件安全加密
+- [HMAC_SECRET_CONFIG.md](HMAC_SECRET_CONFIG.md) — 配置文件 HMAC 安全加密
+- [MEMORY_OPTIONS.md](MEMORY_OPTIONS.md) — 内存管理构建选项
 
-### AUTOSAR合规
-- [AUTOSAR_REFACTORING_PLAN.md](AUTOSAR_REFACTORING_PLAN.md) - AUTOSAR标准重构计划
-
-## 📊 最新报告
-
-最新的测试和验证报告（2025-12-30）：
-
-- [reports/CODE_CLEANUP_REPORT.md](reports/CODE_CLEANUP_REPORT.md)
-- [reports/ID_HANDLE_VALIDATION_SUMMARY.md](reports/ID_HANDLE_VALIDATION_SUMMARY.md)
-- [reports/TEST_STRUCTURE_CLEANUP.md](reports/TEST_STRUCTURE_CLEANUP.md)
+### AUTOSAR 合规
+- [AUTOSAR_AP_SWS_Core.pdf](AUTOSAR_AP_SWS_Core.pdf) — AUTOSAR AP SWS Core 标准
 
 ## 🗄️ 历史文档
 
 所有历史文档已归档至 [archive/](archive/) 目录，包括：
-- 历史重构记录
-- 已完成的优化项目
-- 旧版设计文档
+- 已完成的重构记录（Dual-Counter、Lock-Free、iceoryx2 等）
+- 旧版设计文档（iceoryx2 vs epoll、R24-11 重构计划等）
+- 一次性报告（代码清理、测试结构梳理等）
 
 详见：[archive/README.md](archive/README.md)
 
@@ -72,11 +56,14 @@ doc/
 
 | 类型 | 位置 | 说明 |
 |-----|------|------|
-| 设计文档 | `doc/*.md` | 当前有效的架构、实现、API设计 |
-| 测试报告 | `doc/reports/` | 验证结果、性能测试、清理报告 |
-| 归档文档 | `doc/archive/` | 历史文档、已完成的重构 |
+| 设计文档 | `doc/*.md` | 当前有效的架构、设计、配置 |
+| 归档文档 | `doc/archive/` | 已完成或过时的历史文档 |
 
 ### 文档生命周期
+
+1. 新文档创建于 `doc/` 根目录
+2. 过时后移至 `doc/archive/`
+3. 更新 `INDEX.md` 和 `archive/README.md`
 
 1. **活跃文档** - 当前有效的设计和实现文档
 2. **报告文档** - 已完成的测试和验证报告

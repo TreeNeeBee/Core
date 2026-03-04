@@ -17,7 +17,7 @@
 ## 核心特性
 
 ### 零拷贝 IPC
-- **iceoryx2 启发式设计** — 无锁共享内存消息传递
+- **CoreIPC** — 无锁共享内存消息传递
 - **Publisher/Subscriber** — 基于 loan 的零拷贝写入
 - **三种模式**：SHRINK (4KB)、NORMAL (2MB)、EXTEND (可配置)
 - **< 5µs 延迟**（5MB 负载），持续 90+ FPS

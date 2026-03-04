@@ -17,7 +17,7 @@
 ## Key Features
 
 ### Zero-Copy IPC
-- **iceoryx2-inspired** lock-free shared memory message passing
+- **CoreIPC** lock-free shared memory message passing
 - **Publisher/Subscriber** with loan-based zero-copy writes
 - **Three modes**: SHRINK (4KB), NORMAL (2MB), EXTEND (configurable)
 - **< 5µs latency** for 5MB payloads, 90+ FPS sustained
